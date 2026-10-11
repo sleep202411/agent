@@ -335,6 +335,10 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
       expect(result.matchedCount).toBe(1);
       expect(JSON.stringify(result)).not.toContain('sourceVersion');
       expect(JSON.stringify(result)).not.toContain('evidenceIds');
+      delete process.env.CONTENT_GPS_ANALYSIS_VERSION;
+      expect((await run(request)).matchedCount).toBe(0);
+      expect((await run()).items[0].locations).toHaveLength(1);
+      process.env.CONTENT_GPS_ANALYSIS_VERSION = 'v1';
       await db.$executeRaw`UPDATE ip_localizations SET summary='Different public text' WHERE id=${a.text}::uuid`;
       expect((await run(request)).matchedCount).toBe(0);
       expect((await run()).items[0].locations).toHaveLength(1);
@@ -507,7 +511,25 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
         result.items.find((i) => i.id === a.id)?.locations[0].point,
       ).toBeNull();
     });
-    it('fails explicitly for unsupported semantics or missing configuration', async () => {
+    it('searches owner locations without an AI version and excludes unversioned AI metadata', async () => {
+      const { id } = await add();
+      delete process.env.CONTENT_GPS_ANALYSIS_VERSION;
+      const result = await run();
+      expect(result.items.map((item) => item.id)).toContain(id);
+      expect(
+        result.items.find((item) => item.id === id)?.locations,
+      ).not.toHaveLength(0);
+      expect(result.items.find((item) => item.id === id)?.eras).toEqual([]);
+      const request = input();
+      request.query.location = {
+        kind: 'story_setting',
+        placeIds: ['label:singapore'],
+        relation: 'any',
+      };
+      expect((await run(request)).items.map((item) => item.id)).toContain(id);
+    });
+
+    it('fails explicitly for unsupported semantics or invalid configuration', async () => {
       const request = input();
       request.query.duration = {
         unit: 'film',
@@ -515,7 +537,7 @@ const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
         unknown: 'exclude',
       };
       await expect(run(request)).rejects.toMatchObject({ status: 400 });
-      delete process.env.CONTENT_GPS_ANALYSIS_VERSION;
+      process.env.CONTENT_GPS_ANALYSIS_VERSION = 'x'.repeat(201);
       await expect(run()).rejects.toMatchObject({ status: 503 });
     });
   },

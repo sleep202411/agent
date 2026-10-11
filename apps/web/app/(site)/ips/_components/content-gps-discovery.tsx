@@ -42,11 +42,11 @@ import {
   type GpsSearchDraft,
 } from "../_data/content-gps-discovery";
 import {
-  readGpsMapConfig,
   type GpsMapConfig,
   type GpsMapFactory,
   type GpsViewport,
 } from "../_data/content-gps-map-types";
+import { useContentGpsMapConfig } from "../_hooks/use-content-gps-map-config";
 import { IpContributingStudios } from "./ip-contributing-studios";
 import { ContentGpsMap } from "./content-gps-map";
 import { ContentGpsEraFilter } from "./content-gps-era-filter";
@@ -63,13 +63,7 @@ export function ContentGpsDiscovery() {
   const selection = ContentGpsSearchRequestSchema.shape.selectedIpId.safeParse(
     params.get("selected")
   );
-  const [config] = useState(() => {
-    try {
-      return { value: readGpsMapConfig(), error: false };
-    } catch {
-      return { value: null, error: true };
-    }
-  });
+  const config = useContentGpsMapConfig();
   return (
     <main className="mx-auto min-h-screen max-w-[1800px] space-y-6 px-4 py-6 pb-24 sm:px-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -107,11 +101,11 @@ export function ContentGpsDiscovery() {
         <p role="status">{t("loading")}</p>
       ) : (
         <ContentGpsResults
-          key={`${user?.id ?? "guest"}:${locale}`}
+          key={`${user?.id ?? "guest"}:${locale}:${config.config?.provider ?? "unconfigured"}`}
           query={normalized.data}
           initialDraft={draft}
           viewerId={user ? String(user.id) : null}
-          config={config.value}
+          config={config.config}
           selectedIpId={selection.data}
           onSelectionChange={(id) => {
             const next = new URLSearchParams(params.toString());
@@ -171,7 +165,10 @@ export function ContentGpsResults({
   const [drawer, setDrawer] = useState(false);
   const [placeSearch, setPlaceSearch] = useState("");
   const [viewport, setViewport] = useState<GpsViewport>({
-    coordinateSystem: config?.provider === "gaode" ? "GCJ02" : "WGS84",
+    coordinateSystem:
+      config?.provider === "gaode" || process.env.NEXT_PUBLIC_SITE_REGION === "cn"
+        ? "GCJ02"
+        : "WGS84",
     west: -180,
     east: 180,
     south: -80,
