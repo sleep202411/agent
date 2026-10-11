@@ -359,87 +359,42 @@ it("account replacement cancels the old bookmark request and cannot restore its 
   expect(host.textContent).not.toContain("Remove bookmark");
 });
 
-async function prompt(text: string) {
-  const textarea = host.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      textarea,
-      text
-    );
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await click(en.discoveryAssistant.send);
-}
-it("proposes editable criteria, applies a selected recommendation, and retains follow-up context", async () => {
-  const requests: {
-    requestId: string;
-    conversation: { current: { query: object }; messages: { content: string }[] };
-  }[] = [];
-  const query = {
-    schemaVersion: 1,
-    locale: "en-US",
-    location: { kind: "story_setting", relation: "any", placeIds: ["label:singapore"] },
-    era: {
-      calendar: "proleptic_gregorian_astronomical",
-      startYear: 1980,
-      endYear: 2000,
-      relation: "overlaps",
-    },
-    duration: { unit: "episode", maxSeconds: 900, unknown: "exclude" },
-    genreCodes: ["romance"],
-    moodPreferences: [],
-  };
-  vi.mocked(api.post).mockImplementation(async (url, config) => {
-    if (url === "/aurora/content-gps/discovery/requests") {
-      const request = config!.data as (typeof requests)[number];
-      requests.push(request);
-      return {
-        requestId: request.requestId,
-        status: "succeeded",
-        result: {
-          status: "results",
-          kind: "ips",
-          query,
-          queryId: hash,
-          cards: [item],
-          matchedCount: 1,
-          accessibleCount: 2,
-          countScope: "accessible_ips_with_published_translation",
-        },
-      };
-    }
-    return response(config!);
-  });
+it("removes the IP Copilot panel and mobile trigger without requesting an assistant", async () => {
   await render();
-  await prompt("Find short Singapore romances");
-  expect(requests).toHaveLength(1);
-  expect(context.push).not.toHaveBeenCalled();
-  expect(host.textContent).toContain(en.discoveryAssistant.proposal);
-  expect(host.textContent).not.toContain("label:singapore");
-  await click(en.discoveryAssistant.showOnMap);
-  expect(new URLSearchParams(context.params).get("selected")).toBe(id);
-  expect(host.textContent).toContain("Find short Singapore romances");
-  await prompt("Keep those conditions");
-  expect(requests).toHaveLength(2);
-  const { locale: ignored, ...criteria } = query;
-  void ignored;
-  expect(requests[1]!.conversation.current.query).toEqual(criteria);
-  expect(requests[1]!.conversation.messages.map((message) => message.content)).toContain(
-    "Find short Singapore romances"
-  );
-  context.viewer = "replacement";
-  await render();
-  expect(host.textContent).not.toContain("Find short Singapore romances");
-});
-it("keeps an oversized unsent prompt editable instead of discarding it", async () => {
-  await render();
-  const text = "x".repeat(2001);
-  await prompt(text);
-  expect(host.querySelector("textarea")!.value).toBe(text);
-  expect(host.textContent).toContain(en.discoveryAssistant.invalid);
+  expect(host.textContent).not.toContain("AI Copilot");
+  expect(host.querySelector("textarea")).toBeNull();
   expect(
-    vi.mocked(api.post).mock.calls.some(([url]) => url === "/aurora/content-gps/discovery/requests")
-  ).toBe(false);
+    vi
+      .mocked(api.post)
+      .mock.calls.every(([url]) => url === "/aurora/ip-commerce/content-gps/search")
+  ).toBe(true);
+});
+it("places matching cards in the results rail beside the map and retains selection", async () => {
+  await render();
+  const rail = host.querySelector('aside[aria-label="Matching IPs"]')!;
+  expect(rail.textContent).toContain("Singapore story");
+  const select = rail.querySelector(
+    'button[aria-label="Select Singapore story"]'
+  ) as HTMLButtonElement;
+  expect(select).toBeTruthy();
+  await act(async () => select.click());
+  await render();
+  expect(new URLSearchParams(context.params).get("selected")).toBe(id);
+  expect(rail.textContent).toContain("Matches your conditions");
+});
+it("keeps structured filters accessible after removing the left panel", async () => {
+  await render();
+  await click(en.contentGpsDiscovery.conditions);
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog).toBeTruthy();
+  const singapore = [...dialog.querySelectorAll("label")].find((label) =>
+    label.textContent?.includes("Singapore")
+  )!;
+  await act(async () => (singapore.querySelector("input") as HTMLInputElement).click());
+  const apply = dialog.querySelector('button[type="submit"]') as HTMLButtonElement;
+  await act(async () => apply.click());
+  await render();
+  expect(new URLSearchParams(context.params).getAll("place")).toEqual(["label:singapore"]);
 });
 
 // Relationship transport has its own selection/revocation suite. Keep these collection assertions scoped to their workflow.

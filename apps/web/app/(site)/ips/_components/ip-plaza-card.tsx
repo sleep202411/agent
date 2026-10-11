@@ -225,24 +225,26 @@ export function ContentGpsPlazaCard({
   item,
   selected,
   onSelect,
+  compact = false,
 }: {
   item: import("@repo/shared/content-gps").ContentGpsSearchResult["items"][number];
   selected: boolean;
   onSelect: () => void;
+  compact?: boolean;
 }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("contentGpsDiscovery");
   const href = localizePath(ipRoomPath(item.roomNumber), locale);
   return (
     <article
-      className={`group flex h-full min-w-0 flex-col gap-3 rounded-2xl p-2 ${selected ? "bg-muted ring-2 ring-primary" : "hover:bg-muted/50"}`}
+      className={`group ${compact ? "grid grid-cols-[80px_minmax(0,1fr)]" : "flex h-full flex-col"} min-w-0 gap-3 rounded-2xl p-2 ${selected ? "bg-muted ring-2 ring-primary" : "hover:bg-muted/50"}`}
     >
       <button
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
         aria-label={t("selectTitle", { title: item.title })}
-        className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+        className={`relative ${compact ? "row-span-4 aspect-square" : "aspect-video"} w-full overflow-hidden rounded-xl bg-secondary focus-visible:outline-2 focus-visible:outline-primary`}
       >
         {item.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element

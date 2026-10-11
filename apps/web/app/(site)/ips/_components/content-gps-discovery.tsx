@@ -37,7 +37,6 @@ import {
   EMPTY_GPS_DRAFT,
   gpsDraftFromUrl,
   gpsDraftUrl,
-  gpsDraftFromQuery,
   normalizeGpsDraft,
   gpsMapFeatures,
   type GpsSearchDraft,
@@ -50,7 +49,6 @@ import {
 } from "../_data/content-gps-map-types";
 import { IpContributingStudios } from "./ip-contributing-studios";
 import { ContentGpsMap } from "./content-gps-map";
-import { DiscoveryAssistant } from "./discovery-assistant";
 import { ContentGpsEraFilter } from "./content-gps-era-filter";
 import { ContentGpsPlazaCard } from "./ip-plaza-card";
 
@@ -471,47 +469,21 @@ export function ContentGpsResults({
   const failure = cards.error ?? overview.error;
   return (
     <>
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(230px,0.85fr)_minmax(0,2fr)_minmax(240px,0.9fr)]">
-        <aside className="contents lg:block lg:min-w-0 lg:space-y-6 lg:rounded-2xl lg:bg-muted/20 lg:p-5">
-          <DiscoveryAssistant
-            key={`${viewerId ?? "guest"}:${locale}`}
-            viewerId={viewerId}
-            currentValid={normalized.success}
-            genreLabels={genres.data?.items}
-            current={{
-              kind: "ips",
-              query: {
-                schemaVersion: 1,
-                location: normalized.success ? normalized.data.location : query.location,
-                era: normalized.success ? normalized.data.era : query.era,
-                duration: normalized.success ? normalized.data.duration : query.duration,
-                genreCodes: normalized.success ? normalized.data.genreCodes : query.genreCodes,
-                moodPreferences: normalized.success
-                  ? normalized.data.moodPreferences
-                  : query.moodPreferences,
-              },
-            }}
-            onProposal={(proposal) => {
-              if (proposal.kind === "ips") setDraft(gpsDraftFromQuery(proposal.query));
-            }}
-            onReview={(proposal) => {
-              if (proposal.kind !== "ips") return;
-              setDraft(gpsDraftFromQuery(proposal.query));
-              setDrawer(true);
-            }}
-            onApply={(proposal, selectedId) => {
-              if (proposal.kind !== "ips") return;
-              const next = gpsDraftFromQuery(proposal.query);
-              setDraft(next);
-              onApply(next, selectedId);
-              if (gpsDraftUrl(next) === gpsDraftUrl(initialDraft)) {
-                setSelected(selectedId ?? null);
-                retry();
-              }
-            }}
-          />
-          <div className="hidden lg:block">{form}</div>
-        </aside>
+      <Sheet open={drawer} onOpenChange={setDrawer}>
+        <SheetTrigger asChild>
+          <Button className="fixed bottom-4 right-4 z-30 min-h-11 shadow-lg lg:static">
+            {t("conditions")}
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto px-5 pb-8">
+          <SheetHeader>
+            <SheetTitle>{t("conditions")}</SheetTitle>
+            <SheetDescription>{t("description")}</SheetDescription>
+          </SheetHeader>
+          {form}
+        </SheetContent>
+      </Sheet>
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
         <div className="min-w-0">
           <ContentGpsMap
             config={config}
@@ -544,117 +516,106 @@ export function ContentGpsResults({
           )}
         </div>
         <aside
-          className="min-w-0 space-y-3 rounded-2xl bg-muted/20 p-5"
-          aria-label={t("selection")}
+          className="min-w-0 space-y-5 rounded-2xl bg-muted/20 p-5 lg:max-h-[75vh] lg:overflow-y-auto"
+          aria-label={t("results")}
         >
-          <h2 className="font-semibold">{t("selection")}</h2>
-          {selected ? (
-            !ready ? (
-              <p role="status">{t("loading")}</p>
-            ) : data?.selected ? (
-              <>
-                <SelectedResult item={data.selected} />
-                <IpContributingStudios
-                  key={`${data.selected.id}:${viewerId ?? "guest"}:${locale}`}
-                  ipId={data.selected.id}
-                  viewerId={viewerId}
-                />
-                <Button
-                  disabled={
-                    Boolean(viewerId) &&
-                    (collection.busy ||
-                      collection.query.isPending ||
-                      collection.query.isFetching ||
-                      collection.query.isError)
-                  }
-                  onClick={() =>
-                    viewerId ? void collection.toggle(data.selected!.id) : auth.open()
-                  }
-                >
-                  {collection.busy
-                    ? t("saving")
-                    : collection.saved(data.selected.id)
-                      ? t("removeBookmark")
-                      : t("bookmark")}
-                </Button>
-                {(collection.error || collection.query.error) && (
-                  <p role="alert" className="text-sm">
-                    {(collection.error ?? collection.query.error)?.message}
-                  </p>
-                )}
-                {collection.query.isError && (
-                  <Button variant="ghost" onClick={() => void collection.query.refetch()}>
-                    {t("retry")}
-                  </Button>
-                )}
-              </>
-            ) : (
-              <p>{t("selectionUnavailable")}</p>
-            )
+          {failure ? (
+            <div role="alert" className="space-y-2">
+              <p>{failure.message}</p>
+              <Button onClick={retry}>{t("retry")}</Button>
+            </div>
+          ) : cards.isPending || overview.isPending ? (
+            <p role="status">{t("loading")}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">{t("selectHint")}</p>
+            !agreement && (
+              <div role="alert">
+                <p>{t("responseMismatch")}</p>
+                <Button onClick={retry}>{t("retry")}</Button>
+              </div>
+            )
           )}
-          {selected && (
-            <Button variant="ghost" onClick={() => setSelected(null)}>
-              {t("clearSelection")}
-            </Button>
-          )}
+          <section aria-label={t("results")} className="space-y-4">
+            <h2 className="text-lg font-semibold">{t("results")}</h2>
+            {data && (
+              <p className="text-sm text-muted-foreground">
+                {t("count", { matched: data.matchedCount, count: data.accessibleCount })}
+              </p>
+            )}
+            {ready && items.length === 0 && <p>{t("empty")}</p>}
+            {/* A map refresh does not blank usable list cards; match counts and pins wait for agreement. */}
+            <div className="grid grid-cols-1 gap-3">
+              {items.map((item) => (
+                <ContentGpsPlazaCard
+                  key={item.id}
+                  item={item}
+                  compact
+                  selected={ready && data?.selected?.id === item.id}
+                  onSelect={() => setSelected(item.id)}
+                />
+              ))}
+            </div>
+            {cards.hasNextPage && (
+              <Button disabled={cards.isFetching} onClick={() => void cards.fetchNextPage()}>
+                {cards.isFetchingNextPage ? t("loading") : t("more")}
+              </Button>
+            )}
+          </section>
+          <section className="min-w-0 space-y-3" aria-label={t("selection")}>
+            <h2 className="font-semibold">{t("selection")}</h2>
+            {selected ? (
+              !ready ? (
+                <p role="status">{t("loading")}</p>
+              ) : data?.selected ? (
+                <>
+                  <SelectedResult item={data.selected} />
+                  <IpContributingStudios
+                    key={`${data.selected.id}:${viewerId ?? "guest"}:${locale}`}
+                    ipId={data.selected.id}
+                    viewerId={viewerId}
+                  />
+                  <Button
+                    disabled={
+                      Boolean(viewerId) &&
+                      (collection.busy ||
+                        collection.query.isPending ||
+                        collection.query.isFetching ||
+                        collection.query.isError)
+                    }
+                    onClick={() =>
+                      viewerId ? void collection.toggle(data.selected!.id) : auth.open()
+                    }
+                  >
+                    {collection.busy
+                      ? t("saving")
+                      : collection.saved(data.selected.id)
+                        ? t("removeBookmark")
+                        : t("bookmark")}
+                  </Button>
+                  {(collection.error || collection.query.error) && (
+                    <p role="alert" className="text-sm">
+                      {(collection.error ?? collection.query.error)?.message}
+                    </p>
+                  )}
+                  {collection.query.isError && (
+                    <Button variant="ghost" onClick={() => void collection.query.refetch()}>
+                      {t("retry")}
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <p>{t("selectionUnavailable")}</p>
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("selectHint")}</p>
+            )}
+            {selected && (
+              <Button variant="ghost" onClick={() => setSelected(null)}>
+                {t("clearSelection")}
+              </Button>
+            )}
+          </section>
         </aside>
       </div>
-      {failure ? (
-        <div role="alert" className="space-y-2">
-          <p>{failure.message}</p>
-          <Button onClick={retry}>{t("retry")}</Button>
-        </div>
-      ) : cards.isPending || overview.isPending ? (
-        <p role="status">{t("loading")}</p>
-      ) : (
-        !agreement && (
-          <div role="alert">
-            <p>{t("responseMismatch")}</p>
-            <Button onClick={retry}>{t("retry")}</Button>
-          </div>
-        )
-      )}
-      <section aria-label={t("results")} className="space-y-4">
-        <h2 className="text-lg font-semibold">{t("results")}</h2>
-        {data && (
-          <p className="text-sm text-muted-foreground">
-            {t("count", { matched: data.matchedCount, count: data.accessibleCount })}
-          </p>
-        )}
-        {ready && items.length === 0 && <p>{t("empty")}</p>}
-        {/* A map refresh does not blank usable list cards; match counts and pins wait for agreement. */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
-          {items.map((item) => (
-            <ContentGpsPlazaCard
-              key={item.id}
-              item={item}
-              selected={ready && data?.selected?.id === item.id}
-              onSelect={() => setSelected(item.id)}
-            />
-          ))}
-        </div>
-        {cards.hasNextPage && (
-          <Button disabled={cards.isFetching} onClick={() => void cards.fetchNextPage()}>
-            {cards.isFetchingNextPage ? t("loading") : t("more")}
-          </Button>
-        )}
-      </section>
-      <Sheet open={drawer} onOpenChange={setDrawer}>
-        <SheetTrigger asChild>
-          <Button className="fixed bottom-4 right-4 z-30 w-[calc(50%-1.5rem)] shadow-lg lg:hidden">
-            {t("conditions")}
-          </Button>
-        </SheetTrigger>
-        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto px-5 pb-8">
-          <SheetHeader>
-            <SheetTitle>{t("conditions")}</SheetTitle>
-            <SheetDescription>{t("description")}</SheetDescription>
-          </SheetHeader>
-          {form}
-        </SheetContent>
-      </Sheet>
     </>
   );
 }
