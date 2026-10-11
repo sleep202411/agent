@@ -1,4 +1,6 @@
-import { inboxPreview } from "@/features/services/inbox-preview";
+import { inboxPreview, inboxTime } from "@/features/services/inbox-preview";
+import { Image } from "expo-image";
+import { appEnv, resolveAssetUrl } from "@/config";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useInboxRealtime } from "@/features/services/use-inbox-realtime";
 import { useUserDisplays } from "@/features/services/user-displays";
@@ -9,7 +11,7 @@ import { CONVERSATION_CONTEXT_TYPES } from "@repo/shared/conversation";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 
 import { useInbox } from "@/features/services/use-inbox";
@@ -20,6 +22,7 @@ export default function InboxScreen() {
     focused = useScreenActive();
   const theme = useTheme(),
     t = useTranslations(),
+    locale = useLocale(),
     router = useRouter();
   const [contextType, setContextType] = useState<InboxFilter>("");
   const owner = auth.status === "authenticated" && focused ? String(auth.generation) : undefined;
@@ -52,6 +55,20 @@ export default function InboxScreen() {
         </Pressable>
       ) : (
         <>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(toHref("/notifications"))}
+            style={{ padding: 10 }}
+          >
+            <ThemedText>{t("notifications.title")}</ThemedText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(toHref("/crew-applications"))}
+            style={{ minHeight: 44, padding: 10 }}
+          >
+            <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
+          </Pressable>
           <View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {(["", ...CONVERSATION_CONTEXT_TYPES] as const).map((value) => (
@@ -75,42 +92,86 @@ export default function InboxScreen() {
           <FlatList
             data={inbox.items}
             keyExtractor={(item) => item.id}
-            onEndReached={inbox.loadMore}
+            onEndReached={inbox.loadMoreOnScroll}
             onRefresh={inbox.refresh}
             refreshing={inbox.loading}
-            renderItem={({ item }) => (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push(toHref(`/conversation/${encodeURIComponent(item.id)}`))}
-                style={{
-                  padding: 14,
-                  marginBottom: 8,
-                  borderRadius: 8,
-                  backgroundColor: theme.backgroundElement,
-                }}
-              >
-                <ThemedText type="smallBold">
-                  {item.contextType === "crew"
-                    ? item.crewName || item.contextId
-                    : displays?.get(item.counterpartyId)?.nickname?.trim() ||
-                      `${t("inbox.person")} ${item.counterpartyId}`}
-                </ThemedText>
-                <ThemedText>
-                  {t(`inbox.filter.${item.contextType}`)}
-                  {item.contextType === "crew"
-                    ? ` · ${t(item.crewChannel === "community" ? "inbox.community" : "inbox.team")}`
-                    : ""}
-                </ThemedText>
-                <ThemedText numberOfLines={2}>{inboxPreview(item, t)}</ThemedText>
-                {item.unreadCount > 0 && (
-                  <ThemedText>
-                    {t("inbox.unread")} {item.unreadCount}
-                  </ThemedText>
-                )}
-              </Pressable>
-            )}
+            renderItem={({ item }) => {
+              const display =
+                item.contextType === "crew" ? undefined : displays?.get(item.counterpartyId);
+              const name =
+                item.contextType === "crew"
+                  ? item.crewName?.trim() || t("inbox.crewFallback")
+                  : display?.nickname?.trim() || `${t("inbox.person")} ${item.counterpartyId}`;
+              const avatar =
+                item.contextType === "crew"
+                  ? item.crewLogo
+                    ? resolveAssetUrl(item.crewLogo, appEnv.assets.bannerBaseUrl)
+                    : undefined
+                  : display?.avatar;
+              return (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() =>
+                    router.push(toHref(`/conversation/${encodeURIComponent(item.id)}`))
+                  }
+                  style={{
+                    padding: 14,
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    backgroundColor: theme.backgroundElement,
+                    flexDirection: "row",
+                    gap: 10,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 8,
+                      overflow: "hidden",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: theme.backgroundSelected,
+                    }}
+                  >
+                    <ThemedText type="small">{Array.from(name)[0] || "?"}</ThemedText>
+                    {avatar && (
+                      <Image
+                        source={{ uri: avatar }}
+                        accessible={false}
+                        recyclingKey={item.id + avatar}
+                        style={{ position: "absolute", width: 36, height: 36 }}
+                      />
+                    )}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+                    <ThemedText type="smallBold">{name}</ThemedText>
+                    <ThemedText>
+                      {t(`inbox.filter.${item.contextType}`)}
+                      {item.contextType === "crew"
+                        ? ` · ${t(item.crewChannel === "community" ? "inbox.community" : "inbox.team")}`
+                        : ""}
+                    </ThemedText>
+                    <ThemedText numberOfLines={2}>{inboxPreview(item, t)}</ThemedText>
+                    <ThemedText type="small">
+                      {inboxTime(item.lastMessageAt, locale)}
+                      {item.contextType === "crew" && item.memberCount !== undefined
+                        ? ` · ${t("inbox.memberCount").replace("{count}", String(item.memberCount))}`
+                        : ""}
+                    </ThemedText>
+                    {item.unreadCount > 0 && (
+                      <ThemedText>
+                        {t("inbox.unread")} {item.unreadCount}
+                      </ThemedText>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            }}
             ListEmptyComponent={
-              !inbox.loading && !inbox.error ? <ThemedText>{t("inbox.empty")}</ThemedText> : null
+              !inbox.loading && !inbox.error ? (
+                <ThemedText>{t(inbox.hasMore ? "inbox.searchingMore" : "inbox.empty")}</ThemedText>
+              ) : null
             }
             ListFooterComponent={
               <View>
@@ -122,6 +183,15 @@ export default function InboxScreen() {
                       <ThemedText>{t("inbox.retry")}</ThemedText>
                     </Pressable>
                   </>
+                )}
+                {inbox.hasMore && !inbox.loading && !inbox.error && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={inbox.loadMore}
+                    style={{ padding: 12 }}
+                  >
+                    <ThemedText>{t("inbox.loadMore")}</ThemedText>
+                  </Pressable>
                 )}
               </View>
             }

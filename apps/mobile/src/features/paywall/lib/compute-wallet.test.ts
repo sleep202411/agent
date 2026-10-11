@@ -18,7 +18,7 @@ it.each([
   { accounts: [{ status: "active", availableBalance: "10" }, { status: "active" }] },
 ])("does not present an unreadable ledger as zero or a partial total: %j", async (data) => {
   get.mockResolvedValue(data);
-  await expect(fetchComputeWalletBalance()).resolves.toBeNull();
+  await expect(fetchComputeWalletBalance()).rejects.toThrow("invalid wallet ledger");
 });
 
 it("preserves an explicitly empty ledger and an actual zero balance", async () => {
@@ -42,7 +42,7 @@ it("sums integer strings exactly without including inactive accounts", async () 
 it("keeps API errors unavailable and forwards cancellation", async () => {
   const controller = new AbortController();
   get.mockRejectedValue(new Error("offline"));
-  await expect(fetchComputeWalletBalance(controller.signal)).resolves.toBeNull();
+  await expect(fetchComputeWalletBalance(controller.signal)).rejects.toThrow("offline");
   expect(get).toHaveBeenCalledWith(
     "/billing/wallet-ledger",
     expect.objectContaining({ signal: controller.signal, cache: "no-store" })

@@ -1,8 +1,11 @@
+import { useUserDisplays } from "./user-displays";
+import { router, useIsFocused } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { ApplicationAmendments } from "./application-amendments";
 import { TermsProposalScreen } from "./terms-proposal";
 import { ApplicationInterview } from "./application-interview";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -17,6 +20,8 @@ import {
   type ReviewStatus,
 } from "./application-review-api";
 type Props = {
+  active?: boolean;
+  initialApplicationId?: string;
   crewId: string;
   userId: string;
   generation: number;
@@ -24,10 +29,20 @@ type Props = {
   onWeb: () => void;
 };
 export function ApplicationReview(props: Props) {
-  const [selected, setSelected] = useState<string>(),
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
+    <ReviewSession
+      key={`${props.userId}:${props.generation}:${props.crewId}:${props.initialApplicationId ?? ""}`}
+      {...props}
+    />
+  ) : null;
+}
+function ReviewSession(props: Props) {
+  const [selected, setSelected] = useState<string | undefined>(props.initialApplicationId),
     [status, setStatus] = useState<ReviewStatus>("pending"),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
+  if (props.generation !== getAuthGeneration()) return null;
   if (selected)
     return (
       <Review
@@ -41,6 +56,7 @@ export function ApplicationReview(props: Props) {
         }}
       />
     );
+  if (props.active === false) return null;
   return (
     <ReviewList
       key={`${status}:${cursor}:${revision}`}
@@ -92,23 +108,29 @@ function ReviewList(
     );
     return () => c.abort();
   }, [props.crewId, props.generation, props.status, props.cursor]);
+  const displays = useUserDisplays(
+    `${props.userId}:${props.generation}`,
+    page?.items.map((row) => row.applicantId) ?? []
+  );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <ThemedText>{t("applicationReview.title")}</ThemedText>
-      {(["pending", "approved", "rejected"] as const).map((status) => (
-        <Action
-          key={status}
-          selected={status === props.status}
-          label={t(`crewTerms.${status}`)}
-          onPress={() => props.onStatus(status)}
-        />
-      ))}
+      <ThemedText type="smallBold">{t("applicationReview.title")}</ThemedText>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {(["pending", "approved", "rejected"] as const).map((status) => (
+          <Action
+            key={status}
+            selected={status === props.status}
+            label={t(`crewTerms.${status}`)}
+            onPress={() => props.onStatus(status)}
+          />
+        ))}
+      </View>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {page?.items.map((row) => (
         <Action
           key={row.id}
-          label={`${row.applicantId} · ${row.positionId} · ${row.createdAt.slice(0, 10)}`}
+          label={`${displays?.get(row.applicantId)?.nickname || row.applicantId} · ${row.positionId} · ${row.createdAt.slice(0, 10)}`}
           onPress={() => props.onSelect(row.id)}
         />
       ))}
@@ -152,6 +174,7 @@ function Review(props: Props & { applicationId: string }) {
   if (interviewApplicant)
     return (
       <ApplicationInterview
+        active={props.active}
         applicationId={props.applicationId}
         applicantId={interviewApplicant}
         reviewer
@@ -163,6 +186,7 @@ function Review(props: Props & { applicationId: string }) {
         }}
       />
     );
+  if (props.active === false) return null;
   return (
     <ReviewDetail
       key={revision}
@@ -205,19 +229,55 @@ function ReviewDetail(
     return () => c.abort();
   }, [props.crewId, props.applicationId, props.generation]);
   const latest = review?.terms.items.find((row) => row.version === review.terms.currentVersion);
+  const displays = useUserDisplays(
+    `${props.userId}:${props.generation}`,
+    review ? [review.app.applicantId] : []
+  );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <ThemedText>{t("applicationReview.title")}</ThemedText>
+      <ThemedText type="smallBold">{t("applicationReview.title")}</ThemedText>
       {!review && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {review && (
         <>
-          <ThemedText>
-            {review.app.applicantId} · {review.app.positionId}
+          <ThemedText type="smallBold">
+            {displays?.get(review.app.applicantId)?.nickname || review.app.applicantId}
           </ThemedText>
+          <ThemedText type="small" themeColor="textSecondary">
+            {review.app.positionId}
+          </ThemedText>
+          <Action
+            label={t("crewMembers.viewProfile")}
+            onPress={() =>
+              router.push(toHref(`/creator/${encodeURIComponent(review.app.applicantId)}`))
+            }
+          />
           <ThemedText>{t(`crewTerms.${result ?? review.app.status}`)}</ThemedText>
           {review.app.message && <ThemedText>{review.app.message}</ThemedText>}
-          {review.app.portfolioUrl && <ThemedText>{review.app.portfolioUrl}</ThemedText>}
+          {review.app.portfolioUrl && (
+            <Action
+              label={t("applicationReview.portfolio")}
+              disabled={op.busy}
+              onPress={() =>
+                void op.run(
+                  async () => {
+                    setError(undefined);
+                    let url: URL;
+                    try {
+                      url = new URL(review.app.portfolioUrl!);
+                    } catch {
+                      throw new Error(t("applicationReview.invalidPortfolio"));
+                    }
+                    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password)
+                      throw new Error(t("applicationReview.invalidPortfolio"));
+                    await Linking.openURL(url.href);
+                  },
+                  () => {},
+                  (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+                )
+              }
+            />
+          )}
           {review.app.expectedCompensation && (
             <ThemedText>
               {t("applicationReview.expected")} · {review.app.expectedCompensation.currency}{" "}
@@ -235,7 +295,7 @@ function ReviewDetail(
               {t("applicationReview.experience")} · {review.app.yearsExperience}
             </ThemedText>
           )}
-          <ThemedText>{t("crewTerms.title")}</ThemedText>
+          <ThemedText type="smallBold">{t("crewTerms.title")}</ThemedText>
           {latest ? (
             <>
               <ThemedText>
@@ -273,12 +333,26 @@ function ReviewDetail(
             onPress={() => props.onInterview(review.app.applicantId)}
           />
           <Action disabled={op.busy} label={t("termsProposal.open")} onPress={props.onProposal} />
-          {(result ?? review.app.status) === "approved" && (
-            <Action
-              disabled={op.busy}
-              label={t("crewAmendments.title")}
-              onPress={() => props.onAmendments(review.app.applicantId)}
-            />
+          {(result ?? review.app.status) === "approved" && review.app.taskId && (
+            <>
+              <Action
+                disabled={op.busy}
+                label={t("crewFinance.openTask")}
+                onPress={() => {
+                  if (props.generation !== getAuthGeneration()) return;
+                  router.push(
+                    toHref(
+                      `/crew-tasks/${encodeURIComponent(review.app.crewId)}?task=${encodeURIComponent(review.app.taskId!)}`
+                    )
+                  );
+                }}
+              />
+              <Action
+                disabled={op.busy}
+                label={t("crewAmendments.title")}
+                onPress={() => props.onAmendments(review.app.applicantId)}
+              />
+            </>
           )}
           <ThemedText>{t("applicationReview.requirements")}</ThemedText>
           {review.app.status === "pending" && !result && !attempted && (

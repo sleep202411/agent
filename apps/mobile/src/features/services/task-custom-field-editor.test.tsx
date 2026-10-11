@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { useTaskCustomFieldSession } from "./use-task-custom-field-session";
 import { TaskCustomFieldEditing } from "./task-custom-field-editor";
 import type { TaskDetail } from "./task-detail-api";
 import type { CustomField } from "./task-custom-fields-api";
@@ -113,18 +114,21 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-const render = (value = task) =>
-  act(async () =>
-    root.render(
-      <TaskCustomFieldEditing
-        task={value}
-        userId="1"
-        generation={1}
-        fields={[field]}
-        onRefresh={h.refresh}
-      />
-    )
+function TaskPage({ value }: { value: TaskDetail }) {
+  const session = useTaskCustomFieldSession(value.id, 1, h.refresh);
+  return (
+    <TaskCustomFieldEditing
+      key={value.version}
+      session={session}
+      task={value}
+      userId="1"
+      generation={1}
+      fields={[field]}
+      onRefresh={h.refresh}
+    />
   );
+}
+const render = (value = task) => act(async () => root.render(<TaskPage value={value} />));
 const button = (text: string) =>
   Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
 const open = async () => {
@@ -142,8 +146,8 @@ it("uses fresh field data and suppresses rapid duplicate saves", async () => {
   expect(host.querySelector("input")!.value).toBe("Before");
   await act(async () => type("After"));
   await act(async () => {
-    button("taskPlanning.save").click();
-    button("taskPlanning.save").click();
+    button("taskBrief.save").click();
+    button("taskBrief.save").click();
   });
   expect(h.update).toHaveBeenCalledExactlyOnceWith(task, field, "After");
   expect(button("myServices.cancel").disabled).toBe(true);
@@ -159,9 +163,9 @@ it("freezes an uncertain failure until task refresh", async () => {
   h.update.mockRejectedValue(new Error("Offline"));
   await open();
   await act(async () => type("After"));
-  await act(async () => button("taskPlanning.save").click());
+  await act(async () => button("taskBrief.save").click());
   expect(host.textContent).toContain("Offline");
-  expect(button("taskPlanning.save").disabled).toBe(true);
+  expect(button("taskBrief.save").disabled).toBe(true);
   await act(async () => button("myServices.cancel").click());
   expect(h.refresh).toHaveBeenCalledOnce();
 });
@@ -169,11 +173,11 @@ it("rejects required empty input and stale account clicks", async () => {
   h.fetch.mockResolvedValue([{ field: { ...field, required: true }, value: "Before" }]);
   await open();
   await act(async () => type(""));
-  expect(button("taskPlanning.save").disabled).toBe(true);
+  expect(button("taskBrief.save").disabled).toBe(true);
   expect(button("taskCustomFields.clear")).toBeUndefined();
   await act(async () => type("After"));
   h.generation = 2;
-  await act(async () => button("taskPlanning.save").click());
+  await act(async () => button("taskBrief.save").click());
   expect(h.update).not.toHaveBeenCalled();
 });
 it("selects active Crew members using the existing picker", async () => {
@@ -182,7 +186,7 @@ it("selects active Crew members using the existing picker", async () => {
   await act(async () => button("taskCustomFields.chooseMember").click());
   await act(async () => button("Pick Artist").click());
   expect(host.textContent).toContain("Artist");
-  await act(async () => button("taskPlanning.save").click());
+  await act(async () => button("taskBrief.save").click());
   expect(h.update).toHaveBeenCalledWith(task, expect.objectContaining({ type: "user" }), "42");
 });
 
@@ -193,7 +197,7 @@ it.each(["single_select", "multi_select", "checkbox"] as const)(
     h.fetch.mockResolvedValue([{ field: definition, value: null }]);
     await open();
     await act(async () => button(type === "checkbox" ? "taskCustomFields.no" : "Art").click());
-    await act(async () => button("taskPlanning.save").click());
+    await act(async () => button("taskBrief.save").click());
     expect(h.update).toHaveBeenCalledWith(
       task,
       definition,
@@ -210,7 +214,7 @@ it("suppresses a late save completion after account replacement", async () => {
   );
   await open();
   await act(async () => type("After"));
-  await act(async () => button("taskPlanning.save").click());
+  await act(async () => button("taskBrief.save").click());
   h.generation = 2;
   await act(async () => finish({}));
   expect(h.refresh).not.toHaveBeenCalled();
@@ -221,4 +225,49 @@ it("keeps stale or deleted field loads out of the editor", async () => {
   expect(host.textContent).toContain("no longer exists");
   expect(host.querySelector("input")).toBeNull();
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("retains a draft across version refresh and requires review before saving", async () => {
+  await open();
+  await act(async () => type("My draft"));
+  h.fetch.mockResolvedValue([{ field, value: "Another editor" }]);
+  await render({ ...task, version: 5 });
+  expect(host.querySelector("input")!.value).toBe("My draft");
+  expect(button("taskBrief.save").disabled).toBe(true);
+  expect(host.textContent).toContain("Another editor");
+  await act(async () => button("taskBrief.reviewLatest").click());
+  await act(async () => button("taskBrief.save").click());
+  expect(h.update).toHaveBeenCalledWith(expect.objectContaining({ version: 5 }), field, "My draft");
+});
+it("keeps a pending save locked across refresh, then preserves the failed draft for review", async () => {
+  let reject!: (error: Error) => void;
+  h.update.mockReturnValue(
+    new Promise((_, fail) => {
+      reject = fail;
+    })
+  );
+  await open();
+  await act(async () => type("My draft"));
+  await act(async () => button("taskBrief.save").click());
+  await render({ ...task, version: 5 });
+  expect(button("taskBrief.save").disabled).toBe(true);
+  expect(button("myServices.cancel").disabled).toBe(true);
+  expect(button("taskBrief.reviewLatest")).toBeUndefined();
+  await act(async () => reject(new Error("Conflict")));
+  expect(host.querySelector("input")!.value).toBe("My draft");
+  expect(host.textContent).toContain("Conflict");
+  await act(async () => button("taskBrief.reviewLatest").click());
+  expect(button("taskBrief.save").disabled).toBe(false);
+  expect(h.update).toHaveBeenCalledOnce();
+});
+it("does not reinterpret a retained draft when its field type changes", async () => {
+  await open();
+  await act(async () => type("My draft"));
+  h.fetch.mockResolvedValue([{ field: { ...field, type: "number" }, value: 5 }]);
+  await render({ ...task, version: 5 });
+  expect(host.querySelector("input")!.value).toBe("My draft");
+  expect(host.textContent).toContain("taskCustomFields.typeChanged");
+  expect(button("taskBrief.reviewLatest")).toBeUndefined();
+  expect(button("taskBrief.save").disabled).toBe(true);
+  expect(button("myServices.cancel").disabled).toBe(false);
 });

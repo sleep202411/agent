@@ -1,5 +1,6 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, TextInput } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -10,8 +11,13 @@ import { createEpisode, episodeCreateInput, fetchEpisodeCreateAccess } from "./e
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function EpisodeCreate(props: Props) {
   const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
-  return <Access key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
+  return (
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
+      <Access key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+    </View>
+  );
 }
 function Access(props: Props) {
   const t = useTranslations();
@@ -58,6 +64,7 @@ function Access(props: Props) {
   );
 }
 function Editor({ crewId, userId, generation, onClose }: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
@@ -127,7 +134,8 @@ function Editor({ crewId, userId, generation, onClose }: Props) {
           disabled={locked || !parsed.success}
           style={{ padding: 12 }}
           onPress={() => {
-            if (sent.current || generation !== getAuthGeneration() || !parsed.success) return;
+            if (!active || sent.current || generation !== getAuthGeneration() || !parsed.success)
+              return;
             void op.run(
               () => {
                 sent.current = true;

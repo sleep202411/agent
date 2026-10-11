@@ -3,11 +3,27 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { EarningCreate } from "./earning-create";
 
-const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), decide: vi.fn(), saved: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  records: new Map<string, string>(),
+  write: vi.fn(),
+  access: vi.fn(),
+  decide: vi.fn(),
+  saved: vi.fn(),
+}));
 vi.mock("./earning-create-api", async (original) => ({
   ...(await original<typeof import("./earning-create-api")>()),
   fetchEarningCreateAccess: h.access,
   createEarning: h.decide,
+}));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (namespace: string, user: string, crew: string) => ({
+    read: () => h.records.get(`${namespace}:${user}:${crew}`) ?? null,
+    write: (value: string) => {
+      h.write(value);
+      h.records.set(`${namespace}:${user}:${crew}`, value);
+    },
+  }),
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -59,9 +75,17 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === name)!;
-const render = () =>
+const render = (refreshKey = 0) =>
   act(async () =>
-    root.render(<EarningCreate crewId="crew" userId="manager" generation={1} onSaved={h.saved} />)
+    root.render(
+      <EarningCreate
+        refreshKey={refreshKey}
+        crewId="crew"
+        userId="manager"
+        generation={1}
+        onSaved={h.saved}
+      />
+    )
   );
 const click = (name: string) => act(async () => button(name).click());
 async function enter(label: string, value: string) {
@@ -73,6 +97,7 @@ async function enter(label: string, value: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  h.records.clear();
   h.generation = 1;
   h.access.mockResolvedValue(true);
   host = document.createElement("div");
@@ -194,5 +219,109 @@ it("allows editing before submitting without writing", async () => {
   await enter("earningCreate.amount", "2.50");
   await click("earningCreate.review");
   expect(host.textContent).toContain("USD 2.50");
+  expect(h.decide).not.toHaveBeenCalled();
+});
+
+it("retries a failed access lookup before allowing creation", async () => {
+  h.access.mockRejectedValueOnce(new Error("Offline"));
+  await render();
+  expect(button("earningCreate.add")).toBeUndefined();
+  await click("earningCreate.retry");
+  expect(h.access).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("Offline");
+  await click("earningCreate.add");
+  expect(button("earningCreate.review")).toBeDefined();
+});
+it("closes the old form and waits for the new Crew's permission", async () => {
+  await fill();
+  let resolve!: (allowed: boolean) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((r) => {
+        resolve = r;
+      })
+  );
+  await act(async () =>
+    root.render(
+      <EarningCreate crewId="other-crew" userId="manager" generation={1} onSaved={h.saved} />
+    )
+  );
+  expect(host.querySelector("input")).toBeNull();
+  expect(button("earningCreate.add")).toBeUndefined();
+  await act(async () => resolve(false));
+  expect(button("earningCreate.add")).toBeUndefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
+
+it("reopens an uncertain earning with identical frozen terms and retry key", async () => {
+  await fill();
+  await click("earningCreate.review");
+  h.decide.mockRejectedValueOnce(Error("Response lost")).mockResolvedValueOnce({});
+  await click("earningCreate.confirm");
+  const original = h.decide.mock.calls[0];
+  await click("crewTasks.back");
+  await act(async () => root.render(null));
+  await render();
+  await click("earningCreate.add");
+  expect(host.textContent).toContain("Artist");
+  expect(host.textContent).toContain("USD 1.01");
+  expect(button("earningCreate.edit")).toBeUndefined();
+  await click("earningCreate.retry");
+  expect(h.decide.mock.calls[1]).toEqual(original);
+  expect(h.records.get("earning-create:manager:crew")).toBe("null");
+});
+it("does not submit without durable storage and allows correcting unsent terms", async () => {
+  await fill();
+  await click("earningCreate.review");
+  h.write.mockImplementationOnce(() => {
+    throw Error("Storage full");
+  });
+  await click("earningCreate.confirm");
+  expect(h.decide).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Storage full");
+  await click("earningCreate.edit");
+  await enter("earningCreate.amount", "2.50");
+  await click("earningCreate.review");
+  await click("earningCreate.confirm");
+  expect(h.decide.mock.calls[0][2].amountMinor).toBe("250");
+});
+it("preserves recovery when clearing a verified receipt fails", async () => {
+  await fill();
+  await click("earningCreate.review");
+  h.write
+    .mockImplementationOnce(() => {})
+    .mockImplementationOnce(() => {
+      throw Error("Disk error");
+    });
+  h.decide.mockResolvedValue({});
+  await click("earningCreate.confirm");
+  expect(h.saved).not.toHaveBeenCalled();
+  await click("crewTasks.back");
+  await click("earningCreate.add");
+  await click("earningCreate.retry");
+  expect(h.decide.mock.calls[1]).toEqual(h.decide.mock.calls[0]);
+  expect(h.saved).toHaveBeenCalledTimes(1);
+});
+it("keeps corrupt saved recovery intact and refuses a fresh earning", async () => {
+  h.records.set("earning-create:manager:crew", "broken");
+  await render();
+  await click("earningCreate.add");
+  expect(button("earningCreate.review")).toBeUndefined();
+  expect(button("earningCreate.retry")).toBeDefined();
+  expect(h.records.get("earning-create:manager:crew")).toBe("broken");
+  expect(h.decide).not.toHaveBeenCalled();
+});
+
+it("retains the open draft when refreshed create access is denied", async () => {
+  await render();
+  await click("earningCreate.add");
+  await enter("earningCreate.amount", "12");
+  h.access.mockResolvedValue(false);
+  await render(1);
+  expect(button("earningCreate.add")).toBeUndefined();
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="earningCreate.amount"]')!.value
+  ).toBe("12");
+  expect(h.access).toHaveBeenCalledTimes(2);
   expect(h.decide).not.toHaveBeenCalled();
 });

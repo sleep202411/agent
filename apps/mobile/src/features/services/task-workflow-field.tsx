@@ -1,3 +1,4 @@
+import { taskWorkflowLabel } from "./task-workflow-label";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,7 +38,9 @@ export function TaskWorkflowField({
           if (current()) setOpen(true);
         }}
       >
-        <ThemedText>{selected?.name ?? t("taskCreate.defaultWorkflow")}</ThemedText>
+        <ThemedText>
+          {selected ? taskWorkflowLabel(selected, t) : t("taskCreate.defaultWorkflow")}
+        </ThemedText>
       </Pressable>
       <Modal visible={open && !locked} animationType="slide" onRequestClose={() => setOpen(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -110,7 +113,7 @@ function WorkflowOptions({
           style={{ padding: 12 }}
           onPress={() => onSelect(item)}
         >
-          <ThemedText>{item.name}</ThemedText>
+          <ThemedText>{taskWorkflowLabel(item, t)}</ThemedText>
         </Pressable>
       ))}
       {state.error && (

@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { StoryBatchPanel } from "@/features/agent/components/story-batch-panel";
+import { StoryCandidatesEntry } from "@/features/agent/components/story-candidates-panel";
+import { StoryGraphEntry } from "@/features/agent/components/story-graph-entry";
+import { StoryCanvasEntry } from "@/features/agent/components/story-canvas-entry";
+import { StoryReferenceEntry } from "@/features/agent/components/story-reference-panel";
+import { AssetCreateSheet } from "@/features/agent/components/story-asset-create-sheet";
+import { useAuth } from "@/auth";
+import { getAuthGeneration } from "@/auth/auth-store";
+import { useIsFocused } from "expo-router";
+import { useAssetMutations } from "@/features/agent/hooks/use-asset-mutations";
+import { StoryTimelineEntry } from "@/features/agent/components/story-timeline-editor";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,21 +43,41 @@ function replaceCount(template: string, count: number): string {
 }
 
 /**
- * Browse-only assets gallery — H5 `StoryAssetsGallery` without edit/generate.
+ * Native assets gallery with versioned detail editing.
  * Plot/plan state does not lock this surface.
  */
 export default function AgentAssetsScreen() {
+  const auth = useAuth();
+  if (auth.status !== "authenticated") return <ThemedView style={{ flex: 1 }} />;
+  return (
+    <AssetsScreen
+      key={auth.generation}
+      generation={auth.generation}
+      userId={String(auth.user?.userId ?? auth.user?.id ?? "")}
+    />
+  );
+}
+function AssetsScreen({ generation, userId }: { generation: number; userId: string }) {
   const t = useTranslations();
   const theme = useTheme();
   const {
     projectId,
     chapterId,
+    capabilities,
     loading: chapterLoading,
     error: chapterError,
+    refresh: refreshChapter,
   } = useStoryChapterContext();
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [createKind, setCreateKind] = useState<StoryAssetSpecKind>();
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const active = useIsFocused();
+  const scope = useMemo(
+    () => ({ projectId, chapterId, generation }),
+    [projectId, chapterId, generation]
+  );
   const [error, setError] = useState<string | undefined>();
   const [assets, setAssets] = useState<StoryAssetSpec[]>([]);
   const [detailAsset, setDetailAsset] = useState<StoryAssetSpec | null>(null);
@@ -56,47 +88,89 @@ export default function AgentAssetsScreen() {
     setPreviousResourceKey(resourceKey);
     setLoading(true);
     setError(undefined);
+    setDetailAsset(null);
+    setCreateKind(undefined);
   }
 
-  const loadAssets = useCallback(
-    (signal?: AbortSignal) => {
-      if (!chapterId) return;
-      return storyProductionApi
-        .listAssetSpecs(projectId, chapterId, signal)
-        .then((result) => {
-          if (signal?.aborted) return;
-          setAssets(result);
-          setError(undefined);
-        })
-        .catch((err: unknown) => {
-          if (signal?.aborted) return;
-          setAssets([]);
-          setError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (signal?.aborted) return;
-          setLoading(false);
-          setRefreshing(false);
-        });
-    },
-    [chapterId, projectId]
+  const refresh = () => {
+    setLoading(true);
+    if (chapterError) refreshChapter();
+    setRevision((n) => n + 1);
+  };
+  const mutation = useAssetMutations(
+    scope,
+    userId,
+    active && !chapterLoading && !chapterError && !!chapterId,
+    capabilities.includes("story.edit"),
+    () => {
+      setDetailAsset(null);
+      setCreateKind(undefined);
+      refresh();
+    }
   );
-
   useEffect(() => {
-    if (!chapterId || chapterLoading) return;
+    if (!chapterId || chapterLoading || !active || chapterError) return;
     const controller = new AbortController();
-    void loadAssets(controller.signal);
+    const current = () => !controller.signal.aborted && getAuthGeneration() === generation;
+    void storyProductionApi
+      .listAssetSpecs(projectId, chapterId, controller.signal)
+      .then((result) => {
+        if (!current()) return;
+        if (result.some((asset) => asset.projectId !== projectId || asset.chapterId !== chapterId))
+          throw Error("Asset chapter mismatch.");
+        setAssets(result.filter((asset) => asset.status !== "archived"));
+        setError(undefined);
+      })
+      .catch((e) => {
+        if (current()) {
+          setAssets([]);
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .finally(() => {
+        if (current()) setLoading(false);
+      });
     return () => controller.abort();
-  }, [chapterId, chapterLoading, loadAssets]);
+  }, [projectId, chapterId, chapterLoading, chapterError, generation, active, revision]);
 
   const filtered = useMemo(
     () => assets.filter((asset) => asset.kind === activeTab),
     [activeTab, assets]
   );
   const topPad = STORY_HEADER_CONTENT_GAP;
-  const busy = chapterLoading || loading;
+  const busy = chapterLoading || (!chapterError && loading);
   const displayError = chapterError ?? error;
   const showGallery = !busy && !displayError;
+
+  const recovery = (
+    <>
+      {mutation.error && <ThemedText accessibilityRole="alert">{mutation.error}</ThemedText>}
+      {mutation.pending && (
+        <View style={{ padding: 16, gap: 8 }}>
+          <ThemedText>{t("assetEdit.pending")}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            disabled={mutation.busy || !capabilities.includes("story.edit")}
+            onPress={() => mutation.submit(mutation.pending!)}
+          >
+            <ThemedText>{t("timeline.retry")}</ThemedText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={mutation.busy}
+            onPress={() =>
+              Alert.alert(t("timeline.clear"), t("timeline.clearHelp"), [
+                { text: t("common.cancel"), style: "cancel" },
+                { text: t("timeline.clear"), style: "destructive", onPress: mutation.clear },
+              ])
+            }
+          >
+            <ThemedText>{t("timeline.clear")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
+    </>
+  );
 
   return (
     <ThemedView style={styles.screen}>
@@ -104,14 +178,7 @@ export default function AgentAssetsScreen() {
         contentInsetAdjustmentBehavior="never"
         refreshControl={
           chapterId ? (
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                void loadAssets();
-              }}
-              tintColor={theme.brand}
-            />
+            <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={theme.brand} />
           ) : undefined
         }
         contentContainerStyle={[
@@ -123,6 +190,33 @@ export default function AgentAssetsScreen() {
           },
         ]}
       >
+        <StoryTimelineEntry />
+        <StoryReferenceEntry />
+        <StoryCandidatesEntry />
+        <StoryGraphEntry />
+        <StoryCanvasEntry />
+        {showGallery && capabilities.includes("story.read") && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setBatchOpen(true)}
+            style={{ padding: 10 }}
+          >
+            <ThemedText type="small">{t("storyBatch.title")}</ThemedText>
+          </Pressable>
+        )}
+        {batchOpen && active && showGallery && capabilities.includes("story.read") && (
+          <StoryBatchPanel
+            key={`${resourceKey}:${generation}`}
+            scope={scope}
+            userId={userId}
+            assets={assets}
+            canGenerate={capabilities.includes("story.generate")}
+            onClose={() => {
+              setBatchOpen(false);
+              refresh();
+            }}
+          />
+        )}
         <View style={styles.header}>
           <ThemedText style={styles.pageTitle}>{t("agent.assets.title")}</ThemedText>
           <ThemedText style={styles.pageHint}>
@@ -157,6 +251,18 @@ export default function AgentAssetsScreen() {
           </View>
         ) : null}
 
+        {showGallery && capabilities.includes("story.edit") && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={mutation.locked}
+            onPress={() => setCreateKind(activeTab)}
+            style={{ paddingVertical: 12, opacity: mutation.locked ? 0.5 : 1 }}
+          >
+            <ThemedText type="smallBold" style={{ color: theme.brand }}>
+              {t("assetEdit.create")}
+            </ThemedText>
+          </Pressable>
+        )}
         {busy ? (
           <View style={styles.centered}>
             <ActivityIndicator color={theme.brand} />
@@ -171,7 +277,7 @@ export default function AgentAssetsScreen() {
             title={t("agent.assets.loadError")}
             description={displayError}
             actionLabel={t("common.retry")}
-            onAction={() => void loadAssets()}
+            onAction={refresh}
           />
         ) : null}
 
@@ -191,10 +297,42 @@ export default function AgentAssetsScreen() {
         ) : null}
       </ScrollView>
 
+      {!detailAsset && !createKind && recovery}
+      {createKind && (
+        <AssetCreateSheet
+          key={`${resourceKey}:${createKind}`}
+          visible={active && !chapterLoading && !chapterError}
+          kind={createKind}
+          locked={mutation.locked}
+          submit={mutation.submit}
+          recovery={recovery}
+          onClose={() => setCreateKind(undefined)}
+        />
+      )}
       <StoryAssetSpecDetailSheet
-        asset={detailAsset}
+        key={`${resourceKey}:${detailAsset?.id}:${detailAsset?.version}`}
+        generation={{
+          scope,
+          userId,
+          canGenerate: capabilities.includes("story.generate"),
+          locked: mutation.recoveryLocked,
+          refresh: () => {
+            setDetailAsset(null);
+            refresh();
+          },
+        }}
+        recovery={recovery}
+        asset={active && !chapterLoading && !chapterError ? detailAsset : null}
+        editing={
+          capabilities.includes("story.edit")
+            ? { locked: mutation.locked, submit: mutation.submit }
+            : undefined
+        }
         visible={detailAsset != null}
-        onClose={() => setDetailAsset(null)}
+        onClose={() => {
+          setDetailAsset(null);
+          refresh();
+        }}
       />
     </ThemedView>
   );

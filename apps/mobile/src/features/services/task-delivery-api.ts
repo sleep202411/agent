@@ -5,6 +5,7 @@ export const deliveryTemplate = z.object({
   categoryId: z.string().uuid(),
   version: z.number().int().positive(),
   definition: z.object({
+    approvalPolicy: z.enum(["standard", "fd3_or_production_lead"]).optional(),
     name: z.string(),
     description: z.string(),
     prices: z.array(
