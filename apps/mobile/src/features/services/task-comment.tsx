@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { taskCommentOutbox } from "./task-comment-outbox";
+import { useIsFocused } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -16,9 +18,10 @@ import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { TaskMentionPicker } from "./task-mention-picker";
 import type { TaskMention } from "./task-mentions";
-import { inquiryKey } from "./inquiry-api";
+import { clientRequestKey } from "@/lib/client-request-key";
 import { fetchTaskCommentAccess, postTaskComment, type TaskCommentInput } from "./task-comment-api";
 type Props = {
+  suspended?: boolean;
   crewId: string;
   taskId: string;
   userId: string;
@@ -29,8 +32,8 @@ type Props = {
   onReplyAvailability?: (state: { allowed: boolean; locked: boolean; canManage?: boolean }) => void;
 };
 export function TaskComment(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  const focused = useIsFocused();
+  return focused && props.generation === getAuthGeneration() ? (
     <Composer
       key={`${props.crewId}:${props.taskId}:${props.userId}:${props.generation}`}
       {...props}
@@ -38,6 +41,7 @@ export function TaskComment(props: Props) {
   ) : null;
 }
 function Composer({
+  suspended = false,
   crewId,
   taskId,
   userId,
@@ -47,30 +51,47 @@ function Composer({
   onClearReply,
   onReplyAvailability,
 }: Props) {
+  const active = useScreenActive() && !suspended;
   const t = useTranslations(),
     theme = useTheme();
   const input = useRef<TextInput>(null);
   const op = useAuthFormOperation(taskId, true);
   const [revision, setRevision] = useState(0);
+  const accessScope = useMemo(() => ({ active, revision }), [active, revision]);
   const [access, setAccess] = useState<{
-    revision: number;
+    scope: typeof accessScope;
     allowed?: boolean;
     canManage?: boolean;
     error?: string;
   }>();
-  const [body, setBody] = useState(""),
+  const [outbox] = useState(() => taskCommentOutbox(crewId, taskId, userId, generation));
+  const [initial] = useState(() => {
+    try {
+      return { pending: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const [body, setBody] = useState(initial.pending?.comment.body ?? ""),
     [error, setError] = useState<string>(),
-    [attempted, setAttempted] = useState(false);
-  const intent = useRef<TaskCommentInput | undefined>(undefined);
-  const [mentions, setMentions] = useState<TaskMention[]>([]);
+    [attempted, setAttempted] = useState(!!initial.pending);
+  const intent = useRef<TaskCommentInput | undefined>(initial.pending?.comment);
+  const [pendingAttachmentCount, setPendingAttachmentCount] = useState(
+    initial.pending?.comment.attachments?.length ?? 0
+  );
+  const [mentions, setMentions] = useState<TaskMention[]>(initial.pending?.comment.mentions ?? []);
   const [mentionPicker, setMentionPicker] = useState(false);
   const [assets, setAssets] = useState<CrewAsset[]>([]);
-  const [uploads, setUploads] = useState<CrewUpload[]>([]);
+  const [uploads, setUploads] = useState<CrewUpload[]>(
+    initial.pending?.comment.attachments?.filter(
+      (file): file is CrewUpload => file.source === "upload"
+    ) ?? []
+  );
   const [uploading, setUploading] = useState(false);
   const uploadRequest = useRef<AbortController | undefined>(undefined);
   const pendingUploads = useRef<{ items: CrewUpload[]; attempted: boolean }>({
     items: [],
-    attempted: false,
+    attempted: !!initial.pending,
   });
   useEffect(
     () => () => {
@@ -82,35 +103,49 @@ function Composer({
     [crewId, generation]
   );
   const [picking, setPicking] = useState(false);
-  const [submittedReply, setSubmittedReply] = useState<Props["reply"]>();
+  const [submittedReply, setSubmittedReply] = useState<Props["reply"]>(initial.pending?.reply);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void fetchTaskCommentAccess(crewId, userId, controller.signal).then(
       (access) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAccess({ revision, ...access });
+          setAccess({ scope: accessScope, ...access });
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAccess({ revision, error: cause instanceof Error ? cause.message : String(cause) });
+          setAccess({
+            scope: accessScope,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
       }
     );
     return () => controller.abort();
-  }, [crewId, userId, generation, revision]);
-  const current = access?.revision === revision ? access : undefined;
+  }, [crewId, userId, generation, active, accessScope]);
+  const current = access?.scope === accessScope ? access : undefined;
   const allowed = current?.allowed === true;
   const canManage = allowed && current?.canManage === true;
   useEffect(() => {
     onReplyAvailability?.({
       allowed,
       canManage,
-      locked: attempted || op.busy || picking || uploading,
+      locked: !!initial.error || attempted || op.busy || picking || uploading,
     });
-  }, [allowed, canManage, attempted, op.busy, picking, uploading, onReplyAvailability]);
+  }, [
+    allowed,
+    canManage,
+    attempted,
+    op.busy,
+    picking,
+    uploading,
+    onReplyAvailability,
+    initial.error,
+  ]);
   useEffect(() => {
     if (allowed && reply && !attempted) input.current?.focus();
   }, [allowed, reply, attempted]);
   const visibleReply = attempted ? submittedReply : reply;
+  if (!active) return null;
   if (!current) return <ActivityIndicator accessibilityLabel={t("courses.loading")} />;
   if (current.error)
     return (
@@ -126,6 +161,7 @@ function Composer({
       </View>
     );
   if (!current.allowed) return null;
+  if (initial.error) return <ThemedText accessibilityRole="alert">{initial.error}</ThemedText>;
   return (
     <View style={{ gap: 8 }}>
       {visibleReply && (
@@ -158,6 +194,11 @@ function Composer({
         maxLength={10000}
         style={{ color: theme.text, minHeight: 80, padding: 12 }}
       />
+      {attempted && pendingAttachmentCount > 0 && (
+        <ThemedText>
+          {t("thread.pendingAttachments")}: {pendingAttachmentCount}
+        </ThemedText>
+      )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {attempted && error && (
         <ThemedText type="small">{t("taskActivity.retryCommentHint")}</ThemedText>
@@ -165,15 +206,18 @@ function Composer({
       <Pressable
         accessibilityRole="button"
         disabled={
-          op.busy || picking || uploading || (!body.trim() && !assets.length && !uploads.length)
+          op.busy ||
+          picking ||
+          uploading ||
+          (!attempted && !body.trim() && !assets.length && !uploads.length)
         }
         style={{ padding: 12 }}
         onPress={() => {
           void op.run(
             async () => {
-              intent.current ??= {
+              const pending = intent.current ?? {
                 body: body.trim(),
-                clientKey: inquiryKey(),
+                clientKey: clientRequestKey(),
                 ...(reply ? { replyToId: reply.id } : {}),
                 ...(mentions.length
                   ? { mentions: mentions.filter((item) => body.includes(`@${item.label}`)) }
@@ -190,14 +234,25 @@ function Composer({
                     }
                   : {}),
               };
+              const target = attempted ? submittedReply : reply;
+              outbox.save({
+                clientKey: pending.clientKey,
+                comment: pending,
+                ...(target ? { reply: target } : {}),
+              });
+              intent.current = pending;
               if (!attempted) setSubmittedReply(reply);
+              setPendingAttachmentCount(pending.attachments?.length ?? 0);
               pendingUploads.current.attempted = true;
               setAttempted(true);
-              return postTaskComment(taskId, userId, intent.current);
+              const result = await postTaskComment(taskId, userId, pending);
+              outbox.clear(pending.clientKey);
+              return result;
             },
             () => {
               intent.current = undefined;
               setAttempted(false);
+              setPendingAttachmentCount(0);
               setBody("");
               setMentions([]);
               setMentionPicker(false);

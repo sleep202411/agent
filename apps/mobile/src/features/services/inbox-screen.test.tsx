@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import InboxScreen from "@/app/inbox";
+vi.mock("expo-image", () => ({ Image: () => null }));
+vi.mock("@/config", () => ({
+  appEnv: { assets: { bannerBaseUrl: "https://banner.test" } },
+  resolveAssetUrl: (p: string, b: string) => b + "/" + p,
+}));
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/features/services/use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
@@ -104,7 +109,7 @@ it("wires native filters and order navigation", async () => {
   await render();
   await act(async () =>
     Array.from(host.querySelectorAll("button"))
-      .find((b) => b.textContent?.startsWith("Film"))!
+      .find((b) => b.textContent?.includes("Film"))!
       .click()
   );
   expect(h.push).toHaveBeenCalledWith("/conversation/a%2Fb");
@@ -115,4 +120,14 @@ it("defers guest authentication to intent and never passes an authenticated scop
   expect(h.useInbox).toHaveBeenLastCalledWith(undefined, "");
   await click("inbox.signIn");
   expect(h.gate).toHaveBeenCalledOnce();
+});
+
+it("does not claim the inbox is empty while a cursor remains", async () => {
+  const loadMore = vi.fn();
+  h.useInbox.mockReturnValue({ items: [], loading: false, hasMore: true, loadMore });
+  await render();
+  expect(host.textContent).toContain("inbox.searchingMore");
+  expect(host.textContent).not.toContain("inbox.empty");
+  await click("inbox.loadMore");
+  expect(loadMore).toHaveBeenCalledOnce();
 });

@@ -1,10 +1,12 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import { createTask } from "./task-create-api";
 vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
 
 const id = "11111111-1111-4111-8111-111111111111";
 const detail = {
+  taskKind: "script" as const,
+  rewardUsdMinor: 0,
   id,
   crewId: "crew",
   number: 1,
@@ -27,6 +29,8 @@ const detail = {
   assignees: [],
 };
 const input = {
+  taskKind: "script" as const,
+  rewardUsdMinor: 0,
   parentId: null,
   blockedByTaskIds: [],
   title: " Shot ",
@@ -36,8 +40,12 @@ const input = {
   dueAt: detail.dueAt,
   assignees: [],
 };
-beforeEach(() => vi.resetAllMocks());
-it("creates a task using the existing server defaults without granting rewards", async () => {
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-30T00:00:00Z"));
+});
+afterEach(() => vi.restoreAllMocks());
+it("creates a task with explicit type and zero reward", async () => {
   vi.mocked(api.post).mockResolvedValue(detail);
   await createTask("crew", input);
   expect(api.post).toHaveBeenCalledExactlyOnceWith("/crews/crew/tasks", {
@@ -162,9 +170,9 @@ it("validates task kind and requires matching creation acknowledgement", async (
     );
   }
   vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: null });
-  await expect(createTask("crew", { ...input, taskKind: null })).resolves.toMatchObject({
-    taskKind: null,
-  });
+  await expect(createTask("crew", { ...input, taskKind: null })).rejects.toThrow(
+    "required task fields"
+  );
 });
 
 it("preserves explicit zero and nullable planning limits and rejects mismatched acknowledgements", async () => {
@@ -238,4 +246,103 @@ it("rejects duplicate or oversized custom values before creation", async () => {
   ])
     await expect(createTask("crew", { ...input, customFieldValues })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
+});
+
+it("preserves exact task compensation and rejects missing acknowledgement", async () => {
+  const terms = { rewardUsdMinor: 12345, profitShareBps: 125 };
+  vi.mocked(api.post).mockResolvedValue({ ...detail, ...terms });
+  await expect(createTask("crew", { ...input, ...terms })).resolves.toMatchObject(terms);
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject(terms);
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, ...terms })).rejects.toThrow("acknowledgement");
+});
+it("does not send invalid compensation", async () => {
+  for (const terms of [{ rewardUsdMinor: -1 }, { rewardUsdMinor: 1.1 }, { profitShareBps: 10001 }])
+    await expect(createTask("crew", { ...input, ...terms })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("rejects an expired deadline before issuing a non-idempotent creation", async () => {
+  await expect(createTask("crew", { ...input, dueAt: "2026-09-29T23:59:59Z" })).rejects.toThrow(
+    "future deadline"
+  );
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it.each([
+  { description: " " },
+  { taskKind: null },
+  { dueAt: null },
+  { rewardUsdMinor: null },
+  { rewardUsdMinor: undefined },
+])("rejects missing production fields before sending: %j", async (change) => {
+  await expect(createTask("crew", { ...input, ...change })).rejects.toThrow("required task fields");
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it("saves a trimmed position and rejects a missing or incorrect receipt", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, positionRole: "Storyboard artist" });
+  await expect(
+    createTask("crew", { ...input, positionRole: " Storyboard artist " })
+  ).resolves.toMatchObject({ positionRole: "Storyboard artist" });
+  expect(vi.mocked(api.post).mock.calls[0]![1]).toMatchObject({
+    data: { positionRole: "Storyboard artist" },
+  });
+  for (const positionRole of [undefined, null, "Writer"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, positionRole });
+    await expect(
+      createTask("crew", { ...input, positionRole: "Storyboard artist" })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects invalid positions before creating a task", async () => {
+  for (const positionRole of [" ", "x".repeat(81)])
+    await expect(createTask("crew", { ...input, positionRole })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it("creates selected skills and rejects a receipt that drops them", async () => {
+  const requiredSkills = ["Editing", "Lighting"];
+  vi.mocked(api.post).mockResolvedValue({
+    ...detail,
+    requiredSkills: [...requiredSkills].reverse(),
+  });
+  await createTask("crew", { ...input, requiredSkills });
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/crews/crew/tasks",
+    expect.objectContaining({ data: expect.objectContaining({ requiredSkills }) })
+  );
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, requiredSkills })).rejects.toThrow("acknowledgement");
+});
+
+it("creates a linked contract and rejects a missing acknowledgement", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, contractAssetNodeId: id });
+  await createTask("crew", { ...input, contractAssetNodeId: id });
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/crews/crew/tasks",
+    expect.objectContaining({ data: expect.objectContaining({ contractAssetNodeId: id }) })
+  );
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, contractAssetNodeId: id })).rejects.toThrow(
+    "acknowledgement"
+  );
+});
+
+it("sends selected payment terms and rejects a receipt with different terms", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, paymentTerms: "half_upfront" });
+  await createTask("crew", { ...input, paymentTerms: "half_upfront" });
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject({
+    paymentTerms: "half_upfront",
+  });
+  vi.mocked(api.post).mockResolvedValue({ ...detail, paymentTerms: "monthly" });
+  await expect(createTask("crew", { ...input, paymentTerms: "half_upfront" })).rejects.toThrow();
+});
+
+it("verifies the saved CN reward currency as well as its amount", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "CNY" });
+  expect((await createTask("crew", { ...input, rewardCurrency: "CNY" })).rewardCurrency).toBe(
+    "CNY"
+  );
+  vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "USD" });
+  await expect(createTask("crew", { ...input, rewardCurrency: "CNY" })).rejects.toThrow();
 });

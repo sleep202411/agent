@@ -1,17 +1,26 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { z } from "zod";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { CrewTaskBrowser } from "@/features/services/crew-task-browser";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 export default function CrewTasksScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, task, section } = useLocalSearchParams<{
+    id: string;
+    task?: string;
+    section?: string;
+  }>();
+  const initialSection =
+    !task && (section === "members" || section === "setup" || section === "studio")
+      ? section
+      : undefined;
+  const initialTaskId = z.string().uuid().safeParse(task).success ? task : undefined;
   const auth = useAuth(),
     gate = useAuthGate(),
-    active = useScreenActive();
+    focused = useIsFocused();
   const theme = useTheme(),
     t = useTranslations(),
     router = useRouter();
@@ -36,9 +45,11 @@ export default function CrewTasksScreen() {
         >
           <ThemedText>{t("inbox.signIn")}</ThemedText>
         </Pressable>
-      ) : active && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
+      ) : focused && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
         <CrewTaskBrowser
-          key={`${id}:${auth.generation}`}
+          key={`${id}:${initialTaskId ?? ""}:${initialSection ?? ""}:${auth.generation}`}
+          initialTaskId={initialTaskId}
+          initialSection={initialSection}
           crewId={id}
           userId={userId}
           generation={auth.generation}

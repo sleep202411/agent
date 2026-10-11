@@ -6,10 +6,10 @@ export function taskDeadlineState(
   dueAt: string | null,
   status: string,
   now: number,
-  warningHours = 48
+  warningHours = 72
 ) {
   const due = dueAt ? Date.parse(dueAt) : NaN;
-  if (!Number.isFinite(due) || status === "approved" || status === "cancelled") return null;
+  if (!Number.isFinite(due) || ["approved", "cancelled", "submitted"].includes(status)) return null;
   const remaining = due - now;
   return {
     state:
@@ -26,20 +26,36 @@ export function TaskDeadline(props: Props) {
   const active = useScreenActive();
   return active ? <Clock {...props} /> : null;
 }
-function Clock({ dueAt, status, warningHours = 48 }: Props) {
+export function TaskStateLabel(props: Props & { label: string }) {
+  const active = useScreenActive();
+  return active ? <Clock {...props} /> : <ThemedText type="small">{props.label}</ThemedText>;
+}
+function Clock({ dueAt, status, warningHours = 72, label }: Props & { label?: string }) {
   const t = useTranslations();
   const [now, setNow] = useState(() => Date.now());
   const live =
     !!dueAt &&
     Number.isFinite(Date.parse(dueAt)) &&
     status !== "approved" &&
-    status !== "cancelled";
+    status !== "cancelled" &&
+    status !== "submitted";
   useEffect(() => {
     if (!live) return;
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
   }, [live]);
   const value = taskDeadlineState(dueAt, status, now, warningHours);
+  if (label !== undefined) {
+    const text =
+      value?.state === "overdue"
+        ? t("crewDeadline.overdueLabel")
+        : status === "revision_requested"
+          ? label
+          : value?.state === "soon"
+            ? t("crewDeadline.urgentLabel")
+            : label;
+    return <ThemedText type="small">{text}</ThemedText>;
+  }
   return value ? (
     <ThemedText>{` · ${t(`crewDeadline.${value.state}`).replace("{count}", String(value.hours))}`}</ThemedText>
   ) : null;

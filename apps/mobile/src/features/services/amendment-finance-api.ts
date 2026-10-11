@@ -1,3 +1,4 @@
+import { TASK_PAYMENT_TERMS } from "@repo/shared/crew";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -16,6 +17,7 @@ export const amendment = z.object({
     scope: z.string(),
     feeAmount: z.string().regex(/^(0|[1-9]\d*)$/),
     currency: z.enum(["USD", "CNY"]),
+    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     feePeriod: z.literal("project"),
     revenueShareBp: z.number().int().min(0).max(10000),
     shareBasis: z.string().nullable(),

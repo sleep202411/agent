@@ -1,4 +1,6 @@
 const { getDefaultConfig } = require("expo/metro-config");
+const { getConfig } = require("expo/config");
+const { createHash } = require("node:crypto");
 const { withNativeWind } = require("nativewind/metro");
 const fs = require("fs");
 const path = require("path");
@@ -7,6 +9,17 @@ const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
+
+// Expo inlines its public manifest into transformed Web modules. Source files
+// do not change when switching region/variant/API environment, so a shared
+// transform cache can otherwise keep another build's endpoints and identity.
+const publicConfig = getConfig(projectRoot, {
+  isPublicConfig: true,
+  skipSDKVersionRequirement: true,
+}).exp;
+config.cacheVersion = `${config.cacheVersion ?? ""}:${createHash("sha256")
+  .update(JSON.stringify(publicConfig))
+  .digest("hex")}`;
 
 // Monorepo: watch + resolve from the workspace root so hoisted deps
 // (e.g. expo-asset hoisted to the root node_modules) are served by Metro.

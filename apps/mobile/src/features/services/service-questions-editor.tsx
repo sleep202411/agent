@@ -1,3 +1,6 @@
+import { useServiceEditorExit } from "./service-editor-exit-state";
+import { serviceFieldStyle } from "./service-field-style";
+import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, Switch, TextInput, View } from "react-native";
 import { useAuth } from "@/auth";
@@ -37,17 +40,34 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(service.id, useScreenActive());
+  const clearDraft = useClearServiceEditorDraft("questions");
+  const [draftVersion, setDraftVersion] = useServiceEditorState(
+    "questions:version",
+    service.version
+  );
+  const saved = () => {
+    clearDraft();
+    refresh();
+  };
+  const discardAndReload = () => {
+    clearDraft();
+    refresh();
+  };
   const initial = (): Row[] =>
     service.requirementQuestions.map((q) => ({
       ...q,
       helpText: q.helpText ?? "",
       key: `persisted:${q.id}`,
     }));
-  const [rows, setRows] = useState(initial),
-    [open, setOpen] = useState(false),
+  const [rows, setRows] = useServiceEditorState("questions:rows", initial),
+    [open, setOpen] = useServiceEditorState("questions:open", false),
     [error, setError] = useState<string>();
+  const [baseline, setBaseline] = useServiceEditorState("questions:baseline", () =>
+    JSON.stringify(initial())
+  );
+  useServiceEditorExit("questions", open && JSON.stringify(rows) !== baseline, op.busy);
   const parsed = questionsSchema.safeParse({
-    expectedVersion: service.version,
+    expectedVersion: draftVersion,
     requirementQuestions: rows,
   });
   const update = (key: string, change: Partial<EditableQuestion>) =>
@@ -61,7 +81,12 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
       return copy;
     });
   const button = (label: string, onPress: () => void, disabled = false) => (
-    <Pressable accessibilityRole="button" disabled={op.busy || disabled} onPress={onPress}>
+    <Pressable
+      accessibilityRole="button"
+      disabled={op.busy || disabled}
+      onPress={onPress}
+      style={{ minHeight: 44, justifyContent: "center", opacity: op.busy || disabled ? 0.45 : 1 }}
+    >
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
@@ -85,7 +110,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
             maxLength={240}
             multiline
             editable={!op.busy}
-            style={{ color: theme.text }}
+            style={serviceFieldStyle(theme, true)}
           />
           <ThemedText>{t("serviceQuestions.help")}</ThemedText>
           <TextInput
@@ -95,7 +120,7 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
             maxLength={240}
             multiline
             editable={!op.busy}
-            style={{ color: theme.text }}
+            style={serviceFieldStyle(theme, true)}
           />
           <ThemedText>{t("serviceQuestions.required")}</ThemedText>
           <Switch
@@ -129,18 +154,20 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
           if (!parsed.success) return;
           void op.run(
             () => saveServiceQuestions(service.id, parsed.data),
-            refresh,
+            saved,
             (cause) => setError(cause instanceof Error ? cause.message : String(cause))
           );
         },
         !parsed.success
       )}
       {button(t("myServices.cancel"), () => {
+        setBaseline(JSON.stringify(initial()));
+        setDraftVersion(service.version);
         setRows(initial());
         setError(undefined);
         setOpen(false);
       })}
-      {error && button(t("serviceEdit.reload"), refresh)}
+      {error && button(t("serviceEdit.reload"), discardAndReload)}
     </View>
   );
 }

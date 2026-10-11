@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import {
   analyzePdf,
+  pdfPreviewSchema,
   applyPdfTasks,
   fetchPdfPreview,
   validatePdfFile,
@@ -64,20 +65,22 @@ it("scopes recovery by user, crew and region and preserves the frozen selection"
   h.region = "global";
   expect(await loadPdfRecovery("crew", "user")).toBeNull();
 });
-it.each([{ size: 0 }, { size: 20 * 1024 * 1024 + 1 }, { name: "x.exe" }, { name: "../script.pdf" }])(
-  "rejects invalid document %j",
-  (change) => {
-    expect(() =>
-      validatePdfFile({
-        name: "script.pdf",
-        size: 10,
-        lastModified: 0,
-        uri: "file:///script.pdf",
-        ...change,
-      })
-    ).toThrow();
-  }
-);
+it.each([
+  { size: 0 },
+  { size: 20 * 1024 * 1024 + 1 },
+  { name: "x.exe" },
+  { name: "../script.pdf" },
+])("rejects invalid document %j", (change) => {
+  expect(() =>
+    validatePdfFile({
+      name: "script.pdf",
+      size: 10,
+      lastModified: 0,
+      uri: "file:///script.pdf",
+      ...change,
+    })
+  ).toThrow();
+});
 it("sends the picked bytes via the authenticated regional multipart API", async () => {
   const file = new File(["%PDF-document"], "script.pdf", { type: "application/pdf" });
   vi.mocked(api.postFormData).mockResolvedValue(preview);
@@ -109,4 +112,16 @@ it("rejects duplicate selections, mismatched receipts and stale sessions", async
   await expect(fetchPdfPreview("crew", id, 1, signal())).rejects.toThrow("match");
   h.generation = 2;
   await expect(applyPdfTasks("crew", id, [0], 1, signal())).rejects.toThrow("session");
+});
+
+it("preserves safe provider failure details for document recovery", () => {
+  const result = pdfPreviewSchema.parse({
+    id: "00000000-0000-4000-8000-000000000001",
+    createdAt: "2026-10-10T00:00:00Z",
+    status: "failed",
+    tasks: [],
+    taskIds: [],
+    failure: { code: "provider_limit", message: "Provider quota exhausted. Contact support." },
+  });
+  expect(result.failure?.message).toContain("quota exhausted");
 });

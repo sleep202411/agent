@@ -242,6 +242,11 @@ function Details({ row }: { row: Amendment }) {
       <ThemedText>
         {t("crewAmendments.share")} · {(row.proposal.revenueShareBp / 100).toFixed(2)}%
       </ThemedText>
+      {row.proposal.paymentTerms && (
+        <ThemedText>
+          {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.proposal.paymentTerms}`)}
+        </ThemedText>
+      )}
       {row.proposal.shareBasis && <ThemedText>{row.proposal.shareBasis}</ThemedText>}
       <ThemedText>{row.proposal.reason}</ThemedText>
       <ThemedText>

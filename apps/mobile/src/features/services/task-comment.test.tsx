@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskComment } from "./task-comment";
 const h = vi.hoisted(() => ({
+  read: vi.fn(),
+  save: vi.fn(),
+  clear: vi.fn(),
   permission: vi.fn(),
   picker: vi.fn(),
   upload: vi.fn(),
@@ -11,6 +14,11 @@ const h = vi.hoisted(() => ({
   sent: vi.fn(),
   generation: 1,
   active: true,
+  focused: true,
+  suspended: false,
+}));
+vi.mock("./task-comment-outbox", () => ({
+  taskCommentOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./task-mention-picker", () => ({
   TaskMentionPicker: ({ onSelect }: { onSelect: (v: unknown) => void }) => (
@@ -41,8 +49,9 @@ vi.mock("./task-comment-api", () => ({
   fetchTaskCommentAccess: h.permission,
   postTaskComment: h.post,
 }));
-vi.mock("./inquiry-api", () => ({ inquiryKey: () => "stable" }));
+vi.mock("@/lib/client-request-key", () => ({ clientRequestKey: () => "stable" }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
@@ -81,7 +90,14 @@ let host: HTMLDivElement, root: Root;
 const render = () =>
   act(async () =>
     root.render(
-      <TaskComment crewId="crew" taskId="task" userId="1" generation={1} onSent={h.sent} />
+      <TaskComment
+        suspended={h.suspended}
+        crewId="crew"
+        taskId="task"
+        userId="1"
+        generation={1}
+        onSent={h.sent}
+      />
     )
   );
 const click = () => host.querySelector("button")!.click();
@@ -92,7 +108,10 @@ const type = (text: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  h.read.mockReturnValue(null);
   h.active = true;
+  h.focused = true;
+  h.suspended = false;
   h.generation = 1;
   h.permission.mockResolvedValue({ allowed: true, canManage: false });
   h.discard.mockResolvedValue(undefined);
@@ -249,7 +268,7 @@ it("sends existing Crew files without text and retries the exact attachment set"
   expect(h.post.mock.calls).toEqual([request, request]);
   expect(host.textContent).not.toContain("Scene.mp4");
 });
-it("removes selected files without deleting assets and aborts the picker on background", async () => {
+it("removes selected files without deleting assets and hides the asset picker on background", async () => {
   const byText = (text: string) =>
     Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
   await render();
@@ -322,6 +341,7 @@ it("aborts in-flight upload on leaving, cleans a late same-account upload and ne
   const signal = h.upload.mock.calls[0][1];
   expect(host.querySelector("button")!.disabled).toBe(true);
   h.active = false;
+  h.focused = false;
   await render();
   expect(signal.aborted).toBe(true);
   await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Late" }));
@@ -370,4 +390,115 @@ it("removes structured mentions when their label is removed from the draft", asy
   h.post.mockResolvedValue({});
   await act(async () => button("taskActivity.sendComment").click());
   expect(h.post).toHaveBeenCalledWith("task", "1", { body: "No mention", clientKey: "stable" });
+});
+
+it("restores an attachment-only reply and retries its exact request without uploading again", async () => {
+  const comment = {
+    body: "",
+    clientKey: "old-key",
+    replyToId: "reply-id",
+    attachments: [{ source: "upload", mediaAssetId: "media", name: "Recovered.mp4" }],
+  };
+  h.read.mockReturnValue({
+    clientKey: "old-key",
+    comment,
+    reply: { id: "reply-id", body: "Original parent" },
+  });
+  h.post.mockResolvedValue({});
+  await render();
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(host.textContent).toContain("Original parent");
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "inbox.retry")!.click()
+  );
+  expect(h.post).toHaveBeenCalledWith("task", "1", comment);
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.discard).not.toHaveBeenCalled();
+  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.post.mock.invocationCallOrder[0]);
+  expect(h.clear).toHaveBeenCalledWith("old-key");
+});
+it("does not send or lock composition when storage fails before submission", async () => {
+  h.save.mockImplementation(() => {
+    throw new Error("Disk full");
+  });
+  await render();
+  await act(async () => type("New comment"));
+  await act(async () => click());
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  expect(host.textContent).toContain("Disk full");
+});
+
+it("retains text and finishes native file selection across a background handoff", async () => {
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => type("Keep this comment"));
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "thread.uploadFile")!.click()
+  );
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(false);
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Selected.mp4" }));
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Keep this comment");
+  expect(host.textContent).toContain("Selected.mp4");
+  expect(h.permission).toHaveBeenCalledTimes(2);
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.post).not.toHaveBeenCalled();
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("withholds preserved composition while fresh permission is pending or revoked", async () => {
+  await render();
+  await act(async () => type("Private draft"));
+  h.active = false;
+  await render();
+  let finish!: (value: unknown) => void;
+  h.permission.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => finish({ allowed: false }));
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it("preserves a draft through timeline failure and refreshes permission before recovery", async () => {
+  await render();
+  await act(async () => type("Unsent timeline reply"));
+  h.suspended = true;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.post).not.toHaveBeenCalled();
+  let resolveAccess!: (value: unknown) => void;
+  h.permission.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveAccess = resolve;
+      })
+  );
+  h.suspended = false;
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => resolveAccess({ allowed: true, canManage: false }));
+  expect(host.querySelector("input")!.value).toBe("Unsent timeline reply");
+  expect(h.permission).toHaveBeenCalledTimes(2);
+  expect(h.post).not.toHaveBeenCalled();
+  await act(async () => click());
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(h.post.mock.calls[0]![2].body).toBe("Unsent timeline reply");
 });

@@ -42,6 +42,8 @@ export function TaskPicker({
       <ThemedText>{title ?? t("thread.tagTask")}</ThemedText>
       <TextInput
         accessibilityLabel={t("thread.searchTasks")}
+        placeholder={t("thread.searchTasks")}
+        placeholderTextColor={theme.textSecondary}
         value={draft}
         onChangeText={setDraft}
         maxLength={180}

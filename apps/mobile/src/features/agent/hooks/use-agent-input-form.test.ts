@@ -14,8 +14,16 @@ const questions = ["a", "b", "c"].map((id) => ({
 let root: Root | undefined;
 let form: ReturnType<typeof useAgentInputForm>;
 const done = vi.fn();
+let saved: string | null = null;
+const record = {
+  read: vi.fn(() => saved),
+  write: vi.fn((value: string) => {
+    saved = value;
+  }),
+};
+const storage = { record, requestKey: "request-a" };
 function Probe({ busy, items }: { busy: boolean; items: typeof questions }) {
-  const current = useAgentInputForm(items, busy, done);
+  const current = useAgentInputForm(items, busy, done, storage);
   useLayoutEffect(() => {
     form = current;
   });
@@ -29,6 +37,8 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
   done.mockReset();
+  saved = null;
+  vi.clearAllMocks();
 });
 it("cannot skip questions or underflow with rapid Next/Back events", async () => {
   await render();
@@ -79,6 +89,7 @@ it("rejects retained callbacks after request replacement and while busy", async 
   await render();
   await act(async () => form.choose("yes"));
   const old = form;
+  saved = null;
   await render("replacement");
   await act(async () => {
     old.choose("no");
@@ -104,4 +115,39 @@ it("keeps empty question lists inert", async () => {
   });
   expect(form.question).toBeUndefined();
   expect(done).not.toHaveBeenCalled();
+});
+
+it("restores an unfinished step on remount without submitting", async () => {
+  await render();
+  await act(async () => form.choose("yes"));
+  await act(async () => form.submit());
+  await act(async () => form.choose("no"));
+  await render("remount");
+  expect(form.step).toBe(1);
+  expect(form.selected).toBe("no");
+  expect(done).not.toHaveBeenCalled();
+  await act(async () => form.back());
+  expect(form.selected).toBe("yes");
+});
+it("retains current answers and reports a failed local write", async () => {
+  await render();
+  record.write.mockImplementationOnce(() => {
+    throw new Error("Storage full");
+  });
+  await act(async () => form.choose("yes"));
+  expect(form.selected).toBe("yes");
+  expect(form.error).toBe("Storage full");
+  await act(async () => form.submit());
+  expect(form.step).toBe(1);
+  expect(form.error).toBeUndefined();
+});
+it("reports unreadable storage without submitting or preventing new choices", async () => {
+  record.read.mockImplementationOnce(() => {
+    throw new Error("Storage unavailable");
+  });
+  await render();
+  expect(form.error).toBe("Storage unavailable");
+  expect(done).not.toHaveBeenCalled();
+  await act(async () => form.choose("no"));
+  expect(form.selected).toBe("no");
 });
