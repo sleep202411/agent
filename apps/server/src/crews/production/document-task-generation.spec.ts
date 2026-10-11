@@ -66,10 +66,12 @@ it('uses supported JSON Object mode through the real provider and AI SDK', async
   const body = JSON.parse(requestBody(fetch.mock.calls[0][1])) as {
     messages: unknown;
     enable_thinking: boolean;
+    max_tokens: number;
   };
   expect(JSON.stringify(body.messages)).toContain('JSON');
   expect(JSON.stringify(body.messages)).toContain('finalEditing');
   expect(body.enable_thinking).toBe(false);
+  expect(body.max_tokens).toBe(8192);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 it.each([
@@ -86,10 +88,54 @@ it.each([
 ])(
   'rejects invalid or ungrounded JSON even when the provider accepts the request',
   async (output) => {
+    const fetch = transport(output);
     const model = createAlibaba({
       apiKey: 'fixture',
-      fetch: transport(output),
+      fetch,
     })('qwen-plus');
     await expect(generateDocumentTasks(source, model)).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(2);
   },
 );
+it('repairs an unsupported quote once while preserving strict source validation', async () => {
+  const invalid = {
+    tasks: [
+      {
+        ...proposal.tasks[0],
+        evidence: 'The librarian arrives at the castle.',
+      },
+    ],
+  };
+  const fetch = transport();
+  fetch.mockImplementationOnce(transport(invalid));
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).resolves.toEqual(proposal);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  const retry = JSON.parse(requestBody(fetch.mock.calls[1][1])) as {
+    messages: unknown;
+  };
+  expect(JSON.stringify(retry.messages)).toContain('previousProposal');
+  expect(JSON.stringify(retry.messages)).toContain(source);
+});
+it('does not retry rejected provider requests as evidence repairs', async () => {
+  const fetch = jest
+    .fn<
+      ReturnType<typeof globalThis.fetch>,
+      Parameters<typeof globalThis.fetch>
+    >()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Model unavailable',
+            type: 'invalid_request_error',
+            code: 'model_not_found',
+          },
+        }),
+        { status: 404, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).rejects.toThrow();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

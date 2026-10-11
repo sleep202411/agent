@@ -9,7 +9,7 @@ const messages = {
     'Document analysis is unavailable because its AI provider is not configured.',
   access: 'Your permission to manage this project changed during analysis.',
   timeout:
-    'The AI provider did not finish document analysis within two minutes. Try again.',
+    'The AI provider did not finish document analysis within four minutes. Try a shorter script or analyze one episode at a time.',
   provider_auth:
     'The AI provider rejected the configured credentials or model access. Contact support.',
   provider_limit:
