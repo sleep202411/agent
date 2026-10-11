@@ -11,6 +11,12 @@ export async function generateDocumentTasks(
   // share this deadline rather than extending a job beyond its worker lease.
   const signal = AbortSignal.timeout(240_000);
   let prompt = JSON.stringify({ document: source });
+  let repair:
+    | {
+        original: z.infer<typeof PdfTasksSchema>;
+        indices: number[];
+      }
+    | undefined;
   for (let attempt = 0; attempt < 2; attempt++) {
     let previousProposal: unknown;
     try {
@@ -30,7 +36,22 @@ export async function generateDocumentTasks(
         prompt,
       });
       previousProposal = object;
-      return groundedPdfTasks(object, source);
+      const validated = groundedPdfTasks(object, source);
+      if (!repair) return validated;
+      if (validated.tasks.length !== repair.indices.length)
+        throw new Error('Document repair returned an unexpected task count.');
+      const tasks = [...repair.original.tasks];
+      repair.indices.forEach((index, position) => {
+        const replacement = validated.tasks[position];
+        const original = tasks[index];
+        if (
+          replacement.title !== original.title ||
+          replacement.category !== original.category
+        )
+          throw new Error('Document repair changed task identity.');
+        tasks[index] = replacement;
+      });
+      return groundedPdfTasks({ tasks }, source);
     } catch (error) {
       const invalidJson = NoObjectGeneratedError.isInstance(error);
       // Provider failures must not be treated as malformed proposals. A parse
@@ -41,12 +62,39 @@ export async function generateDocumentTasks(
       if (invalidJson && error.finishReason === 'content-filter') throw error;
       // Repair only invalid proposals, never provider/auth failures. Both attempts
       // share the same deadline; unsupported evidence is never silently accepted.
+      // Do not regenerate a whole screenplay breakdown when only a few quotes
+      // are invalid. Keep validated tasks and spend the remaining deadline on
+      // the rejected tasks only. Schema/duplicate failures still need a full repair.
+      const parsed = PdfTasksSchema.safeParse(previousProposal);
+      if (parsed.success) {
+        const indices = parsed.data.tasks.flatMap((task, index) => {
+          try {
+            groundedPdfTasks({ tasks: [task] }, source);
+            return [];
+          } catch {
+            return [index];
+          }
+        });
+        if (indices.length) repair = { original: parsed.data, indices };
+      }
       prompt = JSON.stringify({
         document: source,
-        ...(previousProposal === undefined ? {} : { previousProposal }),
-        correction: invalidJson
-          ? 'The previous response was empty or invalid JSON. Generate the complete proposal again as one valid JSON object with a tasks array. Keep titles, descriptions and verbatim evidence concise so the JSON fits within the output budget. Do not return markdown, commentary or an unfinished JSON object.'
-          : 'The previous proposal failed schema, duplicate-task or verbatim-source validation. Return the complete corrected proposal. Copy each evidence excerpt exactly from one contiguous passage in the document, preserve valid tasks, remove unsupported tasks and merge duplicates. Do not invent replacement evidence.',
+        ...(previousProposal === undefined
+          ? {}
+          : {
+              previousProposal: repair
+                ? {
+                    tasks: repair.indices.map(
+                      (index) => repair.original.tasks[index],
+                    ),
+                  }
+                : previousProposal,
+            }),
+        correction: repair
+          ? `Repair only these ${repair.indices.length} rejected tasks. Return exactly that many tasks in the same order, preserving each title and category. Copy evidence exactly from one contiguous passage of the document. Do not return other tasks; already validated tasks are retained separately. Never invent replacement evidence.`
+          : invalidJson
+            ? 'The previous response was empty or invalid JSON. Generate the complete proposal again as one valid JSON object with a tasks array. Keep titles, descriptions and verbatim evidence concise so the JSON fits within the output budget. Do not return markdown, commentary or an unfinished JSON object.'
+            : 'The previous proposal failed schema, duplicate-task or verbatim-source validation. Return the complete corrected proposal. Copy each evidence excerpt exactly from one contiguous passage in the document, preserve valid tasks, remove unsupported tasks and merge duplicates. Do not invent replacement evidence.',
       });
     }
   }
