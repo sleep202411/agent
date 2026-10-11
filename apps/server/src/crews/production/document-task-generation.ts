@@ -8,7 +8,7 @@ export async function generateDocumentTasks(
 ) {
   const { object } = await generateObject({
     model,
-    // Qwen3-Max supports json_object, not json_schema. Keep the response
+    // Use Qwen JSON Object mode rather than model-specific JSON Schema support. Keep the response
     // schema in the prompt and enforce it locally before returning tasks.
     output: 'no-schema',
     providerOptions: { alibaba: { enableThinking: false } },

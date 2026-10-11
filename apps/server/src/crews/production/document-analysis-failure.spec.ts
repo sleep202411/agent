@@ -1,5 +1,6 @@
 import {
   classifyDocumentAnalysisFailure,
+  documentAnalysisProviderDiagnostic,
   readDocumentAnalysisFailure,
 } from './document-analysis-failure';
 
@@ -35,4 +36,25 @@ it('accepts only known persisted failure codes and reconstructs safe text', () =
       failure: { code: 'timeout', message: 'secret' },
     })?.message,
   ).not.toContain('secret');
+});
+
+it('retains only safe HTTP status and known provider codes from SDK errors', () => {
+  expect(
+    documentAnalysisProviderDiagnostic(
+      Object.assign(new Error('private script'), {
+        statusCode: 400,
+        data: {
+          error: { code: 'InvalidParameter', message: 'private script' },
+        },
+        requestBodyValues: { authorization: 'secret' },
+      }),
+    ),
+  ).toEqual({ httpStatus: 400, providerCode: 'InvalidParameter' });
+  expect(
+    documentAnalysisProviderDiagnostic({
+      statusCode: 400,
+      data: { error: { code: 'secret document text' } },
+    }),
+  ).toEqual({ httpStatus: 400 });
+  expect(documentAnalysisProviderDiagnostic(null)).toEqual({});
 });

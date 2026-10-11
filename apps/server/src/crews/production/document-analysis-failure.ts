@@ -62,3 +62,38 @@ export function classifyDocumentAnalysisFailure(error: unknown) {
     return documentAnalysisFailure('duplicates');
   return documentAnalysisFailure('internal');
 }
+
+// Log only bounded, allowlisted provider metadata. API exceptions also carry
+// request bodies and headers, so never serialize the exception itself.
+export function documentAnalysisProviderDiagnostic(error: unknown) {
+  const parsed = z
+    .object({
+      statusCode: z.number().int().min(100).max(599).optional(),
+      data: z
+        .object({ error: z.object({ code: z.string().nullish() }) })
+        .optional(),
+    })
+    .safeParse(error);
+  if (!parsed.success) return {};
+  const knownCodes = new Set([
+    'InvalidParameter',
+    'InvalidParameterValue',
+    'DataInspectionFailed',
+    'Arrearage',
+    'AccessDenied',
+    'InvalidApiKey',
+    'ModelNotFound',
+    'Throttling',
+    'QuotaExceeded',
+    'InternalError',
+    'invalid_request_error',
+    'invalid_api_key',
+    'model_not_found',
+    'insufficient_quota',
+  ]);
+  const code = parsed.data.data?.error.code;
+  return {
+    ...(parsed.data.statusCode ? { httpStatus: parsed.data.statusCode } : {}),
+    ...(code && knownCodes.has(code) ? { providerCode: code } : {}),
+  };
+}

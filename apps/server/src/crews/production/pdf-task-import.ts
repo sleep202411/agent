@@ -1,5 +1,6 @@
 import {
   classifyDocumentAnalysisFailure,
+  documentAnalysisProviderDiagnostic,
   documentAnalysisFailure,
   readDocumentAnalysisFailure,
 } from './document-analysis-failure';
@@ -152,7 +153,7 @@ export class CrewPdfTaskImportService
         'Upload a PDF, DOC or DOCX document no larger than 20 MB.',
       );
     const sourceHash = createHash('sha256').update(file.buffer).digest('hex');
-    const apiKey = process.env.ALIBABA_API_KEY;
+    const apiKey = process.env.ALIBABA_API_KEY?.trim();
     if (!apiKey)
       throw new ServiceUnavailableException(
         'PDF task analysis requires ALIBABA_API_KEY.',
@@ -243,18 +244,22 @@ export class CrewPdfTaskImportService
     try {
       await this.authorization.require(crewId, userId, 'tasks.manage');
       stage = 'configuration';
-      const apiKey = process.env.ALIBABA_API_KEY;
+      const apiKey = process.env.ALIBABA_API_KEY?.trim();
       if (!apiKey) throw new Error('Provider is not configured');
       const provider = createAlibaba({
         apiKey,
-        ...(process.env.ALIBABA_BASE_URL
-          ? { baseURL: process.env.ALIBABA_BASE_URL }
+        ...(process.env.ALIBABA_BASE_URL?.trim()
+          ? { baseURL: process.env.ALIBABA_BASE_URL.trim() }
           : {}),
       });
       stage = 'generation';
       const proposals = await generateDocumentTasks(
         source,
-        provider('qwen3-max'),
+        // The configured regional provider no longer exposes qwen3-max.
+        // Keep the selected model explicit; never retry against another model.
+        provider(
+          process.env.CREW_DOCUMENT_ANALYSIS_MODEL?.trim() || 'qwen-plus',
+        ),
       );
       stage = 'access';
       await this.authorization.require(crewId, userId, 'tasks.manage');
@@ -277,7 +282,7 @@ export class CrewPdfTaskImportService
         data: { status: 'failed', sourceText: null, proposals: { failure } },
       });
       this.logger.warn(
-        `Document analysis ${id} failed at ${stage}: ${failure.code}`,
+        `Document analysis ${id} failed at ${stage}: ${failure.code} ${JSON.stringify(documentAnalysisProviderDiagnostic(error))}`,
       );
     }
   }

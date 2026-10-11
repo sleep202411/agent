@@ -25,13 +25,13 @@ function transport(output: unknown = proposal) {
         response_format?: { type: string };
         messages: unknown;
       };
-      // Contract fixture: qwen3-max supports JSON Object, not JSON Schema mode.
+      // Require portable JSON Object mode across regional Qwen endpoints.
       if (body.response_format?.type !== 'json_object')
         return Promise.resolve(
           new Response(
             JSON.stringify({
               error: {
-                message: 'Unsupported response_format for qwen3-max',
+                message: 'Unsupported response_format for qwen-plus',
                 type: 'invalid_request_error',
                 code: 'InvalidParameter',
               },
@@ -44,7 +44,7 @@ function transport(output: unknown = proposal) {
           JSON.stringify({
             id: 'fixture',
             created: 1,
-            model: 'qwen3-max',
+            model: 'qwen-plus',
             choices: [
               {
                 index: 0,
@@ -61,7 +61,7 @@ function transport(output: unknown = proposal) {
 }
 it('uses supported JSON Object mode through the real provider and AI SDK', async () => {
   const fetch = transport();
-  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen3-max');
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
   await expect(generateDocumentTasks(source, model)).resolves.toEqual(proposal);
   const body = JSON.parse(requestBody(fetch.mock.calls[0][1])) as {
     messages: unknown;
@@ -89,7 +89,7 @@ it.each([
     const model = createAlibaba({
       apiKey: 'fixture',
       fetch: transport(output),
-    })('qwen3-max');
+    })('qwen-plus');
     await expect(generateDocumentTasks(source, model)).rejects.toThrow();
   },
 );

@@ -12,6 +12,7 @@ jest.mock('pdf-parse/lib/pdf-parse.js', () => ({
 import { CrewPdfTaskImportService } from './pdf-task-import';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { generateObject } from 'ai';
+import { createAlibaba } from '@ai-sdk/alibaba';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 const proposals = {
   tasks: [
@@ -374,3 +375,33 @@ it('persists a safe provider failure and returns it after polling', async () => 
     else process.env.ALIBABA_API_KEY = old;
   }
 });
+
+it.each([undefined, '  ', ' qwen-plus-2025-12-01 '])(
+  'uses the supported document model or an explicit override (%s)',
+  async (configured) => {
+    const oldKey = process.env.ALIBABA_API_KEY;
+    const oldModel = process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+    process.env.ALIBABA_API_KEY = 'fixture';
+    if (configured === undefined)
+      delete process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+    else process.env.CREW_DOCUMENT_ANALYSIS_MODEL = configured;
+    try {
+      const { service, row } = fixture();
+      row.status = 'analyzing';
+      jest
+        .mocked(generateObject)
+        .mockResolvedValue({ object: proposals } as never);
+      await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
+      const provider = jest.mocked(createAlibaba).mock.results.at(-1)!
+        .value as jest.Mock;
+      expect(provider).toHaveBeenCalledWith(configured?.trim() || 'qwen-plus');
+      expect(row.status).toBe('ready');
+    } finally {
+      if (oldKey === undefined) delete process.env.ALIBABA_API_KEY;
+      else process.env.ALIBABA_API_KEY = oldKey;
+      if (oldModel === undefined)
+        delete process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+      else process.env.CREW_DOCUMENT_ANALYSIS_MODEL = oldModel;
+    }
+  },
+);
