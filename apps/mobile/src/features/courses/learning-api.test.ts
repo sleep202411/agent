@@ -87,3 +87,10 @@ it("forwards cursor and rejects unsafe private attachment URLs", async () => {
   );
   await expect(learningApi.attachment(id, id, signal)).rejects.toThrow();
 });
+
+it("retains the server's co-instructor access decision", async () => {
+  vi.mocked(api.get).mockResolvedValue({ offering: null, enrollment: null, instructor: true });
+  expect(await learningApi.course("21", new AbortController().signal)).toMatchObject({
+    instructor: true,
+  });
+});

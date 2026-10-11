@@ -52,6 +52,7 @@ function Session(props: Props) {
     [notice, setNotice] = useState(false);
   const controller = useRef<AbortController | null>(null),
     lock = useRef(false);
+  const loadedCursors = useRef(new Set<string>());
   const valid = () =>
     !!controller.current &&
     !controller.current.signal.aborted &&
@@ -86,6 +87,7 @@ function Session(props: Props) {
     }
   };
   const load = async (signal: AbortSignal) => {
+    loadedCursors.current.clear();
     setPage(undefined);
     setReview(undefined);
     setRevoking(undefined);
@@ -417,6 +419,36 @@ function Session(props: Props) {
           )}
         </View>
       ))}
+      {page?.nextCursor && (
+        <Action
+          label={t("crewLinks.loadMore")}
+          disabled={busy}
+          onPress={() =>
+            void run(async (signal) => {
+              const data = await fetchCrewLinks(
+                props.crewId,
+                props.userId,
+                props.generation,
+                signal,
+                props.task?.id,
+                page.nextCursor!
+              );
+              if (!valid() || signal.aborted) return;
+              if (data.nextCursor && loadedCursors.current.has(data.nextCursor))
+                throw Error("Invitation pagination repeated a page. Refresh the list.");
+              loadedCursors.current.add(page.nextCursor!);
+              setPage((old) => ({
+                ...data,
+                links: [
+                  ...new Map(
+                    [...(old?.links ?? []), ...data.links].map((link) => [link.id, link])
+                  ).values(),
+                ],
+              }));
+            })
+          }
+        />
+      )}
       {busy && <ActivityIndicator />}
       <Action label={t("common.back")} disabled={busy} onPress={props.onClose} />
     </ScrollView>

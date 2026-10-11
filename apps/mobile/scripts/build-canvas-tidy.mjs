@@ -1,6 +1,6 @@
 // Offline ELK worker and geometry bridge; no remote script or layout service.
 import { build } from "esbuild";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, realpathSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -26,7 +26,9 @@ const result = await build({
       setup(builder) {
         // The browser artifact uses our offline worker; omit the Node fallback.
         builder.onResolve({ filter: /^elkjs\/lib\/elk\.bundled\.js$/ }, () => ({
-          path: join(root, "node_modules/elkjs/lib/elk-api.js"),
+          // Match esbuild's canonical dependency paths in symlinked worktrees.
+          // Otherwise ELK is bundled twice under real and symlink paths.
+          path: realpathSync(join(root, "node_modules/elkjs/lib/elk-api.js")),
         }));
       },
     },

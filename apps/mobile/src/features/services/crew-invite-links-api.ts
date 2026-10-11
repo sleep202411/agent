@@ -96,20 +96,34 @@ export async function fetchCrewLinks(
   userId: string,
   generation: number,
   signal: AbortSignal,
-  taskId?: string
+  taskId?: string,
+  cursor?: string
 ) {
   const access = await teamInvitationAccess(crewId, userId, generation, signal);
-  const links = z
-    .array(rowSchema)
-    .max(50)
-    .parse(
-      await api.get(`/crews/${crewId}/invite-links`, { service: "aurora", signal, retry: false })
-    );
+  const params = new URLSearchParams({ paginated: "true", limit: "50" });
+  if (taskId) params.set("taskId", z.string().uuid().parse(taskId));
+  else params.set("scope", "general");
+  if (cursor) params.set("cursor", z.string().uuid().parse(cursor));
+  const raw = await api.get(`/crews/${crewId}/invite-links?${params}`, {
+    service: "aurora",
+    signal,
+    retry: false,
+  });
+  const page = z
+    .object({
+      items: z.array(rowSchema).max(50),
+      nextCursor: z.string().uuid().nullable(),
+    })
+    .parse(Array.isArray(raw) ? { items: raw, nextCursor: null } : raw);
+  if (page.nextCursor && (page.nextCursor === cursor || page.nextCursor !== page.items.at(-1)?.id))
+    throw new Error("Invitation pagination could not be verified. Refresh the list.");
+  const links = page.items;
   current(generation, signal);
   if (
     links.some(
       (v) =>
         v.crewId !== crewId ||
+        (!Array.isArray(raw) && (taskId ? v.taskId !== taskId : !!v.taskId)) ||
         v.state === "revoked" ||
         (v.kind === "community" && v.policyKeys.length)
     ) ||
@@ -119,6 +133,7 @@ export async function fetchCrewLinks(
   return {
     links: links.filter((link) => (taskId ? link.taskId === taskId : !link.taskId)),
     access,
+    nextCursor: page.nextCursor,
   };
 }
 export async function createCrewLink(

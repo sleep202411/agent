@@ -1,3 +1,4 @@
+import { StoryBatchPanel } from "@/features/agent/components/story-batch-panel";
 import { StoryCandidatesEntry } from "@/features/agent/components/story-candidates-panel";
 import { StoryGraphEntry } from "@/features/agent/components/story-graph-entry";
 import { StoryCanvasEntry } from "@/features/agent/components/story-canvas-entry";
@@ -67,6 +68,7 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
     error: chapterError,
     refresh: refreshChapter,
   } = useStoryChapterContext();
+  const [batchOpen, setBatchOpen] = useState(false);
   const [createKind, setCreateKind] = useState<StoryAssetSpecKind>();
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
   const [loading, setLoading] = useState(true);
@@ -193,6 +195,28 @@ function AssetsScreen({ generation, userId }: { generation: number; userId: stri
         <StoryCandidatesEntry />
         <StoryGraphEntry />
         <StoryCanvasEntry />
+        {showGallery && capabilities.includes("story.read") && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setBatchOpen(true)}
+            style={{ padding: 10 }}
+          >
+            <ThemedText type="small">{t("storyBatch.title")}</ThemedText>
+          </Pressable>
+        )}
+        {batchOpen && active && showGallery && capabilities.includes("story.read") && (
+          <StoryBatchPanel
+            key={`${resourceKey}:${generation}`}
+            scope={scope}
+            userId={userId}
+            assets={assets}
+            canGenerate={capabilities.includes("story.generate")}
+            onClose={() => {
+              setBatchOpen(false);
+              refresh();
+            }}
+          />
+        )}
         <View style={styles.header}>
           <ThemedText style={styles.pageTitle}>{t("agent.assets.title")}</ThemedText>
           <ThemedText style={styles.pageHint}>

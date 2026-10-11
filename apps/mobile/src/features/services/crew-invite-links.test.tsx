@@ -242,3 +242,25 @@ it("locks task invitation controls to one-use member access without policy grant
     message: `https://fizzdragon.com/crew-invite/${"a".repeat(32)}`,
   });
 });
+
+it("loads older links while keeping the first page and preventing concurrent page requests", async () => {
+  const older = { ...row, id: "22222222-2222-4222-8222-222222222222" };
+  let finish: (value: unknown) => void = () => {};
+  h.get.mockImplementation(async (path: string) => {
+    if (path.endsWith("/me")) return { userId: "actor", permissions: h.permissions };
+    if (path.includes("cursor="))
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return { items: [row], nextCursor: row.id };
+  });
+  await render();
+  await click("crewLinks.loadMore");
+  expect(button("crewLinks.loadMore")?.disabled).toBe(true);
+  expect(host.textContent).toContain(row.id);
+  await act(async () => finish({ items: [older], nextCursor: null }));
+  expect(host.textContent).toContain(row.id);
+  expect(host.textContent).toContain(older.id);
+  expect(button("crewLinks.loadMore")).toBeUndefined();
+  expect(h.get.mock.calls.filter(([path]) => String(path).includes("cursor="))).toHaveLength(1);
+});
