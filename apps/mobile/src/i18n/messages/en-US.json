@@ -5946,6 +5946,8 @@
   "mobileProduction.pdfAnalyze": "Analyze document",
   "mobileProduction.pdfCheck": "Check analysis status",
   "mobileProduction.pdfNewAnalysis": "New analysis",
+  "mobileProduction.pdfQueued": "Queued · {seconds}s elapsed. Status updates automatically.",
+  "mobileProduction.pdfAnalyzing": "Analyzing · {seconds}s elapsed. Processing may take a few minutes.",
   "mobileProduction.pdfPending": "Analysis is running. Check its status shortly; resending the same request does not run AI again.",
   "mobileProduction.pdfAnalysisId": "Analysis ID: {id}",
   "crewLinks.loadMore": "Load more",
