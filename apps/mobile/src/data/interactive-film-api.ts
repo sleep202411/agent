@@ -78,12 +78,13 @@ export async function listPublishedInteractiveFilms(options?: {
 
 /** Metadata for one published game (manifest URL + version pointer). */
 export async function getPublishedInteractiveFilm(
-  gameId: string
+  gameId: string,
+  signal?: AbortSignal
 ): Promise<ExperienceGameDetailResponse> {
   try {
     const data = await api.get<unknown>(
       `${INTERACTIVE_FILM_API_PATH}/games/${encodeURIComponent(gameId)}`,
-      { service: "studio" }
+      { service: "studio", ...(signal ? { signal } : {}) }
     );
     const cleaned =
       data && typeof data === "object" && !Array.isArray(data)
@@ -114,12 +115,19 @@ export async function getPublishedInteractiveFilm(
  */
 export async function loadPublishedInteractiveFilm(
   gameId: string,
-  options: { chapterId?: string } = {}
+  options: { chapterId?: string; signal?: AbortSignal } = {}
 ): Promise<PublishedInteractiveFilm> {
-  const game = await getPublishedInteractiveFilm(gameId);
-  const document = await downloadReleaseDocument(game.manifestUrl);
+  options.signal?.throwIfAborted();
+  const game = await getPublishedInteractiveFilm(gameId, options.signal);
+  options.signal?.throwIfAborted();
+  const document = await downloadReleaseDocument(game.manifestUrl, options.signal);
 
   if (!isExperienceGameManifest(document)) {
+    if (options.chapterId)
+      throw new InteractiveFilmLoadError(
+        "CHAPTER_NOT_FOUND",
+        `This release has no chapter ${options.chapterId}.`
+      );
     return {
       game,
       manifest: verifyRuntimeManifest(document, {
@@ -154,7 +162,7 @@ export async function loadPublishedInteractiveFilm(
       `This release has no chapter ${options.chapterId ?? ""}`.trim()
     );
   }
-  const chapterDocument = await downloadReleaseDocument(chapter.manifestUrl);
+  const chapterDocument = await downloadReleaseDocument(chapter.manifestUrl, options.signal);
   return {
     game,
     manifest: verifyRuntimeManifest(chapterDocument, {
@@ -166,10 +174,11 @@ export async function loadPublishedInteractiveFilm(
   };
 }
 
-async function downloadReleaseDocument(url: string): Promise<unknown> {
+async function downloadReleaseDocument(url: string, signal?: AbortSignal): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, signal ? { signal } : undefined);
+    signal?.throwIfAborted();
   } catch (error) {
     throw new InteractiveFilmLoadError(
       "MANIFEST_REQUEST_FAILED",
@@ -184,7 +193,9 @@ async function downloadReleaseDocument(url: string): Promise<unknown> {
     );
   }
   try {
-    return await response.json();
+    const document = await response.json();
+    signal?.throwIfAborted();
+    return document;
   } catch {
     throw new InteractiveFilmLoadError(
       "MANIFEST_INVALID",

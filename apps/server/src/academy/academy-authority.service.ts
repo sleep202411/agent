@@ -19,6 +19,43 @@ const Certificate = z.object({
   imagePath: z.string().nullable().optional(),
 });
 
+const Course = z.object({
+  id: z.union([z.string(), z.number()]),
+  published: z
+    .union([z.boolean(), z.literal(0), z.literal(1)])
+    .transform((value) => value === true || value === 1),
+  certificateId: z
+    .union([z.coerce.number().int().safe(), z.null()])
+    .nullish()
+    .transform((value) =>
+      typeof value === 'number' && value > 0 ? value : null,
+    ),
+  priceCredits: z.union([z.string(), z.number()]).nullish(),
+  enrollmentEnabled: z
+    .union([z.boolean(), z.literal(0), z.literal(1)])
+    .nullish(),
+  instructorShares: z
+    .array(
+      z.object({
+        userId: z.union([z.string(), z.number()]),
+        shareBps: z.coerce.number().int().min(0).max(10000),
+      }),
+    )
+    .optional(),
+  instructors: z
+    .array(
+      z.object({
+        userId: z.union([z.string(), z.number()]),
+        nickName: z.string().nullish(),
+        shareBps: z.coerce.number().int().min(0).max(10000).nullish(),
+      }),
+    )
+    .optional(),
+  localized: z
+    .record(z.string(), z.object({ title: z.string().nullish() }))
+    .nullish(),
+});
+
 /** Always reads this deployment's Java authority; never infers relationships from names. */
 @Injectable()
 export class AcademyAuthorityService {
@@ -71,48 +108,36 @@ export class AcademyAuthorityService {
   }
 
   async course(id: string) {
-    const result = z
-      .object({
-        id: z.union([z.string(), z.number()]),
-        published: z
-          .union([z.boolean(), z.literal(0), z.literal(1)])
-          .transform((value) => value === true || value === 1),
-        certificateId: z
-          .union([z.coerce.number().int().safe(), z.null()])
-          .nullish()
-          .transform((value) =>
-            typeof value === 'number' && value > 0 ? value : null,
-          ),
-        priceCredits: z.union([z.string(), z.number()]).nullish(),
-        enrollmentEnabled: z
-          .union([z.boolean(), z.literal(0), z.literal(1)])
-          .nullish(),
-        instructorShares: z
-          .array(
-            z.object({
-              userId: z.union([z.string(), z.number()]),
-              shareBps: z.coerce.number().int().min(0).max(10000),
-            }),
-          )
-          .optional(),
-        instructors: z
-          .array(
-            z.object({
-              userId: z.union([z.string(), z.number()]),
-              nickName: z.string().nullish(),
-              shareBps: z.coerce.number().int().min(0).max(10000).nullish(),
-            }),
-          )
-          .optional(),
-        localized: z
-          .record(z.string(), z.object({ title: z.string().nullish() }))
-          .nullish(),
-      })
-      .safeParse(
-        await this.read(`courses/${encodeURIComponent(CourseId.parse(id))}`),
-      );
+    const result = Course.safeParse(
+      await this.read(`courses/${encodeURIComponent(CourseId.parse(id))}`),
+    );
     if (!result.success || String(result.data.id) !== id)
       throw new NotFoundException('Course not found in this region.');
+    return result.data;
+  }
+
+  async coursePage(page: number) {
+    const result = z
+      .object({
+        list: z.array(Course).max(10),
+        total: z.coerce.number().int().nonnegative().safe(),
+      })
+      .safeParse(
+        await this.read(`courses?published=true&page=${page}&pageSize=10`),
+      );
+    if (
+      !result.success ||
+      new Set(result.data.list.map((course) => String(course.id))).size !==
+        result.data.list.length ||
+      result.data.list.some(
+        (course) => !CourseId.safeParse(String(course.id)).success,
+      ) ||
+      (result.data.list.length === 0 && (page - 1) * 10 < result.data.total)
+    ) {
+      throw new BadGatewayException(
+        'The regional course catalogue is invalid.',
+      );
+    }
     return result.data;
   }
 

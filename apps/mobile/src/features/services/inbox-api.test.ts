@@ -9,6 +9,8 @@ const item = {
   counterpartyId: "crew",
   counterpartyRole: "member",
   crewName: "Hunter",
+  crewLogo: "crews/hunter.jpg",
+  memberCount: 12,
   crewChannel: "community",
   lastMessagePreview: "Hello",
   lastMessageType: "text",

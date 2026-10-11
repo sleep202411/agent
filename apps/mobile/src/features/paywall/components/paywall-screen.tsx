@@ -51,7 +51,7 @@ import {
   yearlySavePercent,
 } from "../lib/catalog";
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
-import { fetchComputeWalletBalance } from "../lib/compute-wallet";
+import { useComputeWalletBalance } from "../lib/use-compute-wallet-balance";
 import {
   resolvePaywallCategory,
   PAYWALL_CATEGORIES,
@@ -331,14 +331,23 @@ function PaywallSession() {
   const insets = useSafeAreaInsets();
   const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
     usePaywallSelection(initialCategory);
-  const [computeBalance, setComputeBalance] = useState<string | null>(null);
+  const {
+    balance: computeBalance,
+    error: computeError,
+    loading: computeLoading,
+    refresh: refreshCompute,
+  } = useComputeWalletBalance();
   const [communityBalance, setCommunityBalance] = useState<string | null>(null);
+  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const communityRead = useRef(0);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [communityPacks, setCommunityPacks] = useState<
     ReturnType<typeof communityPackProduct>[] | null
   >(null);
+  const [catalogRevision, setCatalogRevision] = useState(0);
   const [communityPackError, setCommunityPackError] = useState<string | null>(null);
   const [membershipPlans, setMembershipPlans] = useState<PaywallProduct[] | null>(null);
   const [membershipPlanError, setMembershipPlanError] = useState<string | null>(null);
@@ -375,11 +384,14 @@ function PaywallSession() {
 
   useEffect(() => {
     if (!communityPointsUseBillingApi(channel)) return;
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const prices = await listCommunityPointPackages(paywallBillingCurrency());
-        if (cancelled || !isCurrentSession()) return;
+        const prices = await listCommunityPointPackages(
+          paywallBillingCurrency(),
+          controller.signal
+        );
+        if (controller.signal.aborted || !isCurrentSession()) return;
         const storeIap = channel === "apple_iap" || channel === "google_play_iap";
         const next = prices
           .map(communityPackProduct)
@@ -387,18 +399,19 @@ function PaywallSession() {
             (item) =>
               !storeIap || item.storeProductId.startsWith("com.fizzdragon.community.credits.")
           );
-        if (cancelled || !isCurrentSession()) return;
+        if (controller.signal.aborted || !isCurrentSession()) return;
+        setCommunityPackError(null);
         setCommunityPacks(next);
       } catch (error: unknown) {
-        if (cancelled || !isCurrentSession()) return;
+        if (controller.signal.aborted || !isCurrentSession()) return;
         setCommunityPacks([]);
         setCommunityPackError(error instanceof Error ? error.message : String(error));
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [channel, isCurrentSession]);
+  }, [channel, isCurrentSession, catalogRevision]);
 
   // Nest packs arrive after first paint — keep productId on a real row.
   useEffect(() => {
@@ -410,29 +423,33 @@ function PaywallSession() {
   useEffect(() => {
     // Keep the Nest membership catalog off until that tab is visible again.
     if (selected !== "community_membership") return;
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const prices = await listMembershipPrices({
-          productType: "community_membership_plan",
-          currency: paywallBillingCurrency(),
-        });
-        if (cancelled || !isCurrentSession()) return;
+        const prices = await listMembershipPrices(
+          {
+            productType: "community_membership_plan",
+            currency: paywallBillingCurrency(),
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted || !isCurrentSession()) return;
         const next = prices
           .filter((price) => price.isActive !== false)
           .map((price) => membershipProduct(price, "community_membership"));
-        if (cancelled || !isCurrentSession()) return;
+        if (controller.signal.aborted || !isCurrentSession()) return;
+        setMembershipPlanError(null);
         setMembershipPlans(next);
       } catch (error: unknown) {
-        if (cancelled || !isCurrentSession()) return;
+        if (controller.signal.aborted || !isCurrentSession()) return;
         setMembershipPlans([]);
         setMembershipPlanError(error instanceof Error ? error.message : String(error));
       }
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [isCurrentSession, selected]);
+  }, [isCurrentSession, selected, catalogRevision]);
 
   // Nest plans arrive after first paint — pick yearly → monthly → one_time → first.
   useEffect(() => {
@@ -446,32 +463,41 @@ function PaywallSession() {
     if (preferred) setProductId(preferred.id);
   }, [apiCommunityMembership, membershipPlans, productId, setProductId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetchComputeWalletBalance().then((compute) => {
-      if (!cancelled && isCurrentSession()) setComputeBalance(compute);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isCurrentSession]);
-
+  const refreshCommunity = useCallback(
+    async (signal?: AbortSignal) => {
+      if (signal?.aborted || !isCurrentSession()) return;
+      const request = ++communityRead.current;
+      const current = () =>
+        !signal?.aborted && isCurrentSession() && request === communityRead.current;
+      setCommunityLoading(true);
+      setCommunityError(null);
+      try {
+        const balance = await fetchCommunityPointBalance(signal);
+        if (current()) setCommunityBalance(balance);
+      } catch (cause) {
+        if (current()) {
+          setCommunityBalance(null);
+          setCommunityError(cause instanceof Error ? cause.message : String(cause));
+        }
+      } finally {
+        if (current()) setCommunityLoading(false);
+      }
+    },
+    [isCurrentSession]
+  );
   useEffect(() => {
     if (!communityPointsUseBillingApi(channel)) return;
-    let cancelled = false;
-    void fetchCommunityPointBalance().then((balance) => {
-      if (!cancelled && isCurrentSession()) setCommunityBalance(balance);
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      void refreshCommunity(controller.signal);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [channel, isCurrentSession]);
+    return () => controller.abort();
+  }, [channel, refreshCommunity]);
 
   const canRestore = channel === "apple_iap" || channel === "google_play_iap";
   const actionsLocked = busy || restoring;
   // React state disables the UI on the next render; serialize dispatch now.
   const paymentActionInFlight = useRef(false);
-  const walletRefreshGeneration = useRef(0);
   /** Cancels on-screen WeChat settle UI only — background follow keeps running. */
   const wechatFollowGeneration = useRef(0);
   const wechatPaidRef = useRef(false);
@@ -479,19 +505,9 @@ function PaywallSession() {
 
   const refreshWallets = useCallback(async () => {
     if (!isCurrentSession()) return;
-    const generation = walletRefreshGeneration.current;
-    try {
-      const [compute, community] = await Promise.all([
-        fetchComputeWalletBalance(),
-        fetchCommunityPointBalance(),
-      ]);
-      if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
-      setComputeBalance(compute);
-      setCommunityBalance(community);
-    } catch {
-      // The row refreshes again the next time this screen opens.
-    }
-  }, [isCurrentSession]);
+    refreshCompute();
+    await refreshCommunity();
+  }, [isCurrentSession, refreshCompute, refreshCommunity]);
 
   // Closing the QR must not drop a payment that settles a moment later.
   // Nest reconciles WeChat on each order read. Follow continues off-screen;
@@ -551,13 +567,13 @@ function PaywallSession() {
 
   useEffect(
     () => () => {
-      walletRefreshGeneration.current += 1;
       wechatFollowGeneration.current += 1;
       // Leaving with the QR still open (or mid-settle): keep reconciling off-screen.
       const orderId = scanOrderRef.current;
-      if (orderId) void followWechatOrderUntilSettled(orderId);
+      if (orderId && getAuthGeneration() === sessionGeneration)
+        void followWechatOrderUntilSettled(orderId);
     },
-    []
+    [sessionGeneration]
   );
 
   const buy = async () => {
@@ -566,6 +582,8 @@ function PaywallSession() {
     setBusy(true);
     try {
       const result = await purchaseProduct(product);
+      // Leaving this screen may still require fulfillment; replacing the account must not.
+      if (getAuthGeneration() !== sessionGeneration) return;
       if (result.wechatScan) {
         // QR UI only makes sense on this screen.
         if (!isCurrentSession()) return;
@@ -620,6 +638,8 @@ function PaywallSession() {
     setRestoring(true);
     try {
       const result = await restorePurchases();
+      if (!isCurrentSession()) return;
+      await refreshWallets();
       if (!isCurrentSession()) return;
       Alert.alert(
         t("paywall.restoreOkTitle"),
@@ -758,19 +778,59 @@ function PaywallSession() {
           <View style={styles.pointsTop}>
             {tabs}
             {apiCommunity ? (
-              <CommunityAccountRow
-                balance={communityBalance == null ? "…" : formatAmount(communityBalance, locale)}
-                label={t("paywall.communityBalance")}
-                name={accountDisplayName(auth.user, t("paywall.category.communityPoints"))}
-              />
+              <View>
+                {communityError && (
+                  <View>
+                    <ThemedText type="small" accessibilityRole="alert">
+                      {communityError}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={communityLoading}
+                      onPress={() => void refreshCommunity()}
+                      style={{ paddingVertical: 8 }}
+                    >
+                      <ThemedText type="small">{t("common.retry")}</ThemedText>
+                    </Pressable>
+                  </View>
+                )}
+                <CommunityAccountRow
+                  balance={
+                    communityBalance == null
+                      ? communityLoading
+                        ? "…"
+                        : "—"
+                      : formatAmount(communityBalance, locale)
+                  }
+                  label={t("paywall.communityBalance")}
+                  name={accountDisplayName(auth.user, t("paywall.category.communityPoints"))}
+                />
+              </View>
             ) : null}
             {computePoints ? (
-              <ComputeRechargePanel
-                amount={computeAmount}
-                balance={computeBalance}
-                locale={locale}
-                onChangeAmount={setComputeAmount}
-              />
+              <View>
+                {computeError && (
+                  <View>
+                    <ThemedText type="small" accessibilityRole="alert">
+                      {computeError}
+                    </ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={computeLoading}
+                      onPress={refreshCompute}
+                      style={{ paddingVertical: 8 }}
+                    >
+                      <ThemedText>{t("common.retry")}</ThemedText>
+                    </Pressable>
+                  </View>
+                )}
+                <ComputeRechargePanel
+                  amount={computeAmount}
+                  balance={computeBalance}
+                  locale={locale}
+                  onChangeAmount={setComputeAmount}
+                />
+              </View>
             ) : null}
           </View>
           {apiCommunity ? (
@@ -782,9 +842,26 @@ function PaywallSession() {
               {communityPacks === null ? (
                 <ActivityIndicator color={BRAND} style={styles.packLoading} />
               ) : communityPacks.length === 0 ? (
-                <ThemedText type="small" themeColor="textSecondary" style={styles.packError}>
-                  {communityPackError ?? t("paywall.wechat.noPacks")}
-                </ThemedText>
+                <View style={styles.packError}>
+                  <ThemedText
+                    type="small"
+                    themeColor="textSecondary"
+                    accessibilityRole={communityPackError ? "alert" : undefined}
+                  >
+                    {communityPackError ?? t("paywall.wechat.noPacks")}
+                  </ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={{ paddingVertical: 8 }}
+                    onPress={() => {
+                      setCommunityPacks(null);
+                      setCommunityPackError(null);
+                      setCatalogRevision((value) => value + 1);
+                    }}
+                  >
+                    <ThemedText type="small">{t("common.retry")}</ThemedText>
+                  </Pressable>
+                </View>
               ) : (
                 communityPacks.map((item) => {
                   const on = item.id === product?.id;
@@ -860,9 +937,26 @@ function PaywallSession() {
                   style={{ flex: 1, paddingVertical: Spacing.six }}
                 />
               ) : apiCommunityMembership && products.length === 0 ? (
-                <ThemedText type="small" themeColor="textSecondary" style={{ flex: 1 }}>
-                  {membershipPlanError ?? t("paywall.membership.noPlan")}
-                </ThemedText>
+                <View style={{ flex: 1 }}>
+                  <ThemedText
+                    type="small"
+                    themeColor="textSecondary"
+                    accessibilityRole={membershipPlanError ? "alert" : undefined}
+                  >
+                    {membershipPlanError ?? t("paywall.membership.noPlan")}
+                  </ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={{ paddingVertical: 8 }}
+                    onPress={() => {
+                      setMembershipPlans(null);
+                      setMembershipPlanError(null);
+                      setCatalogRevision((value) => value + 1);
+                    }}
+                  >
+                    <ThemedText type="small">{t("common.retry")}</ThemedText>
+                  </Pressable>
+                </View>
               ) : (
                 products.map((item) => {
                   const on = item.id === product?.id;
@@ -920,6 +1014,7 @@ function PaywallSession() {
       )}
       {scan ? (
         <WechatScanPay
+          key={scan.orderId}
           orderId={scan.orderId}
           codeUrl={scan.codeUrl}
           amountLabel={scan.amountLabel}

@@ -1,5 +1,6 @@
 import {
   PutStoryCanvasLayoutSchema,
+  STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX,
   STORY_CANVAS_LAYOUT_NODE_COUNT_MAX,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
 } from './dto';
@@ -36,7 +37,14 @@ describe('PutStoryCanvasLayoutSchema', () => {
   it.each([
     ['unsafe node id', { 'node id': { x: 0, y: 0 } }],
     ['non-finite coordinate', { node: { x: Number.POSITIVE_INFINITY, y: 0 } }],
-    ['out-of-range coordinate', { node: { x: 1_000_001, y: 0 } }],
+    [
+      'out-of-range coordinate',
+      { node: { x: STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX + 1, y: 0 } },
+    ],
+    [
+      'negative out-of-range coordinate',
+      { node: { x: 0, y: -STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX - 1 } },
+    ],
   ])('rejects %s', (_label, nodePositions) => {
     const parsed = PutStoryCanvasLayoutSchema.safeParse({
       expectedRevision: 0,
@@ -46,6 +54,22 @@ describe('PutStoryCanvasLayoutSchema', () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it('accepts both inclusive coordinate limits', () => {
+    expect(
+      PutStoryCanvasLayoutSchema.safeParse({
+        expectedRevision: 0,
+        schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+        nodePositions: {
+          node: {
+            x: STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX,
+            y: -STORY_CANVAS_LAYOUT_COORDINATE_ABS_MAX,
+          },
+        },
+        sessionId: 'canvas-session',
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects layouts above the node-count ceiling', () => {

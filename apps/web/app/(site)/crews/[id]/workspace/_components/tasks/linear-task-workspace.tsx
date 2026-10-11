@@ -414,12 +414,6 @@ function LinearTaskSession({
               </button>
             ) : null}
           </>
-          <div
-            ref={setWorkbenchToolbar}
-            className={
-              section === "production" ? "ml-auto flex flex-wrap items-center gap-2" : "hidden"
-            }
-          />
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
@@ -483,6 +477,12 @@ function LinearTaskSession({
             </button>
           </div>
         </nav>
+        <div
+          ref={setWorkbenchToolbar}
+          className={
+            section === "production" ? "min-w-0 border-t border-white/[0.045] px-3 py-2" : "hidden"
+          }
+        />
       </header>
 
       {projectPanelOpen ? (

@@ -1140,7 +1140,8 @@
       "version": "版本"
     },
     "tabs": {
-      "members": "成员"
+      "members": "成员",
+      "knowledge": "影片知识"
     },
     "roles": {
       "owner": "主理人",
@@ -5397,6 +5398,7 @@
       "pdfCheck": "检查分析状态",
       "pdfNewAnalysis": "重新分析",
       "pdfPending": "分析正在进行，请稍后检查状态；重复同一请求不会再次调用 AI。",
+      "pdfAnalysisId": "分析编号：{id}",
       "pdfFailed": "分析失败，请启动新的分析重试。",
       "pdfCreated": "已创建 {count} 个任务。",
       "pdfReview": "请审核 {count} 个建议任务，并选择需要创建的任务。",
@@ -12204,5 +12206,20 @@
       "mediaCancelled": "生成已停止",
       "mediaErrorDetails": "查看错误详情"
     }
+  },
+  "ipKnowledgeAdmin": {
+    "description": "为影片知识助手添加官方参考资料。只有标记为已发布并保存的资料对观众可用。请勿发布私人剧本或保密信息。",
+    "failed": "无法读取或保存参考资料。",
+    "conflict": "编辑期间该 IP 已有更新。请重新加载已保存的资料后再修改。",
+    "saved": "参考资料已保存。影片知识助手现在可以使用已发布的资料。",
+    "loading": "加载中…",
+    "title": "标题",
+    "content": "参考资料",
+    "published": "保存时向观众发布此资料",
+    "remove": "移除资料",
+    "empty": "暂无参考资料。请添加并发布资料，以便助手根据官方来源回答问题。",
+    "add": "添加资料",
+    "save": "保存资料",
+    "reload": "重新加载已保存资料（放弃编辑）"
   }
 }

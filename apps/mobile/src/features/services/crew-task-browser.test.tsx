@@ -2,11 +2,29 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewTaskBrowser } from "./crew-task-browser";
+vi.mock("./crew-setup", () => ({
+  CrewSetup: ({ onTasks }: { onTasks: () => void }) => (
+    <button onClick={onTasks}>setup assignments</button>
+  ),
+}));
+vi.mock("./trust-appeals", () => ({
+  TrustAppeals: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close appeals</button>
+  ),
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
+  push: vi.fn(),
   close: vi.fn(),
   detail: vi.fn(),
   workbench: vi.fn(),
+}));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
+vi.mock("./project-activity", () => ({
+  ProjectActivity: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close activity</button>
+  ),
 }));
 vi.mock("./project-document", () => ({
   ProjectDocument: ({ onClose }: { onClose: () => void }) => (
@@ -314,4 +332,119 @@ it("opens project overview and returns to the existing task browser", async () =
   expect(button("close document")).toBeDefined();
   await act(async () => button("close document").click());
   expect(button("pick")).toBeDefined();
+});
+it("opens project activity and returns to the existing task browser", async () => {
+  await act(async () => button("projectActivity.title").click());
+  expect(button("close activity")).toBeDefined();
+  await act(async () => button("close activity").click());
+  expect(button("pick")).toBeDefined();
+});
+
+it("opens trust appeals from the native task menu and returns without entering the Web fallback", async () => {
+  expect(button("trustAppeals.queue")).toBeDefined();
+  await act(async () => button("trustAppeals.queue").click());
+  expect(button("close appeals")).toBeDefined();
+  expect(host.textContent).not.toContain("/workspace");
+  await act(async () => button("close appeals").click());
+  expect(button("pick")).toBeDefined();
+});
+it("does not open appeal data after an account switch", async () => {
+  h.generation = 2;
+  await act(async () => button("trustAppeals.queue").click());
+  expect(button("close appeals")).toBeUndefined();
+});
+it("opens a notification's initial task through the normal authorized detail component", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="notification"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialTaskId="notification-task"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.detail).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      crewId: "crew",
+      taskId: "notification-task",
+      generation: 1,
+      userId: "1",
+    })
+  );
+});
+it("opens the native member panel for member notification destinations", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="members-link"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialSection="members"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("close members")).toBeTruthy();
+  expect(h.detail).not.toHaveBeenCalled();
+  await act(async () => button("close members").click());
+  expect(button("close members")).toBeUndefined();
+});
+
+it("opens both native chat channels and blocks stale-account navigation", async () => {
+  await act(async () =>
+    root.render(<CrewTaskBrowser crewId="crew" userId="1" generation={1} onClose={h.close} />)
+  );
+  await act(async () => button("thread.teamChat").click());
+  expect(h.push).toHaveBeenLastCalledWith("/crew-chat/crew?channel=team");
+  await act(async () => button("thread.communityChat").click());
+  expect(h.push).toHaveBeenLastCalledWith("/crew-chat/crew?channel=community");
+  h.generation = 2;
+  await act(async () => button("thread.teamChat").click());
+  expect(h.push).toHaveBeenCalledTimes(2);
+});
+
+it("opens guided Crew setup from existing task tools and returns for assignments", async () => {
+  await act(async () => button("crewSetup.title").click());
+  expect(button("setup assignments")).toBeDefined();
+  await act(async () => button("setup assignments").click());
+  expect(button("pick")).toBeDefined();
+});
+
+it("opens guided setup directly after successful Crew creation", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="created"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialSection="setup"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("setup assignments")).toBeDefined();
+  await act(async () => button("setup assignments").click());
+  expect(button("pick")).toBeDefined();
+});
+it("opens the workspace editor directly from Crew resources", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        crewId="crew"
+        userId="1"
+        generation={1}
+        key="studio-entry"
+        initialSection="studio"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("close workspace")).toBeDefined();
+  await act(async () => button("close workspace").click());
+  expect(h.close).toHaveBeenCalledTimes(1);
 });

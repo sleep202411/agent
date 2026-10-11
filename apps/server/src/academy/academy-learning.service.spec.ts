@@ -137,7 +137,7 @@ function fixture() {
       publicCreatorBatch: jest.fn().mockResolvedValue([]),
     } as unknown as LegacyCreatorsService,
   );
-  return { service, db, authority, wallet, row, enrollment, storage };
+  return { service, db, authority, mappings, wallet, row, enrollment, storage };
 }
 const review = {
   expectedVersion: 2,
@@ -907,4 +907,29 @@ it('hides homework attachments when the course no longer exists', async () => {
     f.service.attachment('enrollment', 'asset', '200'),
   ).rejects.toThrow('Attachment not found.');
   expect(f.storage.createReadUrl).not.toHaveBeenCalled();
+});
+
+it('does not debit or enroll against a cleared certificate even with an old local mapping', async () => {
+  const f = fixture();
+  const realMappings = new AcademyMappingsService(
+    {
+      academyCourseCertificate: {
+        findUnique: jest.fn().mockResolvedValue({ certificateId: 13 }),
+      },
+    } as unknown as PrismaService,
+    {
+      course: jest
+        .fn()
+        .mockResolvedValue({ id: 14, published: true, certificateId: null }),
+      certificates: jest
+        .fn()
+        .mockResolvedValue([{ id: 13, name: 'Old skill' }]),
+    } as unknown as AcademyAuthorityService,
+  );
+  f.mappings.published.mockImplementation(() => realMappings.published('14'));
+  await expect(f.service.enroll('14', '100', 1)).rejects.toThrow(
+    'no skill certificate assigned',
+  );
+  expect(f.wallet.postEntryTx).not.toHaveBeenCalled();
+  expect(f.enrollment.create).not.toHaveBeenCalled();
 });

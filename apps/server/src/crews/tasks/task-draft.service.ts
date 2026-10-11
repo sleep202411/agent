@@ -92,11 +92,10 @@ export class CrewTaskDraftService {
     let modelDraft: ModelTaskDraft;
     try {
       const { object } = await generateObject({
-        model: alibaba('qwen3-max'),
-        schema: ModelTaskDraftSchema,
-        schemaName: 'CrewTaskDraft',
-        schemaDescription:
-          'An editable production-task draft parsed from the creator prompt.',
+        model: alibaba('qwen-plus'),
+        output: 'no-schema',
+        providerOptions: { alibaba: { enableThinking: false } },
+        abortSignal: AbortSignal.timeout(120_000),
         maxRetries: 3,
         system: [
           'You convert one creator message into an editable production-task draft.',
@@ -109,7 +108,8 @@ export class CrewTaskDraftService {
           'Description should preserve useful requirements and acceptance criteria.',
           'Dates must be YYYY-MM-DD and interpreted using the supplied current date and time zone.',
           `Write title, description, and questions in ${languageName(input.locale)}.`,
-          'Return only the schema object.',
+          'Return only a JSON object conforming to this schema:',
+          JSON.stringify(z.toJSONSchema(ModelTaskDraftSchema)),
         ].join('\n'),
         prompt: [
           `Current instant: ${new Date().toISOString()}`,
@@ -123,7 +123,7 @@ export class CrewTaskDraftService {
           input.prompt,
         ].join('\n'),
       });
-      modelDraft = object;
+      modelDraft = ModelTaskDraftSchema.parse(object);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       throw new BadGatewayException(`AI task drafting failed: ${detail}`);

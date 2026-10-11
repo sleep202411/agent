@@ -34,6 +34,7 @@ vi.mock("@/auth/use-auth", () => ({
     session: { region: "com", token: { tokenName: "satoken", tokenValue: api.token } },
   }),
 }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("@/lib/api-client", () => ({ api: {}, ApiRequestError: class extends Error {} }));
 vi.mock("@/i18n", () => ({ getLocale: () => "en-US", t: (key: string) => key }));
@@ -42,13 +43,14 @@ vi.mock("../api/agent-os-api", async (importOriginal) => ({
   agentOsApi: api,
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let canWrite = true;
 let root: Root | undefined;
 let session: ReturnType<typeof useAgentOsSession>;
 const projectId = "0195bcaa-1000-7000-8000-000000000001";
 const chapterId = "0195bcaa-1000-7000-8000-000000000002";
 async function mount() {
   function Probe() {
-    session = useAgentOsSession({ projectId, chapterId, workbenchMode: "story" });
+    session = useAgentOsSession({ projectId, chapterId, workbenchMode: "story", canWrite });
     return null;
   }
   root = createRoot(document.createElement("div"));
@@ -63,6 +65,7 @@ afterEach(async () => {
   root = undefined;
   vi.resetAllMocks();
   api.token = "alice";
+  canWrite = true;
   vi.useRealTimers();
 });
 it("keeps one user message when the initial response has no events and avoids a model request on every turn", async () => {
@@ -385,4 +388,91 @@ it("allocates another turn identity for a changed failed draft and after a succe
   });
   const ids = api.startRun.mock.calls.map(([body]) => body.clientSubmissionId as string);
   expect(new Set(ids).size).toBe(3);
+});
+
+it("keeps history readable but rejects retained write callbacks after permission revocation", async () => {
+  const rerender = await mount();
+  api.startRun.mockResolvedValue({
+    runId: "run-1",
+    status: "waiting_for_approval",
+    pendingApproval: { approvalId: "approval-1" },
+    events: [],
+  });
+  await act(async () => session.send("Edit"));
+  const previous = session;
+  canWrite = false;
+  await rerender();
+  await act(async () => {
+    expect(await previous.send("Forbidden")).toBe(false);
+    await previous.approve("approve");
+    await previous.cancel();
+    previous.newChat();
+  });
+  expect(api.startRun).toHaveBeenCalledTimes(1);
+  expect(api.resolveApproval).not.toHaveBeenCalled();
+  expect(api.cancelRun).not.toHaveBeenCalled();
+  expect(session.session.runId).toBe("run-1");
+  api.getConversation.mockResolvedValue({ conversationId: "history", runs: [] });
+  await act(async () => session.restore());
+  expect(api.getConversation).toHaveBeenCalled();
+});
+it("rejects answers from a retained callback after losing edit access", async () => {
+  const rerender = await mount();
+  api.startRun.mockResolvedValue({
+    runId: "run-1",
+    status: "waiting_for_input",
+    pendingUserInput: {
+      requestId: "input-1",
+      questions: [{ id: "q", question: "Q", options: [{ value: "yes", label: "Yes" }] }],
+    },
+    events: [],
+  });
+  await act(async () => session.send("Edit"));
+  const answer = session.answerUserInput;
+  canWrite = false;
+  await rerender();
+  await act(async () => answer({ q: "yes" }));
+  expect(api.answerUserInput).not.toHaveBeenCalled();
+});
+it("does not start a run if edit access is lost while resolving its model", async () => {
+  const rerender = await mount();
+  let resolve!: (value: { mobileDefaultModelProfileId: string }) => void;
+  api.listModels.mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    })
+  );
+  let sending!: Promise<boolean>;
+  await act(async () => {
+    sending = session.send("Edit");
+  });
+  canWrite = false;
+  await rerender();
+  await act(async () => {
+    resolve({ mobileDefaultModelProfileId: "model" });
+    expect(await sending).toBe(false);
+  });
+  expect(api.startRun).not.toHaveBeenCalled();
+});
+
+it("still reconciles an already accepted run after edit permission changes", async () => {
+  const rerender = await mount();
+  let resolve!: (value: { runId: string; status: string; events: never[] }) => void;
+  api.startRun.mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    })
+  );
+  let sending!: Promise<boolean>;
+  await act(async () => {
+    sending = session.send("Already admitted");
+  });
+  canWrite = false;
+  await rerender();
+  await act(async () => {
+    resolve({ runId: "accepted", status: "completed", events: [] });
+    expect(await sending).toBe(true);
+  });
+  expect(session.session.runId).toBe("accepted");
+  expect(api.startRun).toHaveBeenCalledTimes(1);
 });

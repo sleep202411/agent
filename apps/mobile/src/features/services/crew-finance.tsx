@@ -6,6 +6,7 @@ import { PayoutCreate } from "./payout-create";
 import { EarningCreate } from "./earning-create";
 import { CrewFinanceDetail } from "./crew-finance-detail";
 import { CrewFinanceTrend } from "./crew-finance-trend";
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -25,21 +26,30 @@ import {
 } from "./crew-finance-api";
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function CrewFinance(props: Props) {
-  const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
   return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const active = useScreenActive();
+  const [lastActive, setLastActive] = useState(active);
+  const [selected, setSelected] = useState<FinancePage["items"][number]>();
   const [spend, setSpend] = useState(false);
   const [expenses, setExpenses] = useState(false);
   const [compute, setCompute] = useState(false);
+  const [formRevision, setFormRevision] = useState(0);
   const [revision, setRevision] = useState(0),
     [access, setAccess] = useState<{ revision: number; allowed?: boolean; error?: string }>();
   const [view, setView] = useState<FinanceView>("earnings"),
     [scope, setScope] = useState<FinanceScope>("mine"),
     [status, setStatus] = useState("all");
+  if (lastActive !== active) {
+    setLastActive(active);
+    if (active) setRevision((value) => value + 1);
+  }
   useEffect(() => {
+    if (!active || selected) return;
     const controller = new AbortController();
     void fetchFinanceAccess(props.crewId, props.userId, controller.signal).then(
       (allowed) => {
@@ -52,9 +62,24 @@ function Session(props: Props) {
       }
     );
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation, revision]);
+  }, [props.crewId, props.userId, props.generation, revision, active, selected]);
   const visible = access?.revision === revision ? access : undefined;
   const effectiveScope = visible?.allowed ? scope : "mine";
+  if (selected)
+    return (
+      <CrewFinanceDetail
+        crewId={props.crewId}
+        userId={props.userId}
+        generation={props.generation}
+        view={view}
+        selected={selected}
+        onChanged={() => setRevision((n) => n + 1)}
+        onClose={() => {
+          setSelected(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (spend && visible?.allowed)
     return (
       <CrewSpendSummary
@@ -86,7 +111,7 @@ function Session(props: Props) {
       />
     );
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
       <ThemedText>{t("crewFinance.title")}</ThemedText>
       <AmendmentFinance
         key={`amendment:${revision}`}
@@ -109,15 +134,23 @@ function Session(props: Props) {
       </Pressable>
       {view === "earnings" ? (
         <EarningCreate
-          key={`earning-create:${revision}`}
+          key={`earning-create:${formRevision}`}
+          refreshKey={revision}
           {...props}
-          onSaved={() => setRevision((n) => n + 1)}
+          onSaved={() => {
+            setFormRevision((n) => n + 1);
+            setRevision((n) => n + 1);
+          }}
         />
       ) : (
         <PayoutCreate
-          key={`payout-create:${revision}`}
+          key={`payout-create:${formRevision}`}
+          refreshKey={revision}
           {...props}
-          onSaved={() => setRevision((n) => n + 1)}
+          onSaved={() => {
+            setFormRevision((n) => n + 1);
+            setRevision((n) => n + 1);
+          }}
         />
       )}
       {visible?.allowed && (
@@ -180,6 +213,7 @@ function Session(props: Props) {
             )}
           </View>
           <Ledger
+            onSelect={setSelected}
             key={`${revision}:${view}:${effectiveScope}:${status}`}
             {...props}
             view={view}
@@ -205,7 +239,13 @@ function Session(props: Props) {
   );
 }
 function Ledger(
-  props: Props & { view: FinanceView; scope: FinanceScope; status: string; refresh: () => void }
+  props: Props & {
+    view: FinanceView;
+    scope: FinanceScope;
+    status: string;
+    refresh: () => void;
+    onSelect: (row: FinancePage["items"][number]) => void;
+  }
 ) {
   const t = useTranslations(),
     currency = isChinaRegion ? "CNY" : "USD";
@@ -213,7 +253,6 @@ function Ledger(
     [page, setPage] = useState<FinancePage>(),
     [error, setError] = useState<string>(),
     [busy, setBusy] = useState(true);
-  const [selected, setSelected] = useState<FinancePage["items"][number]>();
   const collected = useRef<FinancePage["items"]>([]),
     seen = useRef(new Set<string>()),
     requesting = useRef(false);
@@ -258,18 +297,6 @@ function Ledger(
     currency,
     cursor,
   ]);
-  if (selected)
-    return (
-      <CrewFinanceDetail
-        crewId={props.crewId}
-        userId={props.userId}
-        onChanged={props.refresh}
-        view={props.view}
-        selected={selected}
-        generation={props.generation}
-        onClose={() => setSelected(undefined)}
-      />
-    );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewFinance.recordHelp")}</ThemedText>
@@ -295,7 +322,7 @@ function Ledger(
             accessibilityRole="button"
             style={{ paddingVertical: 12 }}
             onPress={() => {
-              if (props.generation === getAuthGeneration()) setSelected(row);
+              if (props.generation === getAuthGeneration()) props.onSelect(row);
             }}
           >
             <ThemedText>

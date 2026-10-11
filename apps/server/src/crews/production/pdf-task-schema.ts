@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 export const PdfTaskSchema = z
   .object({
+    episode: z
+      .object({
+        number: z.number().int().positive().max(10000),
+        title: z.string().min(1).max(180),
+        label: z.string().min(1).max(40),
+      })
+      .strict()
+      .optional(),
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().min(1).max(4000),
     category: z.enum([

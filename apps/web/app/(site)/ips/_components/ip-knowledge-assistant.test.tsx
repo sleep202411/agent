@@ -125,3 +125,11 @@ it.each(["locale", "account", "film"])("discards an old answer when %s changes",
   expect(document.body.textContent).toContain("Current answer");
   expect(document.body.textContent).not.toContain("Obsolete answer");
 });
+
+it("shows the backend failure instead of hiding it behind the generic message", async () => {
+  mocks.post.mockRejectedValue(new Error("Knowledge assistance is not configured."));
+  await render();
+  await open();
+  await ask();
+  expect(document.body.textContent).toContain("Knowledge assistance is not configured.");
+});

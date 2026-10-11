@@ -1140,7 +1140,8 @@
       "version": "Version"
     },
     "tabs": {
-      "members": "Members"
+      "members": "Members",
+      "knowledge": "Film Knowledge"
     },
     "roles": {
       "owner": "Owner",
@@ -5397,6 +5398,7 @@
       "pdfCheck": "Check analysis status",
       "pdfNewAnalysis": "New analysis",
       "pdfPending": "Analysis is running. Check its status shortly; resending the same request does not run AI again.",
+      "pdfAnalysisId": "Analysis ID: {id}",
       "pdfFailed": "Analysis failed. Start a new analysis to retry.",
       "pdfCreated": "{count} tasks created.",
       "pdfReview": "Review {count} proposed tasks and select the ones to create.",
@@ -12204,5 +12206,20 @@
       "mediaCancelled": "Generation stopped",
       "mediaErrorDetails": "Error details"
     }
+  },
+  "ipKnowledgeAdmin": {
+    "description": "Add official reference material for the Film Knowledge Assistant. Only documents marked as published and saved are available to viewers. Do not publish private scripts or confidential information.",
+    "failed": "Unable to load or save reference material.",
+    "conflict": "This IP changed while you were editing. Reload the saved documents before making further changes.",
+    "saved": "Reference material saved. Published documents are now available to the Film Knowledge Assistant.",
+    "loading": "Loading…",
+    "title": "Title",
+    "content": "Reference material",
+    "published": "Publish this document to viewers when saved",
+    "remove": "Remove document",
+    "empty": "No reference material yet. Add a document and publish it to enable answers based on official sources.",
+    "add": "Add document",
+    "save": "Save documents",
+    "reload": "Reload saved documents (discard edits)"
   }
 }

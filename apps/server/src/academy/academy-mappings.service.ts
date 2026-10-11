@@ -52,7 +52,7 @@ export class AcademyMappingsService {
     ]);
     return {
       courseId,
-      certificateId: course.certificateId ?? mapping?.certificateId ?? null,
+      certificateId: course.certificateId ?? null,
       version: mapping?.version ?? 0,
       certificates,
     };
@@ -62,102 +62,52 @@ export class AcademyMappingsService {
     this.access(admin, ADMIN_PERMISSION_KEYS.CoursesRead);
     const ids = [...new Set(courseIds)].slice(0, 100);
     if (ids.length === 0) return { items: [] };
-    const [certificates, mappings] = await Promise.all([
-      this.authority.certificates(),
-      this.prisma.academyCourseCertificate.findMany({
-        where: { courseId: { in: ids }, certificateId: { not: null } },
-      }),
-    ]);
+    const certificates = await this.authority.certificates();
     const byId = new Map(certificates.map((item) => [item.id, item]));
-    return {
-      items: mappings.flatMap((mapping) => {
-        if (mapping.certificateId == null) return [];
-        const certificate = byId.get(mapping.certificateId);
-        return [
-          {
-            courseId: mapping.courseId,
-            certificate: {
-              id: mapping.certificateId,
-              name: certificate?.name ?? `#${mapping.certificateId}`,
-              imagePath: certificate?.imagePath ?? null,
-            },
+    const items: {
+      courseId: string;
+      certificate: { id: number; name: string; imagePath: string | null };
+    }[] = [];
+    // Bound upstream concurrency and use the same authority as the course editor.
+    for (const courseId of ids) {
+      try {
+        const course = await this.authority.course(courseId);
+        if (course.certificateId == null) continue;
+        const certificate = byId.get(course.certificateId);
+        items.push({
+          courseId,
+          certificate: {
+            id: course.certificateId,
+            name: certificate?.name ?? `#${course.certificateId}`,
+            imagePath: certificate?.imagePath ?? null,
           },
-        ];
-      }),
-    };
+        });
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    return { items };
   }
 
-  async save(
+  save(
     admin: AdminActor,
-    courseId: string,
-    input: z.infer<typeof SaveCourseCertificate>,
+    _courseId: string,
+    _input: z.infer<typeof SaveCourseCertificate>,
   ) {
     this.access(admin, ADMIN_PERMISSION_KEYS.CoursesWrite);
-    const [, certificates] = await Promise.all([
-      this.authority.course(courseId),
-      this.authority.certificates(),
-    ]);
-    if (
-      input.certificateId !== null &&
-      !certificates.some((item) => item.id === input.certificateId)
-    ) {
-      throw new BadRequestException(
-        'Select an Academy skill certificate from this region.',
-      );
-    }
-    return this.prisma.$transaction(async (tx) => {
-      // hashtext is available on every supported Postgres; hashtextextended needs PG14+.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`academy-course:${courseId}`})::bigint)`;
-      const previous = await tx.academyCourseCertificate.findUnique({
-        where: { courseId },
-      });
-      if ((previous?.version ?? 0) !== input.expectedVersion)
-        throw new ConflictException(
-          'This mapping changed. Reload it before saving.',
-        );
-      const mapping = await tx.academyCourseCertificate.upsert({
-        where: { courseId },
-        create: { courseId, certificateId: input.certificateId, version: 1 },
-        update: {
-          certificateId: input.certificateId,
-          version: { increment: 1 },
-        },
-      });
-      await tx.adminAuditLog.create({
-        data: {
-          actorUserId: admin.id,
-          actorSessionId: admin.sessionId,
-          siteScope: CURRENT_CELL === 'cn' ? 'cn' : 'global',
-          action: 'academy.course_certificate.save',
-          resourceType: 'academy_course',
-          resourceId: courseId,
-          before: {
-            certificateId: previous?.certificateId ?? null,
-            version: previous?.version ?? 0,
-          },
-          after: {
-            certificateId: mapping.certificateId,
-            version: mapping.version,
-          },
-        },
-      });
-      return {
-        courseId,
-        certificateId: mapping.certificateId,
-        version: mapping.version,
-        certificates,
-      };
-    });
+    void _courseId;
+    void _input;
+    // The current editor writes Java directly. A local-only write would be
+    // invisible to course reads and must never acknowledge a successful save.
+    throw new ConflictException(
+      'Save the certificate in the course editor. Separate certificate mappings are no longer supported.',
+    );
   }
 
   async published(courseId: string) {
     const course = await this.authority.course(courseId);
     if (!course.published) throw new NotFoundException('Course not found.');
-    const mapping = await this.prisma.academyCourseCertificate.findUnique({
-      where: { courseId },
-    });
-    const certificateId =
-      course.certificateId ?? mapping?.certificateId ?? null;
+    const certificateId = course.certificateId ?? null;
     if (!certificateId) return { courseId, certificate: null };
     const certificate = (await this.authority.certificates()).find(
       (item) => item.id === certificateId,
@@ -180,36 +130,32 @@ export class AcademyMappingsService {
     ) {
       throw new NotFoundException('Academy skill certificate not found.');
     }
-    const mappings = await this.prisma.academyCourseCertificate.findMany({
-      where: {
-        certificateId,
-        ...(query.after ? { courseId: { gt: query.after } } : {}),
-      },
-      orderBy: { courseId: 'asc' },
-      take: 11,
-    });
-    const page = mappings.slice(0, 10);
-    const items: { courseId: string; title: string }[] = [];
-    // Keep upstream concurrency bounded; draft or deleted courses never leak through this lookup.
-    for (const mapping of page) {
-      try {
-        const course = await this.authority.course(mapping.courseId);
-        if (course.published)
-          items.push({
-            courseId: mapping.courseId,
-            title:
-              course.localized?.[query.locale]?.title?.trim() ||
-              course.localized?.['en-US']?.title?.trim() ||
-              mapping.courseId,
-          });
-      } catch (error) {
-        if (!(error instanceof NotFoundException)) throw error;
-      }
+    // Versioned opaque cursors do not reuse the old local-table course ID.
+    const match = query.after?.match(/^java_([1-9]\d*)$/);
+    const page = query.after ? Number(match?.[1]) : 1;
+    if (!Number.isSafeInteger(page) || page < 1 || page > 1000000) {
+      throw new BadRequestException(
+        'Course lookup changed. Reload the course list.',
+      );
     }
+    const result = await this.authority.coursePage(page);
     return {
       certificateId,
-      items,
-      nextCursor: mappings.length > 10 ? page.at(-1)!.courseId : null,
+      items: result.list.flatMap((course) =>
+        course.published && course.certificateId === certificateId
+          ? [
+              {
+                courseId: String(course.id),
+                title:
+                  course.localized?.[query.locale]?.title?.trim() ||
+                  course.localized?.['en-US']?.title?.trim() ||
+                  String(course.id),
+              },
+            ]
+          : [],
+      ),
+      // An empty matching page can still have later eligible courses.
+      nextCursor: page * 10 < result.total ? `java_${page + 1}` : null,
     };
   }
 }

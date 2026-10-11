@@ -18,7 +18,13 @@ import {
   type ManagedPosition,
   type ManagedInvitation,
 } from "./invitation-management-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  active?: boolean;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function InvitationManagement(props: Props) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<ManagedPosition>();
@@ -41,6 +47,7 @@ export function InvitationManagement(props: Props) {
   if (managing)
     return (
       <PositionLifecycle
+        active={props.active}
         position={managing}
         userId={props.userId}
         generation={props.generation}
@@ -74,6 +81,7 @@ export function InvitationManagement(props: Props) {
         }}
       />
     );
+  if (props.active === false) return null;
   return (
     <Positions
       key={`${revision}:${cursor}`}
@@ -200,7 +208,17 @@ function InvitePage(
   const [uncertain, setUncertain] = useState(false),
     [retry, setRetry] = useState<ManagedInvitation>(),
     [done, setDone] = useState(false);
+  const [readError, setReadError] = useState<string>();
+  const [readRevision, setReadRevision] = useState(0);
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [previousReadKey, setPreviousReadKey] = useState(readKey);
+  if (previousReadKey !== readKey) {
+    setPreviousReadKey(readKey);
+    setPage(undefined);
+    setReadError(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void fetchManagedInvitations(
       props.position,
@@ -214,14 +232,15 @@ function InvitePage(
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setReadError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => c.abort();
-  }, [props.position, props.userId, props.generation, props.cursor]);
+  }, [props.position, props.userId, props.generation, props.cursor, props.active, readRevision]);
   const blocked = op.busy || uncertain || !!retry || done;
   const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
-  const revoke = (row: ManagedInvitation) =>
+  const revoke = (row: ManagedInvitation) => {
+    if (props.active === false || !page) return;
     void op.run(
       () => {
         setError(undefined);
@@ -239,6 +258,7 @@ function InvitePage(
         else setRetry(row);
       }
     );
+  };
   const field = (label: string, value: string, set: (value: string) => void, maxLength: number) => (
     <TextInput
       accessibilityLabel={label}
@@ -256,15 +276,17 @@ function InvitePage(
       }}
     />
   );
+  if (props.active === false) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{crewPositionLabel(props.position.positionType, t)}</ThemedText>
       <ThemedText>{t("crewPositionInvites.help")}</ThemedText>
-      {!page && !error && <ActivityIndicator />}
+      {!page && !readError && <ActivityIndicator />}
+      {readError && <ThemedText accessibilityRole="alert">{readError}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {uncertain && <ThemedText>{t("inviteManagement.uncertain")}</ThemedText>}
       {done && !error && <ThemedText>{t("inviteManagement.saved")}</ThemedText>}
-      {retry && (
+      {retry && page && (
         <>
           <ThemedText>{t("crewPositionInvites.retryHelp")}</ThemedText>
           <Action
@@ -373,6 +395,13 @@ function InvitePage(
             />
           )}
         </>
+      )}
+      {!page && readError && (
+        <Action
+          label={t("common.retry")}
+          disabled={op.busy}
+          onPress={() => setReadRevision((n) => n + 1)}
+        />
       )}
       {op.busy && <ActivityIndicator />}
       <Action

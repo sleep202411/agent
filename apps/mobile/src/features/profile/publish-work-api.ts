@@ -23,29 +23,28 @@ export async function createWork(
 ): Promise<string> {
   if (
     !input.title.trim() ||
-    !input.description.trim() ||
-    !input.tagIds.length ||
     input.tagIds.length > 5 ||
     input.tagIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
   )
     throw new Error("Incomplete work information");
-  const result = await api.post<{ id?: unknown }>("/vedio/create/personal/video", {
+  const result = await api.post<unknown>("/vedio/create/personal/video", {
     service: "content",
     signal,
     data: {
       title: input.title.trim(),
-      introduction: input.description.trim(),
-      tags: [...new Set(input.tagIds)],
+      ...(input.description.trim() ? { introduction: input.description.trim() } : {}),
+      ...(input.tagIds.length ? { tags: [...new Set(input.tagIds)] } : {}),
       viewStatus: 1,
     },
   });
+  const id = result && typeof result === "object" && "id" in result ? result.id : result;
   if (
-    !result ||
-    (typeof result.id !== "number" && typeof result.id !== "string") ||
-    !String(result.id).trim()
+    (typeof id !== "number" && typeof id !== "string") ||
+    (typeof id === "number" && (!Number.isSafeInteger(id) || id <= 0)) ||
+    !String(id).trim()
   )
     throw new Error("Invalid created work ID");
-  return String(result.id);
+  return String(id).trim();
 }
 export class WorkFileError extends Error {}
 export async function pickWorkFile(kind: "cover" | "video") {
@@ -108,8 +107,7 @@ export async function updateWork(
   description: string,
   signal?: AbortSignal
 ) {
-  if (!id.trim() || !title.trim() || !description.trim())
-    throw new Error("Incomplete work information");
+  if (!id.trim() || !title.trim()) throw new Error("Incomplete work information");
   await api.postForm(
     "/vedio/update/personal/video",
     { id, title: title.trim(), introduction: description.trim() },

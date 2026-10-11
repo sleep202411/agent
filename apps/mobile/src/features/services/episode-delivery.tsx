@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,12 +27,15 @@ type Props = {
 };
 export function EpisodeDelivery(props: Props) {
   const active = useScreenActive();
-  if (!active || props.generation !== getAuthGeneration()) return null;
+  const focused = useIsFocused();
+  if (!focused || props.generation !== getAuthGeneration()) return null;
   return (
-    <Session
-      key={`${props.crewId}:${props.episodeId}:${props.userId}:${props.generation}`}
-      {...props}
-    />
+    <View style={{ flex: 1, display: active ? "flex" : "none" }}>
+      <Session
+        key={`${props.crewId}:${props.episodeId}:${props.userId}:${props.generation}`}
+        {...props}
+      />
+    </View>
   );
 }
 function Session(props: Props) {
@@ -90,6 +94,7 @@ function Session(props: Props) {
 function Workbench(
   props: Props & { data: Awaited<ReturnType<typeof fetchEpisodeDelivery>>; refresh: () => void }
 ) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.episodeId, true);
@@ -105,7 +110,7 @@ function Workbench(
   const { episode, canSubmit, canReview } = props.data;
   const pending = episode.deliveries.some((d) => d.status === "submitted");
   const perform = (request: () => Promise<unknown>) => {
-    if (sent.current || props.generation !== getAuthGeneration()) return;
+    if (!active || sent.current || props.generation !== getAuthGeneration()) return;
     void op.run(
       () => {
         sent.current = true;
@@ -251,7 +256,7 @@ function Workbench(
         <ThemedText>{t("crewTasks.back")}</ThemedText>
       </Pressable>
       {picker && (
-        <Modal visible onRequestClose={() => setPicker(false)}>
+        <Modal visible={active} onRequestClose={() => setPicker(false)}>
           <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
             <CrewAssetPicker
               crewId={props.crewId}

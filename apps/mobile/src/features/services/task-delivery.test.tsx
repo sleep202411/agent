@@ -118,6 +118,7 @@ it("shows requirements, immutable answers, authorized files and review context",
     mediaAssetId: "media",
     name: "Master.mp4",
     contentType: "video/mp4",
+    mediaKind: "video",
   });
 });
 it("orders versions newest first and does not open unavailable media", async () => {
@@ -159,4 +160,29 @@ it("aborts on leaving and suppresses late results from another account", async (
   expect(host.textContent).not.toContain("Final film");
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
+});
+
+it.each([
+  ["video/mp4", "video"],
+  ["audio/mpeg", "audio"],
+  ["IMAGE/PNG; charset=binary", "image"],
+  ["application/pdf", undefined],
+])(
+  "opens field attachments and the file list with the authorized %s viewer",
+  async (contentType, mediaKind) => {
+    await render([{ ...submission, assets: [{ ...submission.assets[0]!, contentType }] }]);
+    // One action belongs to the immutable field answer, another to the full file list.
+    expect(host.textContent?.match(/file:Master.mp4/g)).toHaveLength(2);
+    expect(h.file).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaAssetId: "media", mediaKind })
+    );
+  }
+);
+it("does not resolve attachment IDs outside the submitted snapshot", async () => {
+  await render([
+    { ...submission, professionalDelivery: { ...template, answers: { video: ["missing-asset"] } } },
+  ]);
+  expect(host.textContent).toContain("taskActivity.unavailable");
+  expect(host.textContent).not.toContain("missing-asset");
+  expect(h.file.mock.calls.every(([p]) => p.mediaAssetId === "media")).toBe(true);
 });

@@ -1,3 +1,6 @@
+vi.mock("../lib/experience-playback-delivery", () => ({
+  resolveExperienceVideoSource: async () => ({ uri: "https://example.invalid/video.mp4" }),
+}));
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -13,6 +16,7 @@ import {
 const h = vi.hoisted(() => ({
   listeners: new Map<string, (data: any) => void>(),
   presenting: true,
+  now: 0,
   player: {
     loop: false,
     currentTime: 0,
@@ -43,7 +47,10 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
-vi.mock("expo-video", () => ({ useVideoPlayer: () => h.player, VideoView: () => null }));
+vi.mock("./experience-video-platform", () => ({
+  useVideoPlayer: () => h.player,
+  VideoView: () => null,
+}));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/hooks/use-app-active", () => ({ useGatedScreenActive: () => h.presenting }));
 vi.mock("../lib/experience-media-cache", () => ({
@@ -92,6 +99,8 @@ let root: Root, container: HTMLDivElement, handle: ExperienceMediaPlaybackHandle
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 beforeEach(() => {
   h.listeners.clear();
+  h.now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => h.now);
   h.presenting = true;
   h.player.currentTime = 0;
   h.player.addListener.mockImplementation((name, fn) => {
@@ -103,6 +112,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  vi.restoreAllMocks();
 });
 async function render() {
   await act(async () =>
@@ -125,6 +135,7 @@ async function render() {
   );
 }
 async function time(currentTime: number) {
+  h.now += Math.max(0, currentTime - h.player.currentTime) * 1000;
   h.player.currentTime = currentTime;
   await act(async () => h.listeners.get("timeUpdate")?.({ currentTime }));
 }
