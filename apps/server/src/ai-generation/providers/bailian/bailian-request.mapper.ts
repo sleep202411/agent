@@ -28,8 +28,31 @@ export function mapBailianProviderRequest(
     ) {
       continue;
     }
-    const mapped = transformValue(raw, binding.transform);
+    let mapped = transformValue(raw, binding.transform);
     if (mapped === undefined) continue;
+    // Prompt compilation can mirror provider-native references into typed
+    // aliases. Retain each original native item, including its metadata, once.
+    if (
+      ['referenceImages', 'referenceVideos', 'referenceAudios'].includes(
+        field,
+      ) &&
+      recordValue(schemaField?.['x-ui'])?.group === 'internal' &&
+      binding.parameter === 'media' &&
+      Array.isArray(mapped) &&
+      Array.isArray(input.references)
+    ) {
+      const native = input.references.map(recordValue);
+      mapped = mapped.filter((item: unknown) => {
+        const reference = recordValue(item);
+        return !native.some(
+          (original) =>
+            original &&
+            reference &&
+            original.type === reference.type &&
+            original.url === reference.url,
+        );
+      });
+    }
     const target = binding.section === 'parameters' ? parameters : inputBody;
     const existing = target[binding.parameter];
     target[binding.parameter] =

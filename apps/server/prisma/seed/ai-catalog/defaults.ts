@@ -1943,6 +1943,12 @@ export const HAPPYHORSE_VIDEO_PARAMETER_POLICY = {
   startFrame: { enabled: true }, // i2v first frame (input.media)
   // happyhorse-1.0-r2v accepts ONLY reference_image.
   referenceTypes: ['reference_image'],
+  // Expose typed image inputs through the shared reference/compiler pipeline.
+  // Retain the existing qualified four-reference catalog ceiling.
+  maxReferenceItems: 4,
+  referenceLimits: { reference_image: 4 },
+  referenceVoice: { enabled: false },
+  aspectRatioStrategy: 'always',
   promptExtend: { enabled: true },
   seed: { enabled: true, minimum: 0, maximum: 2147483647 },
 } as const satisfies Prisma.InputJsonObject;

@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
+  MediaAssetStatus,
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
   Prisma,
@@ -562,6 +563,52 @@ export class StoryProductionPlanService {
       include: ASSET_SPEC_INCLUDE,
     });
     return rows.map(toAssetSpecDto);
+  }
+
+  /** Read exact generation receipts even after a target is archived or reselected. */
+  async listGenerationMedia(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    generationIds: string[],
+  ) {
+    await this.requireScope(user, projectId, chapterId, 'story.read');
+    if (!generationIds.length) return [];
+    const where = {
+      storyProjectId: projectId,
+      storyChapterId: chapterId,
+      generationId: { in: generationIds },
+      archivedAt: null,
+      mediaAsset: { status: MediaAssetStatus.ready, deletedAt: null },
+    };
+    const [assets, clips] = await Promise.all([
+      this.prisma.storyAssetMediaVersion.findMany({
+        where,
+        orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
+        include: {
+          ...CREATIVE_MEDIA_VERSION_INCLUDE,
+          assetSpec: { select: { name: true } },
+        },
+      }),
+      this.prisma.storyStoryboardClipMediaVersion.findMany({
+        where,
+        orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
+        include: {
+          ...CREATIVE_MEDIA_VERSION_INCLUDE,
+          storyboardClip: { select: { title: true } },
+        },
+      }),
+    ]);
+    return [
+      ...assets.map((row) => ({
+        title: row.assetSpec.name,
+        media: toCreativeMediaVersionDto(row),
+      })),
+      ...clips.map((row) => ({
+        title: row.storyboardClip.title,
+        media: toCreativeMediaVersionDto(row),
+      })),
+    ];
   }
 
   async createAssetSpec(
@@ -1199,14 +1246,7 @@ export class StoryProductionPlanService {
         // omitted rows keep their shifted slots until they are archived after
         // the write loop.
         if (allClips.length > 0) {
-          const maximumRank = Math.max(...allClips.map((clip) => clip.rank));
-          const offset = Math.max(maximumRank, effective.clips.length - 1) + 1;
-          if (maximumRank + offset > 2_147_483_647) {
-            throw new InternalServerErrorException({
-              code: 'STORYBOARD_TIMELINE_RANK_EXHAUSTED',
-              message: 'The Storyboard timeline rank space is exhausted.',
-            });
-          }
+          const offset = storyboardRankOffset(allClips, effective.clips.length);
           await tx.storyStoryboardClip.updateMany({
             where: { sequenceId },
             data: { rank: { increment: offset } },
@@ -2596,10 +2636,15 @@ export class StoryProductionPlanService {
     const plannedClipKeys = new Set(item.clips.map((clip) => clip.stableKey));
     // Move old ranks out of the way before a planned reorder; all surviving
     // clips receive their canonical rank below in this same transaction.
-    await tx.storyStoryboardClip.updateMany({
-      where: { sequenceId: sequence.id },
-      data: { rank: { increment: 1_000_000 } },
-    });
+    if (existingClips.length > 0)
+      await tx.storyStoryboardClip.updateMany({
+        where: { sequenceId: sequence.id },
+        data: {
+          rank: {
+            increment: storyboardRankOffset(existingClips, item.clips.length),
+          },
+        },
+      });
     for (const [rank, clipPlan] of item.clips.entries()) {
       const fingerprint = planFingerprint(
         input.sourceFingerprint,
@@ -2662,6 +2707,7 @@ export class StoryProductionPlanService {
         options,
       );
     }
+    let archivedRank = item.clips.length;
     for (const current of existingClips) {
       if (plannedClipKeys.has(current.stableKey)) continue;
       await tx.storyStoryboardClipAssetBinding.updateMany({
@@ -2676,6 +2722,7 @@ export class StoryProductionPlanService {
       await tx.storyStoryboardClip.update({
         where: { id: current.id },
         data: {
+          rank: archivedRank++,
           status: StoryProductionSpecStatus.archived,
           version: { increment: 1 },
         },
@@ -3285,6 +3332,7 @@ function toCreativeMediaVersionDto(row: CreativeMediaVersionRow) {
     durationSeconds: row.mediaAsset.durationSeconds,
     mimeType: row.mediaAsset.contentType,
     sourceFingerprint: row.sourceFingerprint,
+    generationId: row.generationId,
     purpose: generationPurpose(row.generationSnapshot),
     createdAt: row.createdAt.toISOString(),
   };
@@ -3323,6 +3371,7 @@ function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
       generationConfig: clip.generationConfig,
       status: clip.status,
       version: clip.version,
+      sourceFingerprint: clip.sourceFingerprint,
       selectedMediaVersionId: clip.selectedMediaVersionId,
       selectedMediaVersion: clip.selectedMediaVersion
         ? toCreativeMediaVersionDto(clip.selectedMediaVersion)
@@ -3471,6 +3520,21 @@ function toLatestGenerationDto(
     createdAt: generation.createdAt.toISOString(),
     updatedAt: generation.updatedAt.toISOString(),
   };
+}
+
+/** Clear both old and planned ranks before writing a compact order. */
+function storyboardRankOffset(
+  clips: readonly { rank: number }[],
+  plannedCount: number,
+): number {
+  const maximumRank = Math.max(0, ...clips.map((clip) => clip.rank));
+  const offset = Math.max(maximumRank, plannedCount - 1) + 1;
+  if (maximumRank + offset > 2_147_483_647)
+    throw new InternalServerErrorException({
+      code: 'STORYBOARD_TIMELINE_RANK_EXHAUSTED',
+      message: 'The Storyboard timeline rank space is exhausted.',
+    });
+  return offset;
 }
 
 function generationPurpose(value: Prisma.JsonValue): 'primary' | 'turnaround' {

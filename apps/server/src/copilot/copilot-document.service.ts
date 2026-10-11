@@ -8,6 +8,7 @@
  * injects the durable text into model context and the authoring run reads it
  * by documentId.
  */
+import type { Prisma } from '@prisma/client';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import {
   COPILOT_DOCUMENT_EXTENSIONS,
@@ -189,41 +190,55 @@ export class CopilotDocumentService {
     userId: string;
     conversationId: string;
     file: CopilotDocumentUploadFile;
+    maximumTextCharacters?: number;
+    transaction?: Prisma.TransactionClient;
   }): Promise<CopilotDocumentRef> {
     const extracted = await extractCopilotDocumentText(input.file);
-    const row = await this.prisma.$transaction(
-      async (tx) => {
-        const key = JSON.stringify([
-          'copilot-document-limit',
-          input.userId,
-          input.conversationId,
-        ]);
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
-        const existing = await tx.copilotDocument.count({
-          where: { userId: input.userId, conversationId: input.conversationId },
+    if (
+      input.maximumTextCharacters &&
+      extracted.text.length > input.maximumTextCharacters
+    ) {
+      throw documentError(
+        'DOCUMENT_TEXT_TOO_LARGE',
+        `This document exceeds the ${input.maximumTextCharacters}-character limit.`,
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
+    }
+    const persist = async (tx: Prisma.TransactionClient) => {
+      const key = JSON.stringify([
+        'copilot-document-limit',
+        input.userId,
+        input.conversationId,
+      ]);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+      const existing = await tx.copilotDocument.count({
+        where: { userId: input.userId, conversationId: input.conversationId },
+      });
+      if (existing >= COPILOT_DOCUMENT_MAX_PER_CONVERSATION) {
+        throw documentError(
+          'COPILOT_DOCUMENT_LIMIT_REACHED',
+          `This conversation has reached its ${COPILOT_DOCUMENT_MAX_PER_CONVERSATION}-document limit. Start a new conversation to upload more.`,
+          HttpStatus.TOO_MANY_REQUESTS,
+          { maximum: COPILOT_DOCUMENT_MAX_PER_CONVERSATION },
+        );
+      }
+      return tx.copilotDocument.create({
+        data: {
+          userId: input.userId,
+          conversationId: input.conversationId,
+          name: extracted.name,
+          mediaType: extracted.mediaType,
+          sizeBytes: input.file.size,
+          charCount: extracted.text.length,
+          text: extracted.text,
+        },
+      });
+    };
+    const row = input.transaction
+      ? await persist(input.transaction)
+      : await this.prisma.$transaction(persist, {
+          isolationLevel: 'ReadCommitted',
         });
-        if (existing >= COPILOT_DOCUMENT_MAX_PER_CONVERSATION) {
-          throw documentError(
-            'COPILOT_DOCUMENT_LIMIT_REACHED',
-            `This conversation has reached its ${COPILOT_DOCUMENT_MAX_PER_CONVERSATION}-document limit. Start a new conversation to upload more.`,
-            HttpStatus.TOO_MANY_REQUESTS,
-            { maximum: COPILOT_DOCUMENT_MAX_PER_CONVERSATION },
-          );
-        }
-        return tx.copilotDocument.create({
-          data: {
-            userId: input.userId,
-            conversationId: input.conversationId,
-            name: extracted.name,
-            mediaType: extracted.mediaType,
-            sizeBytes: input.file.size,
-            charCount: extracted.text.length,
-            text: extracted.text,
-          },
-        });
-      },
-      { isolationLevel: 'ReadCommitted' },
-    );
     return {
       documentId: row.id,
       name: row.name,

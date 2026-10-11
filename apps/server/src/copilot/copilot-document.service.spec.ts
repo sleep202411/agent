@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { HttpException } from '@nestjs/common';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import {
   COPILOT_DOCUMENT_MAX_FILE_BYTES,
   COPILOT_DOCUMENT_MAX_PER_CONVERSATION,
@@ -46,6 +47,43 @@ async function extractionError(
 }
 
 describe('extractCopilotDocumentText', () => {
+  it('keeps DOCX headings and table rows separate from adjacent text', async () => {
+    const entries = unzipSync(
+      readFileSync(join(__dirname, '__fixtures__', 'sample-script.docx')),
+    );
+    entries['word/styles.xml'] = strToU8(
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>',
+    );
+    entries['word/_rels/document.xml.rels'] = strToU8(
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="styles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+    );
+    const paragraph = (text: string, heading = false) =>
+      `<w:p>${heading ? '<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>' : ''}<w:r><w:t>${text}</w:t></w:r></w:p>`;
+    entries['word/document.xml'] = strToU8(
+      strFromU8(entries['word/document.xml']).replace(
+        /<w:body>[\s\S]*<\/w:body>/,
+        `<w:body>${paragraph('角色设定', true)}${paragraph('阿晴穿黄色雨衣。')}${paragraph('场景一 小巷', true)}${paragraph('阿晴拾起铜铃。')}<w:tbl><w:tr><w:tc>${paragraph('道具')}</w:tc><w:tc>${paragraph('铜铃')}</w:tc></w:tr><w:tr><w:tc>${paragraph('场景')}</w:tc><w:tc>${paragraph('蓝门')}</w:tc></w:tr></w:tbl></w:body>`,
+      ),
+    );
+    const { text } = await extractCopilotDocumentText(
+      upload('screenplay.docx', Buffer.from(zipSync(entries))),
+    );
+    expect(
+      text
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+    ).toEqual([
+      '角色设定',
+      '阿晴穿黄色雨衣。',
+      '场景一 小巷',
+      '阿晴拾起铜铃。',
+      '道具',
+      '铜铃',
+      '场景',
+      '蓝门',
+    ]);
+  });
   it('extracts a real docx script preserving paragraph and soft-line-break structure', async () => {
     const buffer = readFileSync(
       join(__dirname, '__fixtures__', 'sample-script.docx'),
@@ -151,6 +189,29 @@ describe('decodeUploadFilename', () => {
 });
 
 describe('CopilotDocumentService', () => {
+  it('applies the App text ceiling only when explicitly requested', async () => {
+    const create = jest
+      .fn()
+      .mockImplementation(({ data }) =>
+        Promise.resolve({ id: DOCUMENT_ID, ...data }),
+      );
+    const service = serviceWith({
+      copilotDocument: { count: jest.fn().mockResolvedValue(0), create },
+    });
+    const input = {
+      userId: USER_ID,
+      conversationId: CONVERSATION_ID,
+      file: upload('outline.txt', 'a'.repeat(40_001)),
+    };
+    await expect(
+      service.create({ ...input, maximumTextCharacters: 40_000 }),
+    ).rejects.toMatchObject({ response: { code: 'DOCUMENT_TEXT_TOO_LARGE' } });
+    expect(create).not.toHaveBeenCalled();
+    await expect(service.create(input)).resolves.toMatchObject({
+      charCount: 40_001,
+    });
+  });
+
   function serviceWith(prisma: Record<string, unknown>) {
     return new CopilotDocumentService({
       ...prisma,

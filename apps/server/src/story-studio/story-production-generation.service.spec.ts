@@ -1,5 +1,15 @@
 import { ConflictException } from '@nestjs/common';
-import { KLING_MOTION_PRODUCT_PRICING } from '../../prisma/seed/ai-catalog/defaults';
+import {
+  KLING_MOTION_PRODUCT_PRICING,
+  HAPPYHORSE_VIDEO_PARAMETER_POLICY,
+  HAPPYHORSE_VIDEO_PRODUCT_PRICING,
+} from '../../prisma/seed/ai-catalog/defaults';
+import {
+  createBailianModelConfig,
+  toAiModelDefinition as bailianDefinition,
+} from '../ai-generation/providers/bailian/bailian-schema.mapper';
+import { mapBailianProviderRequest } from '../ai-generation/providers/bailian/bailian-request.mapper';
+import { AiPromptCompilerService } from '../ai-generation/prompt-compiler.service';
 import {
   createFalModelConfig,
   toAiModelDefinition,
@@ -13,6 +23,7 @@ import {
   nearestStoryDurationValue,
   storyGenerationClientOptionsFromSnapshot,
   storyModelSchemaDefaults,
+  modelCompatibilityIssue,
 } from './story-production-generation.service';
 
 describe('batch dispatch tolerates materialization version bumps', () => {
@@ -126,6 +137,161 @@ describe('Story production generation model constraints', () => {
     ).toEqual({ value: 10, seconds: 10 });
   });
 
+  it('adapts HappyHorse references and timing through its real catalog and provider mapper', () => {
+    const runtime = createBailianModelConfig({
+      endpointId: 'happyhorse-1.0-r2v',
+      service: 'video-synthesis',
+      callMode: 'async',
+      type: 'video',
+      name: 'HappyHorse 1.0',
+      requiredPlan: null,
+      generationModes: [
+        'text_to_video',
+        'image_to_video',
+        'multimodal_to_video',
+      ],
+      enabled: true,
+      queueName: 'ai-video-generation',
+      globalConcurrency: 1,
+      perUserRunning: 1,
+      perUserQueued: 10,
+      pollDelayMs: 1000,
+      billing: { productPricing: HAPPYHORSE_VIDEO_PRODUCT_PRICING },
+      parameterPolicy: {
+        ...HAPPYHORSE_VIDEO_PARAMETER_POLICY,
+        resolutionOptions: [
+          ...HAPPYHORSE_VIDEO_PARAMETER_POLICY.resolutionOptions,
+        ],
+        supportedAspectRatios: [
+          ...HAPPYHORSE_VIDEO_PARAMETER_POLICY.supportedAspectRatios,
+        ],
+        referenceTypes: [...HAPPYHORSE_VIDEO_PARAMETER_POLICY.referenceTypes],
+      },
+    });
+    const model = bailianDefinition(runtime);
+    const references = Array.from({ length: 2 }, (_, index) => ({
+      bindingId: `binding-${index}`,
+      width: 1024,
+      height: 1024,
+      binding: {
+        refId: `ref-${index}`,
+        label: `Character ${index}`,
+        kind: 'image' as const,
+        url: `https://media.example.com/${index}.png`,
+        assetId: `asset-${index}`,
+      },
+    }));
+    expect(modelCompatibilityIssue(model, 'video', references)).toBeNull();
+    expect(
+      modelCompatibilityIssue(model, 'video', [
+        {
+          ...references[0],
+          binding: { ...references[0].binding, kind: 'video' },
+        },
+      ]),
+    ).toMatchObject({ code: 'STORY_GENERATION_MODEL_REFERENCES_UNSUPPORTED' });
+    expect(
+      modelCompatibilityIssue(
+        model,
+        'video',
+        Array.from({ length: 5 }, () => references[0]),
+      ),
+    ).toMatchObject({ code: 'STORY_GENERATION_REFERENCE_LIMIT_EXCEEDED' });
+    const options = resolveVideoOptions(
+      model as unknown as ReturnType<typeof videoModel>,
+      {},
+      4000,
+    );
+    expect(options).toMatchObject({
+      durationSeconds: 4,
+      resolution: '720P',
+      aspectRatio: '16:9',
+    });
+    const service = new StoryProductionGenerationService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    ) as unknown as {
+      buildAiInput(
+        model: unknown,
+        target: unknown,
+        options: unknown,
+        references: unknown,
+      ): Record<string, unknown>;
+    };
+    const input = service.buildAiInput(
+      model,
+      { prompt: 'The two characters meet.', negativePrompt: null },
+      resolveVideoOptions(
+        model as unknown as ReturnType<typeof videoModel>,
+        { aspectRatio: '9:16' },
+        4000,
+        'portrait_9_16',
+      ),
+      references,
+    );
+    expect(input.referenceImages).toHaveLength(2);
+    // Existing callers using the provider-native array retain the same wire contract.
+    expect(model.input_schema.properties.references).toBeDefined();
+    expect(model.input_schema.properties.references['x-ui']).toMatchObject({
+      control: 'media_upload',
+    });
+    expect(model.input_schema.properties.referenceImages['x-ui']).toMatchObject(
+      {
+        control: 'hidden',
+        group: 'internal',
+      },
+    );
+    expect(
+      mapBailianProviderRequest(runtime, {
+        ...input,
+        referenceImages: undefined,
+        references: references.map((reference) => ({
+          type: 'reference_image',
+          url: reference.binding.url,
+        })),
+      }),
+    ).toMatchObject({
+      input: {
+        media: references.map((reference) => ({
+          type: 'reference_image',
+          url: reference.binding.url,
+        })),
+      },
+    });
+    const request = mapBailianProviderRequest(runtime, input);
+    expect(request).toMatchObject({
+      input: {
+        media: references.map((reference) => ({
+          type: 'reference_image',
+          url: reference.binding.url,
+        })),
+      },
+      parameters: { duration: 4, resolution: '720P', ratio: '9:16' },
+    });
+    const native = {
+      ...input,
+      referenceImages: undefined,
+      references: references.map((reference) => ({
+        type: 'reference_image',
+        url: reference.binding.url,
+      })),
+    };
+    const compiled = new AiPromptCompilerService().compile({
+      normalizedInput: native,
+      references: references.map((reference) => reference.binding),
+    });
+    expect(
+      mapBailianProviderRequest(runtime, compiled.normalizedInput),
+    ).toMatchObject({
+      input: { media: native.references },
+    });
+  });
+
   it('clamps a continuous duration to the model range', () => {
     expect(
       nearestStoryDurationValue(
@@ -155,6 +321,45 @@ describe('Story production generation model constraints', () => {
         durationSeconds: 5,
       }),
     ).toMatchObject({ durationSeconds: 5 });
+  });
+
+  it('uses each planned App shot duration instead of the five-second model default', () => {
+    const model = videoModel('minimax-h3-max', ['5', '10', '15']);
+    model.input_schema.properties.durationSeconds = {
+      ...(model.input_schema.properties.durationSeconds as Record<
+        string,
+        unknown
+      >),
+      default: '5',
+    };
+    for (const seconds of [5, 10, 15])
+      expect(resolveVideoOptions(model, {}, seconds * 1_000)).toMatchObject({
+        durationSeconds: String(seconds),
+      });
+  });
+
+  it('retains Studio model defaults unless App supplies an explicit ratio', () => {
+    const model = videoModel('minimax-h3-max', ['5', '10', '15']);
+    model.input_schema.properties.aspectRatio = {
+      type: 'string',
+      enum: ['16:9', '9:16'],
+      default: '16:9',
+    };
+    expect(
+      resolveVideoOptions(model, {}, 5_000, 'portrait_9_16'),
+    ).toMatchObject({
+      aspectRatio: '16:9',
+    });
+    expect(
+      resolveVideoOptions(
+        model,
+        { aspectRatio: '9:16' },
+        5_000,
+        'portrait_9_16',
+      ),
+    ).toMatchObject({
+      aspectRatio: '9:16',
+    });
   });
 
   it('reports required settings instead of falsely prescribing a split', async () => {
@@ -389,6 +594,8 @@ async function resolveDefaultVideoModel(models: unknown[]) {
 function resolveVideoOptions(
   model: ReturnType<typeof videoModel>,
   clientOptions: Record<string, string | number>,
+  durationMs = 7_000,
+  frameProfile = 'landscape_16_9',
 ) {
   const service = new StoryProductionGenerationService(
     {} as never,
@@ -411,9 +618,9 @@ function resolveVideoOptions(
     {
       targetKind: 'storyboard_clip',
       generationKind: 'video',
-      frameProfile: 'landscape_16_9',
+      frameProfile,
       generationConfig: {},
-      durationMs: 7_000,
+      durationMs,
     },
     clientOptions,
   );

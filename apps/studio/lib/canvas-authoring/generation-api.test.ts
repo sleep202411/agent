@@ -4,6 +4,7 @@ import {
   buildPromptDocument,
   buildPromptReferenceBindingsForMode,
   buildReferenceInputForMode,
+  referenceFieldsForMode,
   mediaSnapshotsForMode,
 } from "./generation-api";
 import type { FizzAiModel } from "./generation-api";
@@ -100,6 +101,36 @@ const imageRow = {
 };
 
 describe("buildReferenceInputForMode", () => {
+  it("retains existing HappyHorse reference slots when Server adds an internal typed alias", () => {
+    const model: FizzAiModel = {
+      ...seedanceLikeModel(),
+      id: "happyhorse-1-0",
+      generationModes: ["multimodal_to_video"],
+      input_schema: {
+        properties: {
+          references: {
+            type: "array",
+            maxItems: 4,
+            "x-ui": { control: "media_upload", group: "references", order: 30 },
+          },
+          referenceImages: {
+            type: "array",
+            maxItems: 4,
+            "x-ui": { control: "hidden", group: "internal", mediaKind: "image", order: 30 },
+          },
+        },
+      },
+    };
+    expect(
+      referenceFieldsForMode(model, "multimodal_to_video").map((field) => field.field)
+    ).toEqual(["references"]);
+    expect(
+      buildReferenceInputForMode(model, "multimodal_to_video", {
+        references: [{ id: "existing-reference", url: "https://media.example.com/character.png" }],
+      })
+    ).toEqual({ references: ["https://media.example.com/character.png"] });
+  });
+
   afterEach(() => vi.unstubAllGlobals());
 
   it("submits all five media-panel images alongside two audio references", () => {

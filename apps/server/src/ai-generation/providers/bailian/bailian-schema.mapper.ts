@@ -279,7 +279,7 @@ function inputSchemaFor(
         title: 'Reference voice',
       };
     }
-    if (wan3Protocol) {
+    if (wan3Protocol || recordValue(policy?.referenceLimits)) {
       const referenceLimits = recordValue(policy?.referenceLimits);
       const addReferenceField = (args: {
         field: 'referenceImages' | 'referenceVideos' | 'referenceAudios';
@@ -309,8 +309,8 @@ function inputSchemaFor(
             additionalProperties: true,
           },
           'x-ui': {
-            control: args.control,
-            group: 'references',
+            control: wan3Protocol ? args.control : 'hidden',
+            group: wan3Protocol ? 'references' : 'internal',
             order: args.order,
             importance: 'primary',
             accept: args.accept,
@@ -411,7 +411,8 @@ function inputSchemaFor(
           },
         });
       }
-    } else {
+    }
+    if (!wan3Protocol) {
       properties.references = providerProperty({
         type: 'array',
         title: 'References',

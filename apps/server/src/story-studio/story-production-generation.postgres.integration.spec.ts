@@ -527,6 +527,26 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(generatedClip.selectedMediaVersionId).not.toBeNull();
     expect(generatedClip.durationMs).toBe(10_000);
     expect(generatedSequence.durationMs).toBe(10_000);
+    // Legacy reconciliation left archived ranks in successive million bands.
+    // Moving rank zero by that same constant collides with the first archive.
+    await prisma.storyStoryboardClip.createMany({
+      data: [1_000_000, 2_000_000].map((rank) => ({
+        storyProjectId: fixture.projectId,
+        storyChapterId: fixture.chapterId,
+        sequenceId: fixture.sequenceId,
+        stableKey: `${fixture.prefix}.archived.${rank}`,
+        rank,
+        status: StoryProductionSpecStatus.archived,
+        kind: StoryStoryboardClipKind.image,
+        track: 'visual',
+        title: 'Archived shot',
+        startMs: 0,
+        durationMs: 250,
+        imagePrompt: 'Archived frame.',
+        sourceFingerprint: 'a'.repeat(64),
+        createdByUserId: fixture.userId,
+      })),
+    });
 
     const permissions = {
       requireProject: jest.fn().mockResolvedValue({
@@ -616,6 +636,16 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       storyboard: { status: 'current' },
       ready: true,
     });
+    const ranked = await prisma.storyStoryboardClip.findMany({
+      where: { sequenceId: fixture.sequenceId },
+      orderBy: { rank: 'asc' },
+      select: { rank: true, status: true },
+    });
+    expect(ranked).toEqual([
+      { rank: 0, status: 'current' },
+      { rank: 1, status: 'archived' },
+      { rank: 2, status: 'archived' },
+    ]);
   });
 
   it('allows a clip to generate without an upstream freshness gate', async () => {
