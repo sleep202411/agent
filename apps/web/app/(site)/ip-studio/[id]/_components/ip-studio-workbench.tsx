@@ -3,6 +3,7 @@
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { ContentGpsOwnerEditor } from "@/app/(site)/ips/_components/content-gps-owner-editor";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { AudienceKnowledgeEditor } from "./audience-knowledge-editor";
 import { AudienceGenerationTemplatesEditor } from "./audience-generation-templates-editor";
 import { IpGameAssociations } from "@/app/(site)/ips/_components/ip-game-associations";
 import { IpStageApplications } from "@/app/(site)/ips/_components/ip-stage-applications";
@@ -128,6 +129,7 @@ const STUDIO_TABS = [
   { key: "pricing", icon: IconCoin },
   { key: "orders", icon: IconReceipt },
   { key: "generation", icon: IconPhoto },
+  { key: "knowledge", icon: IconFileText },
 ] as const;
 
 type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
@@ -322,6 +324,11 @@ function IpStudioSession({
         {activeTab === "rights" ? <RightsPanel ip={ip} t={t} /> : null}
         {activeTab === "pricing" ? <PricingPanel ip={ip} t={t} /> : null}
         {activeTab === "orders" ? <OrdersPanel ip={ip} t={t} locale={locale} /> : null}
+        {activeTab === "knowledge" ? (
+          <Section title={t("tabs.knowledge")}>
+            <AudienceKnowledgeEditor ipId={ip.id} />
+          </Section>
+        ) : null}
         {activeTab === "generation" ? (
           <Section title={t("tabs.generation", { defaultValue: "Audience Generation" })}>
             <AudienceGenerationTemplatesEditor ipId={ip.id} />

@@ -12,6 +12,24 @@ const proposal = {
     },
   ],
 };
+function references(output: unknown): unknown {
+  if (
+    !output ||
+    typeof output !== 'object' ||
+    !('tasks' in output) ||
+    !Array.isArray(output.tasks)
+  )
+    return output;
+  return {
+    ...output,
+    tasks: output.tasks.map(
+      ({ evidence, ...task }: (typeof proposal.tasks)[number]) => ({
+        ...task,
+        sourceId: evidence === source ? 0 : 999,
+      }),
+    ),
+  };
+}
 function requestBody(init?: RequestInit): string {
   if (typeof init?.body !== 'string')
     throw new Error('Expected a JSON request body');
@@ -54,7 +72,9 @@ function transport(
                 index: 0,
                 message: {
                   role: 'assistant',
-                  content: raw ? String(output) : JSON.stringify(output),
+                  content: raw
+                    ? String(output)
+                    : JSON.stringify(references(output)),
                 },
                 finish_reason: finishReason,
               },
@@ -104,7 +124,7 @@ it.each([
     expect(fetch).toHaveBeenCalledTimes(2);
   },
 );
-it('repairs an unsupported quote once while preserving strict source validation', async () => {
+it('repairs an unknown source reference once while preserving strict source validation', async () => {
   const invalid = {
     tasks: [
       {
@@ -315,7 +335,9 @@ it('repairs only rejected excerpts and preserves all validated tasks', async () 
     previousProposal: { tasks: unknown[] };
     correction: string;
   };
-  expect(retry.previousProposal.tasks).toEqual(rejected);
+  expect(retry.previousProposal.tasks).toEqual(
+    (references({ tasks: rejected }) as { tasks: unknown[] }).tasks,
+  );
   expect(retry.correction).toContain('exactly that many tasks');
   expect(fetch).toHaveBeenCalledTimes(2);
 });
@@ -343,3 +365,29 @@ it.each(['missing', 'extra', 'identity', 'ungrounded'])(
     expect(fetch).toHaveBeenCalledTimes(2);
   },
 );
+
+it('attaches server-owned text to a provider response containing only a source reference', async () => {
+  const { evidence: _evidence, ...task } = proposal.tasks[0];
+  const fetch = transport(
+    JSON.stringify({ tasks: [{ ...task, sourceId: 0 }] }),
+    true,
+  );
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).resolves.toEqual(proposal);
+  const body = JSON.parse(requestBody(fetch.mock.calls[0][1])) as {
+    messages: Array<{
+      role: string;
+      content: string | Array<{ text: string }>;
+    }>;
+  };
+  const content = body.messages.find(
+    (message) => message.role === 'user',
+  )!.content;
+  const prompt = JSON.parse(
+    typeof content === 'string'
+      ? content
+      : content.map((part) => part.text).join(''),
+  );
+  expect(prompt.document).toEqual([{ sourceId: 0, text: source }]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
