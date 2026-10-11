@@ -340,7 +340,7 @@ export class AgentOsGatewayService {
       modelContext,
       modelProfileId:
         workbenchContext?.experience === 'mobile_h5'
-          ? mobileChatModelProfileId()
+          ? this.config.value.mobileChatModelProfileId
           : body.modelProfileId,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       attachments,
@@ -404,7 +404,7 @@ export class AgentOsGatewayService {
     const catalog = objectRecord(await this.worker.listModels());
     return {
       ...catalog,
-      mobileDefaultModelProfileId: mobileChatModelProfileId(),
+      mobileDefaultModelProfileId: this.config.value.mobileChatModelProfileId,
     };
   }
 
@@ -1207,8 +1207,4 @@ export class AgentOsGatewayService {
     }
     return undefined;
   }
-}
-
-function mobileChatModelProfileId(): string {
-  return process.env.AGENT_OS_MOBILE_CHAT_MODEL?.trim() || 'qwen3.7-flash';
 }

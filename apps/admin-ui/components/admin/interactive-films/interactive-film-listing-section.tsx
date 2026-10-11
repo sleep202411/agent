@@ -63,7 +63,7 @@ export function InteractiveFilmListingSection({
     (ready: boolean) => {
       setCover({ key: coverKey, ready });
       // Notify synchronously so a preflight finishing in this event cannot
-      // submit after the reviewer has lost access to the required cover.
+      // submit after the reviewer has lost access to the selected cover.
       onReadyChange(
         contentVersion,
         Boolean(ready && areInteractiveFilmMaterialsReady(data) && !error && !loading)
@@ -79,7 +79,7 @@ export function InteractiveFilmListingSection({
         areInteractiveFilmMaterialsReady(data) &&
         !error &&
         !loading &&
-        (data?.listing === null || coverReady)
+        (!data?.listing?.coverUrl || coverReady)
       )
     );
   }, [contentVersion, data, error, loading, coverReady, onReadyChange]);
@@ -182,7 +182,7 @@ export function InteractiveFilmListingSection({
         </p>
       ) : (
         <div className="space-y-5">
-          {!listing.coverUrl ? (
+          {listing.coverStatus === "unavailable" ? (
             <div className="space-y-2">
               <p
                 role="alert"
@@ -207,13 +207,21 @@ export function InteractiveFilmListingSection({
                   onReadyChange={onCoverReadyChange}
                 />
               ) : (
-                <EmptyMaterial>Cover is unavailable.</EmptyMaterial>
+                <EmptyMaterial>
+                  {listing.coverStatus === "not_provided"
+                    ? "No cover provided."
+                    : "Cover is unavailable."}
+                </EmptyMaterial>
               )}
             </ListingField>
             <ListingField label="Introduction">
-              <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
-                {listing.description}
-              </p>
+              {listing.description.trim() ? (
+                <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
+                  {listing.description}
+                </p>
+              ) : (
+                <EmptyMaterial>No introduction provided.</EmptyMaterial>
+              )}
             </ListingField>
           </div>
           <ListingField label="Tags">

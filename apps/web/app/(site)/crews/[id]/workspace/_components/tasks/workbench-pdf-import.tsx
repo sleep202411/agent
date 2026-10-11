@@ -13,6 +13,7 @@ type Preview = {
   createdAt?: string;
   tasks: Array<{ title: string; description: string; category: string; evidence: string }>;
   taskIds: string[];
+  failure?: { code: string; message: string } | null;
 };
 export function WorkbenchPdfImport({
   crewId,
@@ -323,7 +324,12 @@ function PdfSession({
           })}
         </p>
       )}
-      {preview?.status === "failed" && <p role="status">{t("pdfFailed")}</p>}
+      {preview?.status === "failed" && (
+        <div role="alert" className="space-y-1 text-sm text-red-400">
+          <p>{preview.failure?.message || t("pdfFailed")}</p>
+          <p>{t("pdfAnalysisId", { id: preview.id })}</p>
+        </div>
+      )}
       {preview?.status === "applied" && (
         <p role="status">{t("pdfCreated", { count: preview.taskIds.length })}</p>
       )}

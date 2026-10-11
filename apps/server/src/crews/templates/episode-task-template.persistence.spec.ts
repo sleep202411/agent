@@ -146,6 +146,12 @@ describe('Episode template SQL persistence', () => {
   beforeAll(async () => {
     db = await PGlite.create();
     await db.exec(deliveryFolderSql);
+    // Episode creation resolves the current delivery catalogue, even when no
+    // custom delivery categories have been configured for this fixture.
+    await db.exec(`CREATE TABLE crew_delivery_catalog_revisions(
+      category_id uuid NOT NULL, version integer NOT NULL, definition jsonb NOT NULL,
+      PRIMARY KEY(category_id, version)
+    );`);
     await db.exec(`CREATE TABLE crew_episodes(id uuid PRIMARY KEY,crew_id text,version integer,status text);
   CREATE TABLE tasks(id uuid PRIMARY KEY,crew_id text,episode_id uuid,number integer UNIQUE,rank numeric,metadata jsonb);
   CREATE TABLE dependencies(blocking_id uuid REFERENCES tasks(id),blocked_id uuid REFERENCES tasks(id),PRIMARY KEY(blocking_id,blocked_id));

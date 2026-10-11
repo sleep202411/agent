@@ -65,14 +65,67 @@ describe('StoryStoreService', () => {
     findFirst.mockResolvedValue(
       projectRow({ ...snapshot({ description: '' }), coverAssetId: null }),
     );
-    await expect(service.getListing(GAME_ID)).resolves.toMatchObject({
+    const listing = await service.getListing(GAME_ID);
+    expect(listing).toMatchObject({
       coverUrl: null,
       description: '',
     });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: { in: [] } } }),
     );
+    expect(listing).not.toHaveProperty('coverStatus');
   });
+  it('distinguishes an omitted cover from an unavailable cover during review', async () => {
+    findFirst.mockResolvedValue(
+      projectRow({ ...snapshot({ description: '' }), coverAssetId: null }),
+    );
+    await expect(
+      service.getReviewListing(GAME_ID, 'candidate-v2'),
+    ).resolves.toMatchObject({
+      coverUrl: null,
+      coverStatus: 'not_provided',
+      description: '',
+    });
+  });
+  it('reports a usable selected cover as available during review', async () => {
+    const cover = externalAsset({ id: COVER_ID });
+    findFirst.mockResolvedValue(projectRow(snapshot()));
+    findMany.mockResolvedValue([cover]);
+    await expect(
+      service.getReviewListing(GAME_ID, 'candidate-v2'),
+    ).resolves.toMatchObject({
+      coverUrl: cover.externalUrl,
+      coverStatus: 'available',
+    });
+  });
+  it.each([
+    'missing',
+    'blocked',
+    'processing',
+    'deleted',
+    'wrong kind',
+    'unresolvable',
+  ])(
+    'does not treat a %s selected cover as an omitted cover',
+    async (condition) => {
+      const cover = {
+        ...externalAsset({ id: COVER_ID }),
+        ...(condition === 'blocked' ? { moderationStatus: 'blocked' } : {}),
+        ...(condition === 'processing' ? { status: 'processing' } : {}),
+        ...(condition === 'deleted' ? { deletedAt: new Date() } : {}),
+        ...(condition === 'wrong kind' ? { kind: 'video' } : {}),
+        ...(condition === 'unresolvable' ? { externalUrl: null } : {}),
+      };
+      findFirst.mockResolvedValue(projectRow(snapshot()));
+      findMany.mockResolvedValue(condition === 'missing' ? [] : [cover]);
+      await expect(
+        service.getReviewListing(GAME_ID, 'candidate-v2'),
+      ).resolves.toMatchObject({
+        coverUrl: null,
+        coverStatus: 'unavailable',
+      });
+    },
+  );
   it('does not expose reviewing or offline works even when a release receipt exists', async () => {
     currentPublicVersion.mockResolvedValue(null);
     expect(await service.getListing(GAME_ID)).toBeNull();

@@ -5,7 +5,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { AdminSessionBoundary } from "../admin-session-boundary";
 import { InteractiveFilmReviewDetail } from "./interactive-film-review-detail";
 import type { AdminInteractiveFilmDetail } from "@/lib/interactive-film-admin-contract";
-import type { AdminInteractiveFilmListingSnapshot } from "@/lib/interactive-film-listing-contract";
+import {
+  parseAdminInteractiveFilmListingSnapshot,
+  type AdminInteractiveFilmListingSnapshot,
+} from "@/lib/interactive-film-listing-contract";
 
 const { request, listingRequest, refresh } = vi.hoisted(() => ({
   request: vi.fn(),
@@ -90,6 +93,7 @@ const snapshot: AdminInteractiveFilmListingSnapshot = {
     developer: "",
     tags: [],
     coverUrl: game.coverUrl,
+    coverStatus: "available",
     trailerUrl: null,
     screenshots: [],
   },
@@ -204,6 +208,96 @@ it("blocks approval until the frozen cover loads and disables it on media failur
   });
   expect(button.disabled).toBe(true);
   expect(request).not.toHaveBeenCalled();
+});
+
+it("allows approval of an empty introduction after the frozen cover loads and preflight passes", async () => {
+  const response = {
+    ...snapshot,
+    listing: { ...snapshot.listing!, description: "" },
+  };
+  const parseMaterials = () =>
+    parseAdminInteractiveFilmListingSnapshot(response, game.gameId, game.draftVersion!);
+  request
+    .mockResolvedValueOnce(game)
+    .mockResolvedValue({ ...game, status: "published", currentVersion: game.draftVersion });
+  listingRequest.mockImplementation(async () => parseMaterials());
+  await render(detail(parseMaterials()));
+  const button = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "通过并发布"
+  )!;
+  expect(container.textContent).toContain("No introduction provided.");
+  expect(button.disabled).toBe(true);
+  await act(async () => {
+    container.querySelector('img[alt="Fixture film cover"]')!.dispatchEvent(new Event("load"));
+  });
+  expect(button.disabled).toBe(false);
+  await approve();
+  const posts = request.mock.calls.filter(([, init]) => init.method === "POST");
+  expect(posts).toHaveLength(1);
+  expect(JSON.parse(posts[0]![1].body)).toEqual({ action: "approve" });
+  expect(listingRequest).toHaveBeenCalledWith(
+    game.gameId,
+    game.draftVersion,
+    expect.any(AbortSignal)
+  );
+  expect(refresh).toHaveBeenCalledTimes(1);
+});
+
+it("approves a release without optional cover or text after checking the exact version", async () => {
+  const response = {
+    ...snapshot,
+    listing: {
+      ...snapshot.listing!,
+      description: "",
+      coverUrl: null,
+      coverStatus: "not_provided",
+    },
+  };
+  const parseMaterials = () =>
+    parseAdminInteractiveFilmListingSnapshot(response, game.gameId, game.draftVersion!);
+  request
+    .mockResolvedValueOnce(game)
+    .mockResolvedValue({ ...game, status: "published", currentVersion: game.draftVersion });
+  listingRequest.mockImplementation(async () => parseMaterials());
+  await render(detail(parseMaterials()));
+  expect(container.textContent).toContain("No cover provided.");
+  await approve();
+  const posts = request.mock.calls.filter(([, init]) => init.method === "POST");
+  expect(posts).toHaveLength(1);
+  expect(JSON.parse(posts[0]![1].body)).toEqual({ action: "approve" });
+  expect(listingRequest).toHaveBeenCalledWith(
+    game.gameId,
+    game.draftVersion,
+    expect.any(AbortSignal)
+  );
+});
+
+it("does not approve when a selected cover becomes unavailable during preflight", async () => {
+  request.mockResolvedValue(game);
+  listingRequest.mockResolvedValue({
+    ...snapshot,
+    listing: { ...snapshot.listing!, coverUrl: null, coverStatus: "unavailable" },
+  });
+  await render(detail(snapshot));
+  await act(async () => {
+    container.querySelector('img[alt="Fixture film cover"]')!.dispatchEvent(new Event("load"));
+  });
+  await approve();
+  expect(request.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(0);
+  expect(container.textContent).toContain("cannot be approved because its cover is unavailable");
+});
+
+it("does not approve a coverless submission when the candidate changes during preflight", async () => {
+  const coverless = {
+    ...snapshot,
+    listing: { ...snapshot.listing!, coverUrl: null, coverStatus: "not_provided" as const },
+  };
+  request.mockResolvedValue({ ...game, draftVersion: "release.2" });
+  listingRequest.mockResolvedValue({ ...coverless, contentVersion: "release.2" });
+  await render(detail(coverless));
+  await approve();
+  expect(request.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(0);
+  expect(container.textContent).toContain("The submitted version has changed");
 });
 
 it("does not post approval if the loaded cover fails while materials preflight is pending", async () => {

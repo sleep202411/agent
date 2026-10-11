@@ -3145,6 +3145,10 @@
       },
       "filterLabel": "按類型篩選資產規格",
       "batch": {
+        "recoveryPaused": "生成已暫停，已完成 {completed}/{total} 項。請按需補充積分後繼續。",
+        "recoveryResume": "繼續生成",
+        "recoveryOwner": "僅此批次的建立者可以繼續或取消生成。",
+        "recoveryError": "無法更新此批次，請重試。",
         "generate": "批量生成",
         "allGenerated": "目前分類已全部生成",
         "tooltip": "使用 {model} 及目前參數，批量生成此分類中剩餘的 {count} 項空資產。",

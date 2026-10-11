@@ -16,6 +16,7 @@ import { TASK_PAYMENT_TERMS } from '@repo/shared/crew';
  * pair buys.
  */
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   GoneException,
@@ -36,7 +37,10 @@ import { NotificationService } from '../../notification';
 import { generateInviteToken } from '../../sharing/invite-token';
 import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
-import type { CreateCrewInviteLinkInput } from '../dto';
+import type {
+  CreateCrewInviteLinkInput,
+  ListCrewInviteLinksQuery,
+} from '../dto';
 import { resolveCrewLogoUrl } from '../mappers';
 import { CrewQualificationsService } from '../crew-qualifications.service';
 import { z } from 'zod';
@@ -214,6 +218,52 @@ export class CrewInviteLinksService {
       take: 50,
     });
     return links.map(toDTO);
+  }
+
+  async listPage(
+    crewId: string,
+    userId: string,
+    query: ListCrewInviteLinksQuery,
+  ) {
+    await this.authorization.require(crewId, userId, 'members.invite');
+    const scope = {
+      crewId,
+      ...(query.taskId
+        ? { taskId: query.taskId }
+        : query.scope === 'general'
+          ? { taskId: null }
+          : {}),
+    };
+    // A revoked page boundary remains a valid cursor so revocation does not strand later links.
+    const anchor = query.cursor
+      ? await this.prisma.crewInviteLink.findFirst({
+          where: { ...scope, id: query.cursor },
+          select: { id: true, createdAt: true },
+        })
+      : null;
+    if (query.cursor && !anchor)
+      throw new BadRequestException('Invalid invite link cursor.');
+    const rows = await this.prisma.crewInviteLink.findMany({
+      where: {
+        ...scope,
+        revokedAt: null,
+        ...(anchor
+          ? {
+              OR: [
+                { createdAt: { lt: anchor.createdAt } },
+                { createdAt: anchor.createdAt, id: { lt: anchor.id } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+    });
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map(toDTO),
+      nextCursor: rows.length > query.limit ? items[items.length - 1].id : null,
+    };
   }
 
   async revoke(crewId: string, userId: string, linkId: string): Promise<void> {

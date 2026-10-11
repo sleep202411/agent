@@ -6,13 +6,16 @@ vi.mock("./task-creation-workbench", () => ({
     active,
     onSubmitTask,
     onEditTask,
+    toolbarTarget,
   }: {
     active: boolean;
+    toolbarTarget?: HTMLElement | null;
     onSubmitTask: (id: string) => void;
     onEditTask?: (id: string) => void;
   }) =>
     active ? (
       <div data-workbench>
+        {toolbarTarget && createPortal(<button>Document: Failed</button>, toolbarTarget)}
         <button onClick={() => onSubmitTask("delivery")}>Submit from workbench</button>
         <button onClick={() => onEditTask?.("delivery")}>Edit from workbench</button>
       </div>
@@ -23,6 +26,7 @@ vi.mock("./trust-appeal-link", () => ({
 }));
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import en from "@/messages/en-US.json";
 import cn from "@/messages/zh-CN.json";
@@ -288,6 +292,18 @@ async function render(
     await act(async () => (document.querySelectorAll("nav button")[1] as HTMLElement)?.click());
 }
 describe("Crew task navigation", () => {
+  it("keeps wrapping workbench actions outside the fixed-height navigation and hides them on other tabs", async () => {
+    await render(undefined, false, true);
+    const action = [...document.querySelectorAll("button")].find(
+      (el) => el.textContent === "Document: Failed"
+    )!;
+    expect(action).toBeTruthy();
+    expect(action.closest("nav")).toBeNull();
+    expect(action.closest("header")).not.toBeNull();
+    const slot = action.parentElement!;
+    await act(async () => (document.querySelectorAll("nav button")[1] as HTMLElement).click());
+    expect(slot.className).toBe("hidden");
+  });
   it.each(["en-US", "zh-CN", "zh-HK"])(
     "opens Tasks and preserves tab destinations in %s",
     async (locale) => {
