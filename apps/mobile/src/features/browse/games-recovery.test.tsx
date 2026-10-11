@@ -5,6 +5,9 @@ import GamesScreen from "@/app/games";
 
 const h = vi.hoisted(() => ({
   feed: vi.fn(),
+  texts: vi.fn(),
+  push: vi.fn(),
+  filmPlay: vi.fn(),
   tags: vi.fn(),
   locale: "en-US",
   t: (key: string) => key,
@@ -15,11 +18,13 @@ type ListProps = {
   ListHeaderComponent: ReactNode;
   refreshControl: ReactNode;
   ListFooterComponent: ReactNode;
+  renderItem: (args: { item: { gameId: string } }) => ReactNode;
 };
 let list: ListProps;
+vi.mock("@/data/text-game-api", () => ({ listPublishedTextGames: h.texts }));
 vi.mock("expo-router", () => ({
   router: { push: vi.fn() },
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: h.push }),
   useLocalSearchParams: () => ({}),
   Stack: { Screen: () => null },
 }));
@@ -29,7 +34,9 @@ vi.mock("@/data/browse-refresh", () => ({ useBrowseVersion: () => 0 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (v: string) => v }));
 vi.mock("@/components/ip-grid", () => ({ IpGridCard: () => null }));
 vi.mock("@/data/interactive-film-api", () => ({ listPublishedInteractiveFilms: h.feed }));
-vi.mock("@/features/experience-player", () => ({ navigateToPlay: vi.fn() }));
+vi.mock("@/features/film-store/film-store", () => ({
+  FilmStore: ({ game }: { game: { gameId: string } }) => <span>preview:{game.gameId}</span>,
+}));
 vi.mock("@/lib/avatar", () => ({ dicebearAvatarUrl: () => "" }));
 vi.mock("expo-web-browser", () => ({ openBrowserAsync: vi.fn() }));
 vi.mock("@/config", () => ({ webBaseUrl: "http://localhost" }));
@@ -50,7 +57,9 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: (v: unknown) => v },
   Platform: { OS: "web", select: (v: Record<string, unknown>) => v.web ?? v.default },
   View: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  Pressable: () => null,
+  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
+    <button onClick={onPress}>{children}</button>
+  ),
   RefreshControl: ({ onRefresh, refreshing }: { onRefresh: () => void; refreshing: boolean }) => (
     <button onClick={onRefresh} data-refresh={refreshing}>
       refresh
@@ -61,6 +70,9 @@ vi.mock("react-native", () => ({
     return (
       <div>
         {props.ListHeaderComponent}
+        {props.data.map((item, i) => (
+          <div key={i}>{props.renderItem({ item })}</div>
+        ))}
         {props.refreshControl}
         {props.ListFooterComponent}
       </div>
@@ -102,6 +114,10 @@ const click = (label: string) =>
 
 beforeEach(() => {
   h.feed.mockReset();
+  h.texts.mockReset();
+  h.texts.mockResolvedValue([]);
+  h.push.mockReset();
+  h.filmPlay.mockReset();
   h.feed.mockResolvedValue(page("a"));
   host = document.createElement("div");
   root = createRoot(host);
@@ -135,4 +151,17 @@ it("aborts refresh transport when replaced and when the screen leaves", async ()
     old.resolve(page("old"));
     next.resolve(page("next"));
   });
+});
+
+it("opens a text adventure natively and retains film navigation", async () => {
+  h.texts.mockResolvedValue([
+    { gameId: "tg_0123456789abcdef", status: "published", name: "A text game" },
+  ]);
+  await render();
+  const buttons = [...host.querySelectorAll("button")];
+  await act(async () => buttons.find((b) => b.textContent?.includes("A text game"))!.click());
+  expect(h.push).toHaveBeenCalledWith("/play/text-game/tg_0123456789abcdef");
+  await act(async () => buttons.find((b) => b.textContent?.includes("games.filmLabel"))!.click());
+  expect(host.textContent).toContain("preview:a");
+  expect(h.filmPlay).not.toHaveBeenCalled();
 });

@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
@@ -9,9 +9,11 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 export default function CrewApplicationsScreen() {
   const auth = useAuth();
-  return <Session key={auth.generation} />;
+  const params = useLocalSearchParams<{ application?: string }>();
+  const requested = typeof params.application === "string" ? params.application : undefined;
+  return <Session key={`${auth.generation}:${requested ?? ""}`} requested={requested} />;
 }
-function Session() {
+function Session({ requested }: { requested?: string }) {
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -24,7 +26,14 @@ function Session() {
         <Pressable accessibilityRole="button" style={{ padding: 16 }} onPress={() => setWeb(false)}>
           <ThemedText>{t("nativeApplications.back")}</ThemedText>
         </Pressable>
-        <AuthedWebView path="/crews/applications" title={t("crewTerms.myApplications")} />
+        <AuthedWebView
+          path={
+            requested
+              ? `/messages?tab=recruitment&application=${encodeURIComponent(requested)}`
+              : "/messages?tab=recruitment"
+          }
+          title={t("crewTerms.myApplications")}
+        />
       </View>
     );
   return (
@@ -48,7 +57,12 @@ function Session() {
           <ThemedText>{t("crewTerms.signIn")}</ThemedText>
         </Pressable>
       ) : userId ? (
-        <CrewApplications userId={userId} generation={auth.generation} onWeb={() => setWeb(true)} />
+        <CrewApplications
+          initialApplicationId={requested}
+          userId={userId}
+          generation={auth.generation}
+          onWeb={() => setWeb(true)}
+        />
       ) : null}
     </View>
   );

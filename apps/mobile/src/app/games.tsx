@@ -7,11 +7,10 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, ListFooter, PosterImage, ScreenHeader, Skeleton } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
-import {
-  listPublishedInteractiveFilms,
-  type ExperienceGameSummary,
-} from "@/data/interactive-film-api";
-import { navigateToPlay } from "@/features/experience-player";
+import { loadGameCatalogue, type GameCatalogueRow } from "@/data/game-catalogue";
+import { toHref } from "@/lib/navigation";
+import { FilmStore } from "@/features/film-store/film-store";
+import type { ExperienceGameSummary } from "@/data/interactive-film-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -20,9 +19,11 @@ export default function GamesScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [games, setGames] = useState<ExperienceGameSummary[]>([]);
+  const [selectedFilm, setSelectedFilm] = useState<ExperienceGameSummary | null>(null);
+  const [games, setGames] = useState<GameCatalogueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string>();
 
   const scope = useMemo(() => ({ t }), [t]);
@@ -33,10 +34,11 @@ export default function GamesScreen() {
     const controller = new AbortController();
     lifetime.current = { scope, controller };
     const { signal } = controller;
-    return listPublishedInteractiveFilms({ page: 1, pageSize: 50, signal })
+    return loadGameCatalogue(signal)
       .then((next) => {
         if (signal?.aborted) return;
-        setGames(next);
+        setGames(next.games);
+        setWarnings(next.warnings);
         setError(undefined);
       })
       .catch((loadError: unknown) => {
@@ -73,9 +75,22 @@ export default function GamesScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("games.title")} />
+      <Pressable accessibilityRole="button" onPress={() => router.push(toHref("/text-games"))}>
+        <ThemedText>{t("textGames.title")}</ThemedText>
+      </Pressable>
       <ThemedText type="small" themeColor="textSecondary">
         {t("games.subtitle")}
       </ThemedText>
+      {warnings.map((warning, i) => (
+        <ThemedText key={i} accessibilityRole="alert">
+          {warning}
+        </ThemedText>
+      ))}
+      {warnings.length > 0 && (
+        <Pressable accessibilityRole="button" onPress={() => void load()}>
+          <ThemedText>{t("common.retry")}</ThemedText>
+        </Pressable>
+      )}
     </View>
   );
 
@@ -117,7 +132,7 @@ export default function GamesScreen() {
       ) : (
         <FlatList
           data={games}
-          keyExtractor={(item) => item.gameId}
+          keyExtractor={(item) => `${item.kind}:${item.gameId}`}
           showsVerticalScrollIndicator={false}
           contentInsetAdjustmentBehavior="never"
           style={{ backgroundColor: theme.background }}
@@ -133,7 +148,9 @@ export default function GamesScreen() {
           ListHeaderComponent={header}
           ListHeaderComponentStyle={styles.listHeader}
           ListEmptyComponent={
-            <EmptyState title={t("games.emptyTitle")} detail={t("games.emptyDetail")} />
+            warnings.length ? null : (
+              <EmptyState title={t("games.emptyTitle")} detail={t("games.emptyDetail")} />
+            )
           }
           ListFooterComponent={<ListFooter loading={false} />}
           refreshControl={
@@ -149,7 +166,11 @@ export default function GamesScreen() {
           renderItem={({ item }) => (
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigateToPlay(router, item)}
+              onPress={() =>
+                item.kind === "text"
+                  ? router.push(toHref(`/play/text-game/${item.gameId}`))
+                  : setSelectedFilm(item.film)
+              }
               style={({ pressed }) => [
                 styles.card,
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
@@ -157,14 +178,17 @@ export default function GamesScreen() {
               ]}
             >
               <PosterImage
-                uri={item.coverUrl}
-                label={item.title}
+                uri={item.coverUrl ?? undefined}
+                label={item.title || t("textAdventures.library.untitled")}
                 radius={10}
                 style={styles.cover}
               />
               <View style={styles.copy}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t(item.kind === "text" ? "games.textLabel" : "games.filmLabel")}
+                </ThemedText>
                 <ThemedText type="smallBold" numberOfLines={2}>
-                  {item.title}
+                  {item.title || t("textAdventures.library.untitled")}
                 </ThemedText>
                 {item.subtitle ? (
                   <ThemedText type="small" themeColor="textSecondary" numberOfLines={3}>
@@ -176,6 +200,7 @@ export default function GamesScreen() {
           )}
         />
       )}
+      {selectedFilm && <FilmStore game={selectedFilm} close={() => setSelectedFilm(null)} />}
     </ThemedView>
   );
 }

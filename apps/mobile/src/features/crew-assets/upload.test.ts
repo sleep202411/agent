@@ -30,6 +30,7 @@ it("checks capabilities then uploads with Crew scope and the authoritative byte 
     kind: "crew_asset_file",
     scope: { crewId: "crew" },
     maxBytes: 100,
+    beforeConfirm: expect.any(Function),
     signal,
   });
 });
@@ -53,4 +54,20 @@ it("does not upload a cancelled picker, oversized file, or cancelled scope", asy
 it("discards by media ID through the existing Crew endpoint", async () => {
   await discardCrewUpload("crew", id);
   expect(h.remove).toHaveBeenCalledWith(`/crews/crew/assets/uploads/${id}`, { service: "aurora" });
+});
+
+it("passes the exact confirmation and selected name to recovery storage", async () => {
+  const save = vi.fn();
+  const request = {
+    storageKey: "key",
+    kind: "crew_asset_file",
+    scope: { crewId: "crew" },
+    contentType: "application/pdf",
+  };
+  h.upload.mockImplementation(async (_file, options) => {
+    options.beforeConfirm(request);
+    return { mediaAssetId: id };
+  });
+  await pickAndUploadCrewFile("crew", new AbortController().signal, save);
+  expect(save).toHaveBeenCalledWith(request, "a.pdf");
 });

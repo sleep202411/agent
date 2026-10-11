@@ -4,9 +4,10 @@ import type {
 } from "@repo/shared/experience-runtime";
 import IconLock from "@tabler/icons-react-native/IconLock";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { getAuthGeneration, subscribeAuth } from "@/auth/auth-store";
 import { getAuthSnapshot, openAuthSheet } from "@/auth";
 import { openPaywall } from "@/features/paywall";
 import { useTranslations } from "@/i18n";
@@ -16,6 +17,8 @@ import {
   purchaseStoryCommunityAccess,
   type StoryCommunityAccessQuote,
 } from "../api/story-community-access-api";
+import { storyTopUpReturnStore } from "../lib/story-top-up-return";
+import { buildExperiencePlayShareUrl } from "../lib/experience-share";
 import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import { communityAccessDialogStyles as styles } from "./community-access-dialog-styles";
 
@@ -27,7 +30,9 @@ type AccessRequest = {
 /** H5 `useStoryCommunityAccess` — quote / purchase / recharge for published play. */
 export function useStoryCommunityAccess(
   runtime: ExperienceRuntimeManifest,
-  locale: string
+  locale: string,
+  chapterId?: string,
+  published = true
 ): {
   access: ExperiencePlayerAccess;
   dialog: ReactNode;
@@ -43,6 +48,11 @@ export function useStoryCommunityAccess(
   const payingRef = useRef(false);
   const quoteCache = useRef<StoryCommunityAccessQuote | null>(null);
   const quoteGeneration = useRef(0);
+  const mounted = useRef(false);
+  const scopeKey = `${runtime.gameId}:${runtime.buildId}`;
+  const scopeKeyRef = useRef(scopeKey);
+  const scopeGeneration = useRef(0);
+  const cacheAuthGeneration = useRef(getAuthGeneration());
 
   const finish = useCallback((allowed: boolean) => {
     quoteGeneration.current += 1;
@@ -54,44 +64,90 @@ export function useStoryCommunityAccess(
     current?.resolve(allowed);
   }, []);
 
-  useEffect(
-    () => () => {
+  useLayoutEffect(() => {
+    mounted.current = true;
+    scopeKeyRef.current = scopeKey;
+    scopeGeneration.current += 1;
+    let owner = getAuthGeneration();
+    const reset = () => {
       quoteGeneration.current += 1;
+      quoteCache.current = null;
+      setQuote(null);
+      setQuoteLoading(false);
+      payingRef.current = false;
+      setPaying(false);
+      finish(false);
+    };
+    reset();
+    const unsubscribe = subscribeAuth(() => {
+      const next = getAuthGeneration();
+      if (next === owner) return;
+      owner = next;
+      scopeGeneration.current += 1;
+      reset();
+    });
+    return () => {
+      mounted.current = false;
+      scopeGeneration.current += 1;
+      quoteGeneration.current += 1;
+      quoteCache.current = null;
       pending.current?.resolve(false);
       pending.current = null;
-    },
-    []
-  );
+      unsubscribe();
+    };
+  }, [scopeKey, finish]);
 
   const loadQuote = useCallback(async (): Promise<StoryCommunityAccessQuote | null> => {
+    if (!mounted.current || scopeKeyRef.current !== scopeKey) return null;
     const generation = ++quoteGeneration.current;
     const currentRequest = pending.current;
+    const owner = getAuthGeneration();
+    const scope = scopeGeneration.current;
+    const owns = () =>
+      mounted.current &&
+      scopeKeyRef.current === scopeKey &&
+      owner === getAuthGeneration() &&
+      scope === scopeGeneration.current &&
+      generation === quoteGeneration.current &&
+      pending.current === currentRequest;
     setQuoteLoading(true);
     setQuoteError(null);
     try {
       const latest = await fetchStoryCommunityAccessQuote(runtime.gameId, runtime.buildId);
-      if (generation !== quoteGeneration.current || pending.current !== currentRequest) return null;
+      if (!owns()) return null;
+      cacheAuthGeneration.current = owner;
       quoteCache.current = latest;
       setQuote(latest);
       return latest;
     } catch (failure) {
-      if (generation !== quoteGeneration.current || pending.current !== currentRequest) return null;
+      if (!owns()) return null;
       const message = failure instanceof Error ? failure.message : t("play.communityAccess.failed");
       setQuoteError(message);
       return null;
     } finally {
-      if (generation === quoteGeneration.current) setQuoteLoading(false);
+      if (owns()) setQuoteLoading(false);
     }
-  }, [runtime.buildId, runtime.gameId, t]);
+  }, [runtime.buildId, runtime.gameId, scopeKey, t]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!published) return;
+      const auth = getAuthSnapshot();
+      const accountId =
+        auth.status === "authenticated" ? String(auth.user?.userId ?? auth.user?.id ?? "") : "";
+      if (accountId) {
+        try {
+          storyTopUpReturnStore(accountId).arrived(runtime.gameId, chapterId);
+        } catch (error) {
+          setError(error instanceof Error ? error.message : String(error));
+        }
+      }
       if (!pending.current) return;
       void loadQuote().then((latest) => {
         const current = pending.current;
         if (current && latest?.ownedKeys.includes(current.requirement.key)) finish(true);
       });
-    }, [finish, loadQuote])
+    }, [finish, loadQuote, runtime.gameId, chapterId, published])
   );
 
   const formatPrice = useCallback(
@@ -101,19 +157,21 @@ export function useStoryCommunityAccess(
 
   const access = useMemo<ExperiencePlayerAccess>(
     () => ({
-      canAccess: (requirement) => quoteCache.current?.ownedKeys.includes(requirement.key) ?? false,
+      canAccess: (requirement) =>
+        mounted.current &&
+        scopeKeyRef.current === scopeKey &&
+        cacheAuthGeneration.current === getAuthGeneration() &&
+        (quoteCache.current?.ownedKeys.includes(requirement.key) ?? false),
       checkAccess: async (requirement) => {
-        try {
-          const latest = await fetchStoryCommunityAccessQuote(runtime.gameId, runtime.buildId);
-          quoteCache.current = latest;
-          setQuote(latest);
-          return latest.ownedKeys.includes(requirement.key);
-        } catch {
-          return false;
-        }
+        const latest = await loadQuote();
+        return latest?.ownedKeys.includes(requirement.key) ?? false;
       },
       requestAccess: (requirement) =>
         new Promise<boolean>((resolve) => {
+          if (!mounted.current || scopeKeyRef.current !== scopeKey) {
+            resolve(false);
+            return;
+          }
           pending.current?.resolve(false);
           const next = { requirement, resolve };
           pending.current = next;
@@ -126,7 +184,7 @@ export function useStoryCommunityAccess(
         }),
       formatPrice,
     }),
-    [finish, formatPrice, loadQuote, runtime.buildId, runtime.gameId]
+    [finish, formatPrice, loadQuote, scopeKey]
   );
 
   const price =
@@ -139,7 +197,16 @@ export function useStoryCommunityAccess(
     BigInt(quote.balance) < BigInt(price!.communityPointPrice);
 
   const purchase = async () => {
-    if (!request || !price || payingRef.current) return;
+    if (!request || !price || payingRef.current || !mounted.current || pending.current !== request)
+      return;
+    const original = request;
+    const owner = getAuthGeneration();
+    const scope = scopeGeneration.current;
+    const owns = () =>
+      mounted.current &&
+      owner === getAuthGeneration() &&
+      scope === scopeGeneration.current &&
+      pending.current === original;
     payingRef.current = true;
     setPaying(true);
     setError(null);
@@ -150,6 +217,8 @@ export function useStoryCommunityAccess(
         key: price.key,
         expectedPrice: price.communityPointPrice,
       });
+      if (!owns()) return;
+      cacheAuthGeneration.current = owner;
       const nextOwned = [...new Set([...(quoteCache.current?.ownedKeys ?? []), price.key])];
       const nextQuote: StoryCommunityAccessQuote = quoteCache.current
         ? { ...quoteCache.current, ownedKeys: nextOwned }
@@ -163,11 +232,14 @@ export function useStoryCommunityAccess(
       setQuote(nextQuote);
       finish(true);
     } catch (failure) {
+      if (!owns()) return;
       setError(failure instanceof Error ? failure.message : t("play.communityAccess.failed"));
       void loadQuote();
     } finally {
-      payingRef.current = false;
-      setPaying(false);
+      if (mounted.current && scope === scopeGeneration.current && owner === getAuthGeneration()) {
+        payingRef.current = false;
+        setPaying(false);
+      }
     }
   };
 
@@ -245,7 +317,34 @@ export function useStoryCommunityAccess(
           ) : insufficient ? (
             <Pressable
               accessibilityRole="button"
-              onPress={() => openPaywall({ category: "community_points" })}
+              onPress={() => {
+                if (
+                  !mounted.current ||
+                  scopeKeyRef.current !== scopeKey ||
+                  cacheAuthGeneration.current !== getAuthGeneration() ||
+                  pending.current !== request
+                )
+                  return;
+                const auth = getAuthSnapshot();
+                const accountId =
+                  auth.status === "authenticated"
+                    ? String(auth.user?.userId ?? auth.user?.id ?? "")
+                    : "";
+                if (!accountId) return;
+                try {
+                  storyTopUpReturnStore(accountId).remember(runtime.gameId, chapterId);
+                  openPaywall({
+                    category: "community_points",
+                    communityReturnUrl: buildExperiencePlayShareUrl({
+                      gameId: runtime.gameId,
+                      locale,
+                      chapterId,
+                    }),
+                  });
+                } catch (error) {
+                  setError(error instanceof Error ? error.message : String(error));
+                }
+              }}
               style={styles.primaryHit}
             >
               <Text style={styles.primaryText}>{t("play.communityAccess.recharge")}</Text>

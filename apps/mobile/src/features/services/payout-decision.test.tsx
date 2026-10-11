@@ -152,3 +152,56 @@ it("rejects unsafe proof URLs and cancels without writing", async () => {
   await click("episodeOrganization.cancel");
   expect(h.decide).not.toHaveBeenCalled();
 });
+
+it("recovers failed permission checks without recording a payment", async () => {
+  h.access.mockRejectedValueOnce(new Error("Permission lookup failed"));
+  await render();
+  expect(host.textContent).toContain("Permission lookup failed");
+  expect(button("crewFinance.payout_pay")).toBeUndefined();
+  await click("common.retry");
+  expect(host.textContent).not.toContain("Permission lookup failed");
+  expect(button("crewFinance.payout_pay")).toBeDefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});
+it("clears payment evidence and confirmation when the payout changes", async () => {
+  await render();
+  await click("crewFinance.payout_pay");
+  await enter("crewFinance.reference", "previous bank ref");
+  await render({ ...record, id: "22222222-2222-4222-8222-222222222222" });
+  expect(button("crewFinance.confirmDecision")).toBeUndefined();
+  await click("crewFinance.payout_pay");
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="crewFinance.reference"]')!.value
+  ).toBe("");
+  expect(button("crewFinance.confirmDecision").disabled).toBe(true);
+  expect(h.decide).not.toHaveBeenCalled();
+});
+it("resets an attempted decision after a refreshed record version", async () => {
+  h.decide.mockRejectedValue(new Error("Version conflict"));
+  await render();
+  await click("crewFinance.payout_void");
+  await enter("crewFinance.decisionReason", "Duplicate");
+  await click("crewFinance.confirmDecision");
+  await render({ ...record, version: 3 });
+  expect(host.textContent).not.toContain("Version conflict");
+  expect(button("crewFinance.confirmDecision")).toBeUndefined();
+  expect(button("crewFinance.payout_void")).toBeDefined();
+  expect(h.decide).toHaveBeenCalledTimes(1);
+});
+it("ignores old access after switching to another account", async () => {
+  let resolve!: (value: boolean) => void;
+  h.access.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  h.access.mockResolvedValue(false);
+  await act(async () =>
+    root.render(<PayoutDecision record={record} userId="viewer" generation={1} onSaved={h.saved} />)
+  );
+  await act(async () => resolve(true));
+  expect(button("crewFinance.payout_pay")).toBeUndefined();
+  expect(h.decide).not.toHaveBeenCalled();
+});

@@ -1,11 +1,10 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations, useLocale } from "@/i18n";
-import { api } from "@/lib/api-client";
-import { useAuth, useAuthGate } from "@/auth";
+import { useTranslations } from "@/i18n";
+import { useIpKnowledge } from "@/features/ip-community/use-ip-knowledge";
 
 interface IpKnowledgeChatProps {
   ipId: string;
@@ -14,72 +13,10 @@ interface IpKnowledgeChatProps {
 
 export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
   const t = useTranslations();
-  const locale = useLocale();
   const theme = useTheme();
-  const { user } = useAuth();
-  const { requireAuth } = useAuthGate();
-
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [citedIds, setCitedIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const handleCancel = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    setLoading(false);
-  };
-
-  const handleAsk = () => {
-    if (!question.trim() || loading) return;
-
-    if (!user) {
-      requireAuth();
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setAnswer(null);
-    setCitedIds([]);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    api
-      .post<{
-        answer: string;
-        citedDocumentIds: string[];
-        unanswered: boolean;
-      }>(`/ip-commerce/ips/${ipId}/knowledge/ask`, {
-        service: "aurora",
-        data: {
-          question: question.trim(),
-          locale: locale === "en-US" || locale === "zh-HK" ? locale : "zh-CN",
-        },
-        signal: controller.signal,
-      })
-      .then((reply) => {
-        if (!controller.signal.aborted) {
-          setAnswer(reply.answer);
-          setCitedIds(reply.citedDocumentIds || []);
-        }
-      })
-      .catch((err: any) => {
-        if (err?.name !== "AbortError" && !controller.signal.aborted) {
-          setError(t("ipKnowledge.error"));
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-        abortControllerRef.current = null;
-      });
-  };
+  const { ask, cancel: handleCancel, answer, citedIds, loading, error } = useIpKnowledge(ipId);
+  const handleAsk = () => void ask(question);
 
   return (
     <View
@@ -95,6 +32,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
 
       <View style={styles.inputRow}>
         <TextInput
+          accessibilityLabel={t("ipKnowledge.placeholder")}
           value={question}
           onChangeText={setQuestion}
           placeholder={t("ipKnowledge.placeholder")}
@@ -112,6 +50,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
         />
         {loading ? (
           <Pressable
+            accessibilityRole="button"
             onPress={handleCancel}
             style={[styles.button, { backgroundColor: theme.backgroundSelected }]}
           >
@@ -121,6 +60,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
           </Pressable>
         ) : (
           <Pressable
+            accessibilityRole="button"
             onPress={handleAsk}
             disabled={!question.trim()}
             style={[

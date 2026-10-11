@@ -1,3 +1,5 @@
+import { requiredSkillsSchema } from "./crew-skills-api";
+import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskSubmission } from "./task-delivery-api";
@@ -6,10 +8,17 @@ import { taskOption } from "./task-options";
 const date = z.string().datetime({ offset: true }).nullable();
 export const taskReference = taskOption.extend({
   status: z.string().min(1),
-  workflowState: z.object({ name: z.string().min(1) }),
+  workflowState: z.object({ name: z.string().min(1), systemKey: z.string().nullish() }),
   parentId: z.string().uuid().nullable(),
 });
 export const taskDetailSchema = taskOption.extend({
+  deliveryFolder: z.object({ id: z.string().uuid(), name: z.string() }).nullable().optional(),
+  canvasHref: z.string().nullable().optional(),
+  isRecruiting: z.boolean().optional(),
+  ...taskCompensationShape,
+  contractAssetNodeId: z.string().uuid().nullable().optional(),
+  requiredSkills: requiredSkillsSchema.optional(),
+  positionRole: z.string().trim().min(1).max(80).nullable().optional(),
   taskKind: taskKindSchema.nullable().optional(),
   estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
   crewId: z.string().min(1),
@@ -25,7 +34,7 @@ export const taskDetailSchema = taskOption.extend({
   revisionLimit: z.number().int().nonnegative().nullable(),
   revisionRoundsUsed: z.number().int().nonnegative(),
   storyboardClipId: z.string().nullable().optional(),
-  workflowState: z.object({ name: z.string().min(1) }),
+  workflowState: z.object({ name: z.string().min(1), systemKey: z.string().nullish() }),
   startAt: date,
   dueAt: date,
   labels: z.array(z.object({ id: z.string().uuid(), name: z.string() })),

@@ -1,11 +1,13 @@
+import { Image } from "expo-image";
 import { useUserDisplays } from "./user-displays";
-import { useEffect, useState } from "react";
-import { useIsFocused, useRouter, Stack } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, Stack } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import type { OrderAction } from "@repo/shared/order";
 import { useAuth, useAuthGate } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice } from "@/lib/creator-service-format";
@@ -20,7 +22,7 @@ import {
 export function OrderDetail({ id }: { id: string }) {
   const auth = useAuth(),
     gate = useAuthGate(),
-    focused = useIsFocused(),
+    active = useScreenActive(),
     t = useTranslations(),
     theme = useTheme();
   const userId = String(auth.user?.userId ?? auth.user?.id ?? "");
@@ -40,64 +42,93 @@ export function OrderDetail({ id }: { id: string }) {
         <Pressable accessibilityRole="button" onPress={() => gate.requireAuth()}>
           <ThemedText>{t("orders.signIn")}</ThemedText>
         </Pressable>
-      ) : focused && id && userId ? (
-        <Content key={JSON.stringify([id, auth.generation, userId])} id={id} userId={userId} />
+      ) : id && userId ? (
+        <Content
+          key={JSON.stringify([id, auth.generation, userId])}
+          id={id}
+          userId={userId}
+          active={active}
+        />
       ) : null}
     </View>
   );
 }
-function Content({ id, userId }: { id: string; userId: string }) {
+function Content({ id, userId, active }: { id: string; userId: string; active: boolean }) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
     router = useRouter();
-  const [order, setOrder] = useState<NativeOrder>(),
-    [error, setError] = useState<string>(),
-    [loading, setLoading] = useState(true),
-    [revision, setRevision] = useState(0);
+  const [revision, setRevision] = useState(0);
+  const scope = useMemo(
+    () => ({ id, userId, active, revision, t }),
+    [id, userId, active, revision, t]
+  );
+  const [snapshot, setSnapshot] = useState<{
+    scope: object;
+    order?: NativeOrder;
+    error?: string;
+  }>();
+  const visible = active && snapshot?.scope === scope ? snapshot : undefined;
+  const order = visible?.order;
+  const error = visible?.error;
+  const loading = active && !visible;
   const [action, setAction] = useState<OrderAction>(),
     [reason, setReason] = useState("");
-  const op = useAuthFormOperation(id, true);
+  const op = useAuthFormOperation(id, active);
   const auth = useAuth();
   const otherId = order ? (order.buyerId === userId ? order.creatorId : order.buyerId) : "";
-  const displays = useUserDisplays(String(auth.generation), [otherId]);
+  const displays = useUserDisplays(active ? String(auth.generation) : undefined, [otherId]);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void fetchOrder(id, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
         if (result.buyerId !== userId && result.creatorId !== userId)
           throw new Error("Order is not available to this account");
-        setOrder(result);
-        setError(undefined);
+        setSnapshot({ scope, order: result });
+        setAction((current) =>
+          current && orderActions(result, userId).includes(current) ? current : undefined
+        );
       })
       .catch((cause) => {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setSnapshot({
+            scope,
+            error: cause instanceof Error ? cause.message : t("profileEdit.failed"),
+          });
+        }
       });
     return () => controller.abort();
-  }, [id, userId, revision, t]);
+  }, [id, userId, scope, active, t]);
   const refresh = () => {
-    setLoading(true);
-    setAction(undefined);
     setRevision((value) => value + 1);
   };
   const submit = () => {
-    if (!order || !action || loading) return;
+    if (!active || !order || !action || loading || !orderActions(order, userId).includes(action))
+      return;
     void op.run(
       () => transitionOrder(order, userId, action, reason),
       (result) => {
-        setOrder(result);
+        setSnapshot({ scope, order: result });
         setAction(undefined);
         setReason("");
-        setError(undefined);
       },
-      (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
+      (cause) => {
+        // A failed response does not prove the transition failed. Require a
+        // fresh authoritative read before offering another order action.
+        setSnapshot({
+          scope,
+          error: cause instanceof Error ? cause.message : t("profileEdit.failed"),
+        });
+        // Keep the draft hidden with the failed snapshot. The next read
+        // restores it only if this action is still available to this account.
+      }
     );
   };
+  const counterparty = displays?.get(otherId);
+  const counterpartyName = counterparty?.nickname?.trim() || `${t("inbox.person")} ${otherId}`;
+  if (!active) return null;
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -124,9 +155,37 @@ function Content({ id, userId }: { id: string; userId: string }) {
           <ThemedText>
             {t(`orders.status.${order.status}`)} · #{order.id}
           </ThemedText>
-          <ThemedText>
-            {t(order.buyerId === userId ? "orderDetail.creator" : "orderDetail.buyer")}{" "}
-            {displays?.get(otherId)?.nickname?.trim() || otherId}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 8,
+                overflow: "hidden",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: theme.backgroundSelected,
+              }}
+            >
+              <ThemedText type="small">{Array.from(counterpartyName)[0] || "?"}</ThemedText>
+              {counterparty?.avatar && (
+                <Image
+                  source={{ uri: counterparty.avatar }}
+                  accessible={false}
+                  recyclingKey={otherId + counterparty.avatar}
+                  style={{ position: "absolute", width: 36, height: 36 }}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t(order.buyerId === userId ? "orderDetail.creator" : "orderDetail.buyer")}
+              </ThemedText>
+              <ThemedText type="smallBold">{counterpartyName}</ThemedText>
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary">
+            {t(`servicePackages.tier.${order.packageSnapshot.tier}`)}
           </ThemedText>
           <ThemedText>
             {formatServicePrice(
@@ -176,9 +235,15 @@ function Content({ id, userId }: { id: string; userId: string }) {
               ) : null
           )}
           {order.cancelInfo && (
-            <ThemedText>
-              {t("orderDetail.cancelReason")} {order.cancelInfo.reason}
-            </ThemedText>
+            <View style={{ gap: 4 }}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("orderDetail.cancelledBy").replace(
+                  "{by}",
+                  t(`orderDetail.role.${order.cancelInfo.by}`)
+                )}
+              </ThemedText>
+              <ThemedText>{order.cancelInfo.reason}</ThemedText>
+            </View>
           )}
           {button(
             t("serviceContact.open"),

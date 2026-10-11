@@ -43,23 +43,25 @@ function Session() {
         >
           <ThemedText>{t("inbox.signIn")}</ThemedText>
         </Pressable>
-      ) : active && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
-        web ? (
-          <View style={{ flex: 1 }}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setWeb(false)}
-              style={{ padding: 16 }}
-            >
-              <ThemedText>{t("nativeApplications.back")}</ThemedText>
-            </Pressable>
-            <AuthedWebView
-              path={`/crews/${encodeURIComponent(id)}/workspace?tab=positions`}
-              title={t("applicationReview.title")}
-            />
-          </View>
-        ) : (
+      ) : userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
+        <>
+          {web && active && (
+            <View style={{ flex: 1 }}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setWeb(false)}
+                style={{ padding: 16 }}
+              >
+                <ThemedText>{t("nativeApplications.back")}</ThemedText>
+              </Pressable>
+              <AuthedWebView
+                path={`/crews/${encodeURIComponent(id)}/workspace?tab=positions`}
+                title={t("applicationReview.title")}
+              />
+            </View>
+          )}
           <ApplicationReview
+            active={active && !web}
             key={`${id}:${auth.generation}`}
             crewId={id}
             userId={userId}
@@ -67,7 +69,7 @@ function Session() {
             onWeb={() => setWeb(true)}
             onClose={() => router.back()}
           />
-        )
+        </>
       ) : null}
     </View>
   );

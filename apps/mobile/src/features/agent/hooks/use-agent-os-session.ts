@@ -52,6 +52,7 @@ export type UseAgentOsSessionOptions = {
   workbenchMode: string;
   /** Story chapter for `workbenchMode: "story"` (PC FizzAgent). */
   chapterId?: string;
+  canWrite?: boolean;
 };
 
 type SessionState = {
@@ -155,6 +156,10 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   const chapterIdOpt = options.chapterId?.trim() || "";
   const scope = useStoryRequestScope(JSON.stringify([projectId, chapterIdOpt, workbenchMode]));
   const configured = isAgentOsId(projectId);
+  const writable = useRef(options.canWrite !== false);
+  useLayoutEffect(() => {
+    writable.current = options.canWrite !== false;
+  }, [options.canWrite]);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [runEvents, setRunEvents] = useState<AgentOsEvent[]>([]);
   const [session, setSession] = useState<SessionState>(emptySession);
@@ -222,15 +227,19 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
       scopeRef.current === scope && operationRef.current === operation && !operation.signal.aborted,
     [scope]
   );
-  const beginOperation = useCallback(() => {
-    if (scopeRef.current !== scope || !scope.enabled || operationRef.current) return null;
-    const operation = new AbortController();
-    operationRef.current = operation;
-    pollAbortRef.current?.abort();
-    pollAbortRef.current = null;
-    setSending(true);
-    return operation;
-  }, [scope]);
+  const beginOperation = useCallback(
+    (write = true) => {
+      if (write && !writable.current) return null;
+      if (scopeRef.current !== scope || !scope.enabled || operationRef.current) return null;
+      const operation = new AbortController();
+      operationRef.current = operation;
+      pollAbortRef.current?.abort();
+      pollAbortRef.current = null;
+      setSending(true);
+      return operation;
+    },
+    [scope]
+  );
   const finishOperation = useCallback(
     (operation: AbortController) => {
       if (isCurrent(operation)) {
@@ -373,7 +382,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         }));
         return;
       }
-      const operation = beginOperation();
+      const operation = beginOperation(false);
       if (!operation) return;
       setSession((prev) => ({ ...prev, status: "restoring" }));
       try {
@@ -444,14 +453,14 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
       hitlReplyRef.current = null;
       try {
         const modelProfileId = await ensureModelProfile(operation.signal);
-        if (!isCurrent(operation)) return false;
+        if (!isCurrent(operation) || !writable.current) return false;
         if (!conversationIdRef.current) {
           conversationIdRef.current = newClientUuid();
         }
         const conversationId = conversationIdRef.current;
         const chapterId =
           chapterIdOpt || (await resolveDefaultChapterId(projectId, operation.signal));
-        if (!isCurrent(operation)) return false;
+        if (!isCurrent(operation) || !writable.current) return false;
         const retryKey = JSON.stringify({
           projectId,
           conversationId,
@@ -765,7 +774,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   ]);
 
   const newChat = useCallback(() => {
-    if (scopeRef.current !== scope) return;
+    if (scopeRef.current !== scope || !writable.current) return;
     operationRef.current?.abort();
     operationRef.current = null;
     approvalRetryRef.current = null;
