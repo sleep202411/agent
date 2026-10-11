@@ -1,6 +1,7 @@
 import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { PdfTaskImport } from "./pdf-task-import";
 const h = vi.hoisted(() => ({
   generation: 1,
@@ -10,6 +11,17 @@ const h = vi.hoisted(() => ({
   apply: vi.fn(),
   pick: vi.fn(),
   analyze: vi.fn(),
+}));
+vi.mock("@/lib/api-client", () => ({
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
@@ -137,4 +149,57 @@ it("shows actionable analysis failure details instead of discarding the provider
   await render();
   expect(host.textContent).toContain("AI provider quota exhausted. Contact support.");
   expect(host.textContent).toContain("mobileProduction.pdfAnalysisId");
+});
+
+it.each([404, 410])(
+  "allows a fresh analysis when saved receipt is unavailable (%s)",
+  async (status) => {
+    h.get.mockRejectedValue(new ApiRequestError("missing", "Analysis no longer exists", status));
+    await render();
+    expect(host.textContent).toContain("Analysis no longer exists");
+    expect(host.textContent).not.toContain("mobileProduction.pdfPending");
+    await act(async () => button("mobileProduction.pdfNewAnalysis").click());
+    expect(h.save).toHaveBeenCalledWith("crew", "user", null);
+    expect(button("mobileProduction.pdfChoose")).toBeDefined();
+    expect(host.textContent).not.toContain("Analysis no longer exists");
+  }
+);
+
+it("does not discard a frozen apply selection when its receipt is unavailable", async () => {
+  h.load.mockResolvedValue({ id, indices: [1] });
+  h.get.mockRejectedValue(new ApiRequestError("missing", "Receipt unavailable", 404));
+  await render();
+  expect(button("mobileProduction.pdfNewAnalysis")).toBeUndefined();
+  expect(h.save).not.toHaveBeenCalled();
+  h.get.mockResolvedValue(preview);
+  await act(async () => button("mobileProduction.pdfCheck").click());
+  expect(button("mobileProduction.pdfRetry")).toBeDefined();
+});
+
+it("keeps recovery after a transient network failure", async () => {
+  h.get.mockRejectedValue(new Error("Network unavailable"));
+  await render();
+  expect(button("mobileProduction.pdfNewAnalysis")).toBeUndefined();
+  expect(host.textContent).toContain("mobileProduction.pdfPending");
+});
+
+it.each(["queued", "analyzing"])("shows active analysis progress for %s", async (status) => {
+  h.get.mockResolvedValue({ ...preview, status, tasks: [] });
+  await render();
+  expect(host.textContent).toContain(
+    status === "queued" ? "mobileProduction.pdfQueued" : "mobileProduction.pdfAnalyzing"
+  );
+  expect(host.textContent).toContain("loading");
+});
+
+it("resumes polling after retrying an upload whose saved receipt was missing", async () => {
+  h.get.mockRejectedValue(new ApiRequestError("missing", "Missing analysis", 404));
+  await render();
+  h.pick.mockResolvedValue({ name: "script.docx", uri: "file:///script.docx", size: 100 });
+  await act(async () => button("mobileProduction.pdfChoose").click());
+  h.analyze.mockResolvedValue({ ...preview, status: "queued", tasks: [] });
+  h.get.mockResolvedValue(preview);
+  await act(async () => button("mobileProduction.retryUpload").click());
+  expect(host.textContent).toContain("mobileProduction.pdfReview");
+  expect(h.analyze).toHaveBeenCalledTimes(1);
 });
