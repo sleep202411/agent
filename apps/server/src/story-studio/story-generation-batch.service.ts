@@ -210,6 +210,14 @@ export class StoryGenerationBatchService {
     execution?: {
       dispatchMode?: 'parallel' | 'sequential';
       experience?: 'mobile_h5';
+      models?: {
+        image: { modelId: string; schemaVersion: string };
+        video: {
+          modelId: string;
+          schemaVersion: string;
+          options?: { aspectRatio: '16:9' | '9:16' };
+        };
+      };
     },
   ) {
     const { project } = await this.permissions.requireProject(
@@ -233,6 +241,7 @@ export class StoryGenerationBatchService {
       input,
       dispatchMode,
       ...(execution?.experience ? { experience: execution.experience } : {}),
+      ...(execution?.models ? { models: execution.models } : {}),
     });
     const replay = await this.prisma.storyGenerationBatch.findUnique({
       where: {
@@ -281,24 +290,28 @@ export class StoryGenerationBatchService {
       }
     }
     const [imageSelection, videoSelection] = await Promise.all([
-      rows.some((row) => row.kind === 'image')
-        ? this.resolvePersistedSelection(
-            user,
-            workspaceId,
-            projectId,
-            'image',
-            execution?.experience,
-          )
-        : Promise.resolve(null),
-      rows.some((row) => row.kind !== 'image')
-        ? this.resolvePersistedSelection(
-            user,
-            workspaceId,
-            projectId,
-            'video',
-            execution?.experience,
-          )
-        : Promise.resolve(null),
+      execution?.models
+        ? Promise.resolve(execution.models.image)
+        : rows.some((row) => row.kind === 'image')
+          ? this.resolvePersistedSelection(
+              user,
+              workspaceId,
+              projectId,
+              'image',
+              execution?.experience,
+            )
+          : Promise.resolve(null),
+      execution?.models
+        ? Promise.resolve(execution.models.video)
+        : rows.some((row) => row.kind !== 'image')
+          ? this.resolvePersistedSelection(
+              user,
+              workspaceId,
+              projectId,
+              'video',
+              execution?.experience,
+            )
+          : Promise.resolve(null),
     ]);
     const quotes = await mapLimit(targets, QUOTE_CONCURRENCY, (target) => {
       const row = rowsById.get(target.id)!;
@@ -318,7 +331,9 @@ export class StoryGenerationBatchService {
           options:
             execution?.experience === 'mobile_h5' && row.kind === 'image'
               ? { resolution: '1K' }
-              : {},
+              : row.kind === 'video'
+                ? (execution?.models?.video.options ?? {})
+                : {},
         },
       );
     });
@@ -400,6 +415,7 @@ export class StoryGenerationBatchService {
     batchId: string,
     input: ConfirmStoryGenerationBatchInput,
     agentHandoff?: StoryGenerationBatchAgentHandoffInput,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -415,6 +431,10 @@ export class StoryGenerationBatchService {
       chapterId,
       batchId,
     );
+    if (batch.idempotencyKey.startsWith('app:') && !productionAuthority)
+      throw new ConflictException(
+        'App generation batches require Server production authorization.',
+      );
     if (batch.status !== StoryGenerationBatchStatus.awaiting_confirmation) {
       return batchDto(batch, true, await this.availableBillingPoints(batch));
     }
@@ -489,6 +509,7 @@ export class StoryGenerationBatchService {
           },
         });
         if (updated.count !== 1) return false;
+        if (productionAuthority) await productionAuthority(tx);
         if (!blockedForFunds) {
           await tx.storyGenerationBatchItem.updateMany({
             where: {
@@ -621,6 +642,7 @@ export class StoryGenerationBatchService {
     projectId: string,
     chapterId: string,
     batchId: string,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -634,10 +656,20 @@ export class StoryGenerationBatchService {
       chapterId,
       batchId,
     );
+    if (batch.idempotencyKey.startsWith('app:') && !productionAuthority)
+      throw new ConflictException(
+        'App generation batches require Server production authorization.',
+      );
     if (
       batch.status !== StoryGenerationBatchStatus.blocked &&
       batch.status !== StoryGenerationBatchStatus.failed &&
-      batch.status !== StoryGenerationBatchStatus.partial_failed
+      batch.status !== StoryGenerationBatchStatus.partial_failed &&
+      !(
+        productionAuthority &&
+        batch.idempotencyKey.startsWith('app:') &&
+        batch.status === StoryGenerationBatchStatus.cancelled &&
+        batch.confirmedAt !== null
+      )
     ) {
       return batchDto(batch, true, await this.availableBillingPoints(batch));
     }
@@ -667,6 +699,11 @@ export class StoryGenerationBatchService {
               StoryGenerationBatchStatus.blocked,
               StoryGenerationBatchStatus.failed,
               StoryGenerationBatchStatus.partial_failed,
+              ...(productionAuthority &&
+              batch.idempotencyKey.startsWith('app:') &&
+              batch.confirmedAt !== null
+                ? [StoryGenerationBatchStatus.cancelled]
+                : []),
             ],
           },
           version: batch.version,
@@ -682,6 +719,7 @@ export class StoryGenerationBatchService {
         },
       });
       if (resumed.count !== 1) return;
+      if (productionAuthority) await productionAuthority(tx);
       await tx.storyGenerationBatchItem.updateMany({
         where: {
           batchId: batch.id,
@@ -714,12 +752,20 @@ export class StoryGenerationBatchService {
     projectId: string,
     chapterId: string,
     batchId: string,
+    sourceAppRunId?: string,
   ) {
-    const { project } = await this.permissions.requireProject(
-      user.userId,
-      projectId,
-      'story.generate',
-    );
+    const project = sourceAppRunId
+      ? await this.prisma.storyProject.findUniqueOrThrow({
+          where: { id: projectId },
+          select: { workspaceId: true },
+        })
+      : (
+          await this.permissions.requireProject(
+            user.userId,
+            projectId,
+            'story.generate',
+          )
+        ).project;
     const workspaceId = project.workspaceId;
     const batch = await this.requireOwnedBatch(
       user.userId,
@@ -728,6 +774,20 @@ export class StoryGenerationBatchService {
       chapterId,
       batchId,
     );
+    if (sourceAppRunId) {
+      const source = await this.prisma.appStoryRun.findFirst({
+        where: {
+          id: sourceAppRunId,
+          projectId,
+          chapterId,
+          actorId: user.userId,
+          status: 'cancelling',
+        },
+        select: { id: true },
+      });
+      if (!source || !batch.idempotencyKey.startsWith(`app:${sourceAppRunId}:`))
+        throw new ConflictException('App cancellation source is invalid.');
+    }
     if (
       terminalBatchStatuses.has(batch.status) &&
       batch.status !== StoryGenerationBatchStatus.failed &&
@@ -811,6 +871,18 @@ export class StoryGenerationBatchService {
           : [],
       ),
     );
+    if (sourceAppRunId)
+      return batchDto(
+        await this.requireOwnedBatch(
+          user.userId,
+          workspaceId,
+          projectId,
+          chapterId,
+          batchId,
+        ),
+        true,
+        await this.availableBillingPoints(batch),
+      );
     return this.get(user, projectId, chapterId, batchId);
   }
 

@@ -59,6 +59,7 @@ RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 # static and evaluated at module load, so a missing one crashes the whole API
 # tier even when the feature it belongs to is disabled by flag.
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/app-story-protocol/dist ./packages/app-story-protocol/dist
 COPY --from=builder /app/packages/game-agent-protocol/dist ./packages/game-agent-protocol/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist

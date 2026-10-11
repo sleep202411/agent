@@ -246,6 +246,18 @@ const changedOverviewOperation = {
 };
 
 describe('StoryAgentRunService', () => {
+  it('rejects client-provided App origins without the Server production authority', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const { service } = serviceWith(proposalTransaction(createdRows));
+    await expect(
+      service.createAuthoringRun(USER, WORKSPACE_ID, PROJECT_ID, {
+        ...briefInput(),
+        sourceAppStoryRunId: '01990000-0000-7000-8000-000000000010',
+      }),
+    ).rejects.toThrow('Server coordinator');
+    expect(createdRows).toHaveLength(0);
+  });
+
   it('files a drafting brief as a durable authoring run with a pending worker lease', async () => {
     const createdRows: Array<Record<string, unknown>> = [];
     const tx = proposalTransaction(createdRows);
@@ -1006,15 +1018,22 @@ describe('StoryAgentRunService', () => {
     expect(createdRows).toHaveLength(0);
   });
 
-  it.each(['documentId', 'sourceAttachmentId'] as const)(
-    'loads the full %s text into the authoring job',
-    async (sourceField) => {
+  it.each([
+    ['documentId', false],
+    ['sourceAttachmentId', false],
+    ['documentId', true],
+  ] as const)(
+    'loads the full %s text into the authoring job (App: %s)',
+    async (sourceField, app) => {
       const authoringRun = runRow({
         status: StoryAgentRunStatus.authoring,
         proposal: { ...briefRecord(), [sourceField]: DOCUMENT_ID },
         conversationId: BRIEF_CONVERSATION_ID,
         leaseOwner: WORKER_ID,
         leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+        ...(app
+          ? { sourceAppStoryRunId: '01990000-0000-7000-8000-000000000010' }
+          : {}),
       });
       const emptyScriptDocument = {
         id: '0197f4a2-0800-7000-8000-000000000011',
@@ -1022,6 +1041,22 @@ describe('StoryAgentRunService', () => {
         crdtState: Buffer.from([0, 0]),
       };
       const tx = {
+        appStoryRun: {
+          findUniqueOrThrow: jest.fn().mockResolvedValue({ phase: 'script' }),
+          findUnique: jest.fn().mockResolvedValue({
+            plan: { goal: 'video' },
+            modelConfig: {
+              planner: 'qwen-planner',
+              author: 'qwen-pinned-author',
+              image: { modelId: 'image', schemaVersion: 'v1' },
+              video: {
+                modelId: 'minimax-h3-max',
+                schemaVersion: 'v1',
+                clipDurationSeconds: [5, 10, 15],
+              },
+            },
+          }),
+        },
         agentOsExternalHandoffRegistration: {
           findUnique: jest.fn().mockResolvedValue({
             continuationPlan: {
@@ -1075,7 +1110,12 @@ describe('StoryAgentRunService', () => {
       expect(load.kind).toBe('job');
       if (load.kind !== 'job') throw new Error('expected job');
       // A resumed mobile job keeps its admitted model, even after the default changes.
-      expect(load.job.modelId).toBe('qwen3.7-plus');
+      expect(load.job.modelId).toBe(
+        app ? 'qwen-pinned-author' : 'qwen3.7-plus',
+      );
+      expect(load.job.videoClipDurationSeconds).toEqual(
+        app ? [5, 10, 15] : undefined,
+      );
       expect(load.job.document).toEqual({
         id: DOCUMENT_ID,
         name: '剧本.docx',
@@ -3287,6 +3327,7 @@ function serviceWith(
     storyCanvasLayout: (tx.storyCanvasLayout ?? {}) as Record<string, unknown>,
     storyDraft: (tx.storyDraft ?? {}) as Record<string, unknown>,
     storyAgentRun: (tx.storyAgentRun ?? {}) as Record<string, unknown>,
+    appStoryRun: (tx.appStoryRun ?? {}) as Record<string, unknown>,
     skillVersion: (tx.skillVersion ?? {}) as Record<string, unknown>,
     copilotDocument: (tx.copilotDocument ?? {}) as Record<string, unknown>,
     agentOsAttachment: (tx.agentOsAttachment ?? {}) as Record<string, unknown>,

@@ -1408,6 +1408,81 @@ describe('AgentOsRunJournalService', () => {
 });
 
 describe('AgentOsRunJournalService start admission fencing', () => {
+  it.each([
+    ['false', 'story', 'active', false],
+    ['true', 'platform', 'active', false],
+    ['true', 'story', 'none', false],
+    ['true', 'story', 'active', true],
+  ] as const)(
+    'isolates App admission (enabled=%s, kind=%s, App=%s)',
+    async (enabled, kind, active, busy) => {
+      const previous = process.env.APP_STORY_AGENT_ENABLED;
+      process.env.APP_STORY_AGENT_ENABLED = enabled;
+      try {
+        const fixture = createFixture();
+        fixture.state.run = null;
+        fixture.state.events = [];
+        fixture.tx.appStoryRun.findFirst.mockResolvedValue(
+          active === 'active' ? { id: 'app-run' } : null,
+        );
+        const admission = fixture.service.reserveRunStart({
+          ...startCommand(),
+          projectKind: kind,
+        });
+        if (busy) {
+          await expect(admission).rejects.toMatchObject({
+            response: { code: 'APP_STORY_PROJECT_BUSY' },
+          });
+          expect(fixture.state.run).toBeNull();
+        } else {
+          await expect(admission).resolves.toMatchObject({ kind: 'created' });
+        }
+        if (enabled === 'true' && kind === 'story') {
+          expect(fixture.tx.appStoryRun.findFirst).toHaveBeenCalledWith({
+            where: {
+              projectId: PROJECT_ID,
+              status: {
+                in: [
+                  'queued',
+                  'planning',
+                  'producing',
+                  'blocked',
+                  'cancelling',
+                ],
+              },
+            },
+            select: { id: true },
+          });
+        } else {
+          expect(fixture.tx.appStoryRun.findFirst).not.toHaveBeenCalled();
+        }
+      } finally {
+        if (previous === undefined) delete process.env.APP_STORY_AGENT_ENABLED;
+        else process.env.APP_STORY_AGENT_ENABLED = previous;
+      }
+    },
+  );
+
+  it('replays an existing Agent OS admission even if App work is now active', async () => {
+    const previous = process.env.APP_STORY_AGENT_ENABLED;
+    process.env.APP_STORY_AGENT_ENABLED = 'true';
+    try {
+      const fixture = createFixture();
+      fixture.state.run = null;
+      fixture.state.events = [];
+      const first = await fixture.service.reserveRunStart(startCommand());
+      fixture.tx.appStoryRun.findFirst.mockResolvedValue({ id: 'app-run' });
+      fixture.tx.appStoryRun.findFirst.mockClear();
+      await expect(
+        fixture.service.reserveRunStart(startCommand()),
+      ).resolves.toMatchObject({ kind: 'replay', runId: first.runId });
+      expect(fixture.tx.appStoryRun.findFirst).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.APP_STORY_AGENT_ENABLED;
+      else process.env.APP_STORY_AGENT_ENABLED = previous;
+    }
+  });
+
   it('reserves the exact strict UserMessage#1 before any Worker dispatch', async () => {
     const fixture = createFixture();
     fixture.state.run = null;
@@ -2254,6 +2329,11 @@ function createFixture() {
     ),
   };
   const transaction = {
+    appStoryRun: {
+      findFirst: jest
+        .fn<Promise<{ id: string } | null>, [unknown]>()
+        .mockResolvedValue(null),
+    },
     storyGenerationBatch: {
       findUniqueOrThrow: jest.fn().mockResolvedValue({
         id: EXTERNAL_JOB_ID,

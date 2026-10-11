@@ -67,6 +67,11 @@ import { StoryPublicationAdminService } from './story-publication-admin.service'
     StoryPublicationAuthorityService,
     StoryPublicationAdminService,
   ],
-  exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],
+  exports: [
+    StoryProjectsService,
+    StoryWorkingPreviewService,
+    StoryAccessModule,
+    StoryAgentRunModule,
+  ],
 })
 export class StoryStudioModule {}

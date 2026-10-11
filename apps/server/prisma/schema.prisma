@@ -8844,6 +8844,7 @@ model StoryAgentRun {
   /// Durable origin for an Agent OS external-job handoff. The migration
   /// enforces these five source fields as an all-or-none tuple.
   sourceAgentRunId                   String?                     @map("source_agent_run_id") @db.Uuid
+  sourceAppStoryRunId                String?                     @map("source_app_story_run_id") @db.Uuid
   sourceAgentTurnId                  String?                     @map("source_agent_turn_id") @db.Uuid
   sourceAgentToolCallId              String?                     @map("source_agent_tool_call_id") @db.VarChar(256)
   sourceStartedMessage               String?                     @map("source_started_message") @db.Text
@@ -8927,6 +8928,7 @@ model StoryAgentRun {
   revertsRun                  StoryAgentRun?                      @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
   undoRuns                    StoryAgentRun[]                     @relation("StoryAgentRunUndo")
   externalHandoffRegistration AgentOsExternalHandoffRegistration?
+  appStorySource              AppStoryRun? @relation(fields: [sourceAppStoryRunId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@unique([id, storyProjectId], map: "story_agent_runs_id_project_unique")
   @@unique([sourceApprovalResponseId], map: "story_agent_runs_source_approval_response_unique")
@@ -8937,7 +8939,53 @@ model StoryAgentRun {
   @@index([status, expiresAt, id], map: "story_agent_runs_proposal_expiry_idx")
   @@index([initiatedByUserId, createdAt(sort: Desc)], map: "story_agent_runs_initiator_recent_idx")
   @@index([revertsRunId], map: "story_agent_runs_reverts_idx")
+  @@index([sourceAppStoryRunId], map: "story_agent_runs_app_source_idx")
   @@map("story_agent_runs")
+}
+
+model AppStoryRun {
+  version           Int      @default(0)
+  id                String   @id @default(uuid(7)) @db.Uuid
+  projectId         String   @map("project_id") @db.Uuid
+  chapterId         String   @map("chapter_id") @db.Uuid
+  actorId           String   @map("actor_id") @db.VarChar(64)
+  submissionId      String   @map("submission_id") @db.Uuid
+  fingerprint       String   @db.VarChar(64)
+  message           String   @db.Text
+  locale            String   @db.VarChar(16)
+  status            String   @default("queued") @db.VarChar(24)
+  phase             String   @default("planning") @db.VarChar(24)
+  modelConfig       Json     @map("model_config") @db.JsonB
+  documentId        String?  @map("document_id") @db.Uuid
+  plan              Json?    @db.JsonB
+  assistantText     String?  @map("assistant_text") @db.Text
+  harnessEvents     Json?    @map("harness_events") @db.JsonB
+  attachments       Json?    @db.JsonB
+  mediaQuote        Json?    @map("media_quote") @db.JsonB
+  authorizedPoints  Int      @map("authorized_points")
+  committedPoints   Int      @default(0) @map("committed_points")
+  requiredPoints    Int?     @map("required_points")
+  authoringRunId    String?  @map("authoring_run_id") @db.Uuid
+  batchId           String?  @map("batch_id") @db.Uuid
+  result            Json?    @db.JsonB
+  errorCode         String?  @map("error_code") @db.VarChar(96)
+  errorDetail       String?  @map("error_detail") @db.Text
+  attempts          Int      @default(0)
+  stageAttempt      Int      @default(0) @map("stage_attempt")
+  leaseOwner        String?  @map("lease_owner") @db.VarChar(160)
+  leaseExpiresAt    DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  nextAttemptAt     DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  deadlineAt        DateTime @default(dbgenerated("(now() + interval '2 hours')")) @map("deadline_at") @db.Timestamptz(6)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  authoringRuns     StoryAgentRun[]
+  chapter           StoryChapter @relation(fields: [chapterId, projectId], references: [id, storyProjectId], onDelete: Restrict, onUpdate: NoAction, map: "app_story_runs_chapter_scope_fkey")
+  document          CopilotDocument? @relation(fields: [documentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([projectId, actorId, submissionId], map: "app_story_runs_project_id_actor_id_submission_id_key")
+  @@index([status, nextAttemptAt, leaseExpiresAt])
+  @@index([projectId, actorId, createdAt])
+  @@map("app_story_runs")
 }
 
 model StoryChapter {
@@ -8964,6 +9012,9 @@ model StoryChapter {
   project                   StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
   canvasLayout              StoryCanvasLayout?
   agentRuns                 StoryAgentRun[]
+  appStoryRuns              AppStoryRun[]
+  appStoryConversations     AppStoryConversation[]
+  appStoryAttachments       AppStoryAttachment[]
   documents                 StudioDocument[]
   sourceScriptDocument      StudioDocument?                   @relation("StoryChapterSourceScriptDocument", fields: [sourceScriptDocumentId], references: [id], onDelete: Restrict)
   sourceScriptVersion       StudioDocumentVersion?            @relation("StoryChapterSourceScriptVersion", fields: [sourceScriptVersionId, sourceScriptDocumentId], references: [id, documentId], onDelete: Restrict)
@@ -10166,6 +10217,8 @@ model CopilotDocument {
   charCount      Int      @map("char_count")
   text           String   @db.Text
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  appStoryRuns   AppStoryRun[]
+  appStoryAttachments AppStoryAttachment[]
 
   @@index([userId, conversationId, createdAt(sort: Desc), id(sort: Desc)], map: "copilot_documents_user_conversation_idx")
   @@map("copilot_documents")
@@ -11360,4 +11413,43 @@ model CrewPdfTaskImport {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   @@index([crewId, userId, createdAt])
   @@map("crew_pdf_task_imports")
+}
+
+/// Personal conversation presentation over canonical Story chapters. No duplicate production graph.
+model AppStoryConversation {
+  chapterId String @map("chapter_id") @db.Uuid
+  actorId String @map("actor_id") @db.VarChar(64)
+  projectId String @map("project_id") @db.Uuid
+  title String @db.VarChar(160)
+  pinned Boolean @default(false)
+  archived Boolean @default(false)
+  rank Int @default(0)
+  inherited Json @default("[]") @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  chapter StoryChapter @relation(fields: [chapterId, projectId], references: [id, storyProjectId], onDelete: Cascade, onUpdate: NoAction, map: "app_story_conversations_chapter_scope_fkey")
+  @@id([chapterId, actorId])
+  @@index([projectId, actorId, rank])
+  @@map("app_story_conversations")
+}
+/// Immutable files owned by one authenticated user's chapter; images retain verified raster metadata.
+model AppStoryAttachment {
+  id String @id @default(uuid(7)) @db.Uuid
+  projectId String @map("project_id") @db.Uuid
+  chapterId String @map("chapter_id") @db.Uuid
+  actorId String @map("actor_id") @db.VarChar(64)
+  name String @db.VarChar(255)
+  mediaType String @map("media_type") @db.VarChar(160)
+  hash String @db.VarChar(64)
+  bytes Int
+  width Int?
+  height Int?
+  data Bytes @db.ByteA
+  documentId String? @map("document_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  chapter StoryChapter @relation(fields: [chapterId, projectId], references: [id, storyProjectId], onDelete: Cascade, onUpdate: NoAction, map: "app_story_attachments_chapter_scope_fkey")
+  document CopilotDocument? @relation(fields: [documentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  @@index([projectId, actorId, chapterId])
+  @@index([projectId, actorId, chapterId, hash])
+  @@map("app_story_attachments")
 }

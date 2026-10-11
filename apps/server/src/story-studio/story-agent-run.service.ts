@@ -1,4 +1,5 @@
 import { backgroundTasksEnabled } from '../common/background-tasks';
+import { PinnedModelsSchema } from '../app-story-agent/app-story-agent.config';
 import {
   ConflictException,
   ForbiddenException,
@@ -221,6 +222,7 @@ export const CreateStoryAgentBriefInputSchema = z
     conversationId: z.string().trim().min(1).max(180).optional(),
     /** Originating Agent OS execution. Present as one complete handoff tuple. */
     sourceAgentRunId: z.uuid().optional(),
+    sourceAppStoryRunId: z.uuid().optional(),
     sourceAgentTurnId: z.uuid().optional(),
     sourceAgentToolCallId: z.string().trim().min(1).max(256).optional(),
     sourceStartedMessage: z.string().trim().min(1).max(2_000).optional(),
@@ -229,6 +231,12 @@ export const CreateStoryAgentBriefInputSchema = z
   })
   .strict()
   .superRefine((input, context) => {
+    if (input.sourceAppStoryRunId && input.sourceAgentRunId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Choose one source Agent product.',
+      });
+    }
     if (input.documentId && input.sourceAttachmentId) {
       context.addIssue({
         code: 'custom',
@@ -322,7 +330,12 @@ interface ClaimedRunRow {
 }
 
 export interface StoryAgentAuthoringJob {
+  deliveryGoal?: 'script' | 'video' | 'interactive_film';
+  /** Original App request; derived planner prose must not replace creator requirements. */
+  creatorMessage?: string;
   modelId?: string;
+  /** Supported durations pinned by App admission; other authoring flows omit it. */
+  videoClipDurationSeconds?: readonly number[];
   runId: string;
   projectId: string;
   chapterId: string;
@@ -555,8 +568,13 @@ export class StoryAgentRunService {
     projectId: string,
     rawInput: unknown,
     authority?: StoryAgentProposalAuthority,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<StoryAgentRunDto> {
     const requestedInput = CreateStoryAgentBriefInputSchema.parse(rawInput);
+    if (requestedInput.sourceAppStoryRunId && !productionAuthority)
+      throw new ForbiddenException(
+        'App production jobs can only be admitted by the Server coordinator.',
+      );
     await this.requireScopedCapabilityWithoutWriteGuard(
       user,
       workspaceId,
@@ -571,6 +589,7 @@ export class StoryAgentRunService {
 
     try {
       const transition = await this.prisma.$transaction(async (tx) => {
+        if (productionAuthority) await productionAuthority(tx);
         // Cross-domain authority runs first. Copilot takes its global
         // user→conversation locks here; this transaction retains them while we
         // subsequently take the Story write-state lock and create the run.
@@ -622,6 +641,9 @@ export class StoryAgentRunService {
           ...(requestedInput.conversationId
             ? { conversationId: requestedInput.conversationId }
             : {}),
+          ...(requestedInput.sourceAppStoryRunId
+            ? { sourceAppStoryRunId: requestedInput.sourceAppStoryRunId }
+            : {}),
           ...(requestedInput.sourceAgentRunId
             ? {
                 sourceAgentRunId: requestedInput.sourceAgentRunId,
@@ -655,6 +677,9 @@ export class StoryAgentRunService {
           initiatedBySessionId: input.initiatedBySessionId ?? null,
           conversationId: input.conversationId ?? null,
           sourceAgentRunId: input.sourceAgentRunId ?? null,
+          ...(input.sourceAppStoryRunId
+            ? { sourceAppStoryRunId: input.sourceAppStoryRunId }
+            : {}),
           sourceAgentTurnId: input.sourceAgentTurnId ?? null,
           sourceAgentToolCallId: input.sourceAgentToolCallId ?? null,
           sourceStartedMessage: input.sourceStartedMessage ?? null,
@@ -702,6 +727,17 @@ export class StoryAgentRunService {
         }
 
         let autoApplyTextStages = false;
+        if (input.sourceAppStoryRunId) {
+          const [source] = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM app_story_runs WHERE id = ${input.sourceAppStoryRunId}::uuid
+              AND project_id = ${projectId}::uuid AND chapter_id = ${input.chapterId}::uuid
+              AND actor_id = ${user.userId} AND status = 'producing' FOR UPDATE`;
+          if (!source)
+            throw new ConflictException({
+              code: 'APP_STORY_SOURCE_INVALID',
+              message: 'This App production is no longer active.',
+            });
+        }
         // Validate a new cross-domain handoff against the authoritative Agent
         // run in the same transaction that creates both the Story job and its
         // immutable inbox receipt. This deliberately happens after the
@@ -816,6 +852,7 @@ export class StoryAgentRunService {
             conversationId: input.conversationId ?? null,
             decisionContractVersion: 2,
             sourceAgentRunId: input.sourceAgentRunId ?? null,
+            sourceAppStoryRunId: input.sourceAppStoryRunId ?? null,
             sourceAgentTurnId: input.sourceAgentTurnId ?? null,
             sourceAgentToolCallId: input.sourceAgentToolCallId ?? null,
             sourceStartedMessage: input.sourceStartedMessage ?? null,
@@ -1008,6 +1045,7 @@ export class StoryAgentRunService {
     projectId: string,
     runId: string,
     idempotencyKey: string,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<StoryAgentRunDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -1021,6 +1059,7 @@ export class StoryAgentRunService {
       projectId,
       runId,
       idempotencyKey,
+      productionAuthority,
     );
   }
 
@@ -1564,6 +1603,7 @@ export class StoryAgentRunService {
     projectId: string,
     runId: string,
     idempotencyKey: string,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<StoryAgentRunDto> {
     normalizeIdempotencyKey(idempotencyKey);
     await this.requireScopedCapabilityWithoutWriteGuard(
@@ -1574,9 +1614,24 @@ export class StoryAgentRunService {
     );
 
     const transition = await this.prisma.$transaction(async (tx) => {
+      if (productionAuthority) await productionAuthority(tx);
       const writeState = await this.lockWriteState(tx, projectId);
       const run = await this.requireRun(tx, workspaceId, projectId, runId);
       this.rejectLegacyDecisionForAgentOsV2(run);
+      if (run.sourceAppStoryRunId) {
+        if (!productionAuthority)
+          throw new ForbiddenException(
+            'App proposals are confirmed by the Server coordinator.',
+          );
+        const [source] = await tx.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT id FROM app_story_runs WHERE id = ${run.sourceAppStoryRunId}::uuid AND project_id = ${projectId}::uuid AND actor_id = ${user.userId} AND status = 'producing' FOR UPDATE`;
+        if (!source)
+          throw new ConflictException({
+            code: 'APP_STORY_SOURCE_INVALID',
+            message: 'This App production is no longer active.',
+          });
+      }
       if (run.status === StoryAgentRunStatus.succeeded) {
         return { value: this.toDto(run), dispatches: [] };
       }
@@ -1683,19 +1738,63 @@ export class StoryAgentRunService {
     return transition.value;
   }
 
+  // Server-only cleanup remains available after the actor loses project access.
+  async cancelFromApp(
+    user: AuthUser,
+    projectId: string,
+    sourceRunId: string,
+    childId: string,
+  ) {
+    const child = await this.prisma.storyAgentRun.findFirst({
+      where: {
+        id: childId,
+        storyProjectId: projectId,
+        sourceAppStoryRunId: sourceRunId,
+        initiatedByUserId: user.userId,
+      },
+      select: { workspaceId: true },
+    });
+    if (!child) throw new NotFoundException('App authoring job not found.');
+    return this.cancel(
+      user,
+      child.workspaceId,
+      projectId,
+      childId,
+      sourceRunId,
+    );
+  }
+
   async cancel(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
     runId: string,
+    sourceAppRunId?: string,
   ): Promise<StoryAgentRunDto> {
-    await this.requireScopedCapabilityWithoutWriteGuard(
-      user,
-      workspaceId,
-      projectId,
-      'story.edit',
-    );
+    if (!sourceAppRunId)
+      await this.requireScopedCapabilityWithoutWriteGuard(
+        user,
+        workspaceId,
+        projectId,
+        'story.edit',
+      );
     const transition = await this.prisma.$transaction(async (tx) => {
+      if (sourceAppRunId) {
+        const [source] = await tx.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT id FROM app_story_runs WHERE id = ${sourceAppRunId}::uuid AND project_id = ${projectId}::uuid AND actor_id = ${user.userId} AND status = 'cancelling' FOR UPDATE`;
+        const child = await tx.storyAgentRun.findFirst({
+          where: {
+            id: runId,
+            sourceAppStoryRunId: sourceAppRunId,
+            initiatedByUserId: user.userId,
+          },
+          select: { id: true },
+        });
+        if (!source || !child)
+          throw new ConflictException('App cancellation source is invalid.');
+      }
+
       const writeState = await this.lockWriteState(tx, projectId);
       const current = await this.requireRun(tx, workspaceId, projectId, runId);
       this.rejectLegacyDecisionForAgentOsV2(current);
@@ -3045,10 +3144,20 @@ export class StoryAgentRunService {
         let plannedScreenplay = current;
         let plannedSource: StoryScriptSourceSnapshot | null = null;
         let plannedAssetPlan: StoryAssetPlan | null = null;
-        if (productionState.script.status === 'missing') {
+        const appSource = run.sourceAppStoryRunId
+          ? await tx.appStoryRun.findUniqueOrThrow({
+              where: { id: run.sourceAppStoryRunId },
+              select: { phase: true },
+            })
+          : null;
+        if (
+          productionState.script.status === 'missing' ||
+          appSource?.phase === 'script'
+        ) {
           plannedMode = StoryAgentAuthoringMode.screenplay_required;
           plannedTargetStage = 'script';
           plannedScreenplay = null;
+          if (appSource?.phase === 'script') plannedSource = source;
         } else if (
           productionState.script.status !== 'current' ||
           current === null
@@ -3263,10 +3372,32 @@ export class StoryAgentRunService {
       mobilePlan.data.experience === 'mobile_h5'
         ? registration.sourceAgentRun.modelProfileId
         : undefined;
+    const appSource = run.sourceAppStoryRunId
+      ? await this.prisma.appStoryRun.findUnique({
+          where: { id: run.sourceAppStoryRunId },
+          select: { modelConfig: true, plan: true, message: true },
+        })
+      : null;
+    const appModels = appSource
+      ? PinnedModelsSchema.parse(appSource.modelConfig)
+      : null;
     return {
       kind: 'job',
       job: {
-        ...(modelId ? { modelId } : {}),
+        ...(appSource
+          ? {
+              deliveryGoal: z
+                .object({
+                  goal: z.enum(['script', 'video', 'interactive_film']),
+                })
+                .parse(appSource.plan).goal,
+              modelId: appModels!.author,
+              creatorMessage: appSource.message,
+              videoClipDurationSeconds: appModels!.video.clipDurationSeconds,
+            }
+          : modelId
+            ? { modelId }
+            : {}),
         runId: run.id,
         projectId: run.storyProjectId,
         chapterId: run.storyChapterId,

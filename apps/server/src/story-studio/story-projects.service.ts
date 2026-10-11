@@ -596,10 +596,12 @@ export class StoryProjectsService {
     user: AuthUser,
     projectId: string,
     input: PatchStoryProjectInput,
+    productionAuthority?: (tx: Prisma.TransactionClient) => Promise<void>,
   ): Promise<StoryProjectSummaryDto> {
     await this.requireProject(user, projectId, 'story.edit');
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (productionAuthority) await productionAuthority(tx);
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const visualStyleSkill = input.confirmCreativeProfile
         ? storyVisualStyleSkillBySlug(input.visualStyle ?? '')

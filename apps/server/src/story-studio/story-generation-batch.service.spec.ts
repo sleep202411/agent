@@ -27,6 +27,7 @@ const scope = {
 function batch(
   overrides: Partial<{
     status: StoryGenerationBatchStatus;
+    idempotencyKey: string;
     version: number;
     confirmedAt: Date | null;
     actorUserId: string;
@@ -38,6 +39,7 @@ function batch(
 ) {
   return {
     id: scope.batchId,
+    idempotencyKey: 'fixture-quote',
     workspaceId: scope.workspaceId,
     storyProjectId: scope.projectId,
     storyChapterId: scope.chapterId,
@@ -168,6 +170,138 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
 });
 
 describe('mobile generation defaults', () => {
+  it.each([undefined, '16:9', '9:16'] as const)(
+    'isolates App pinned models and ratio from Studio preferences (%s)',
+    async (aspectRatio) => {
+      const preference = jest.fn().mockResolvedValue({
+        imageModelId: 'studio-image',
+        videoModelId: 'studio-video',
+      });
+      const quoteStoryboardClipGeneration = jest.fn().mockResolvedValue({
+        targetId: 'clip',
+        targetVersion: 0,
+        outputKind: 'video',
+        modelId: 'video',
+        schemaVersion: 'v1',
+        options: {},
+        quotedPoints: 12,
+        pricingVersion: 'p1',
+      });
+      const service = new StoryGenerationBatchService(
+        {
+          storyGenerationBatch: {
+            findUnique: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockResolvedValue(batch()),
+          },
+          storyStoryboardClip: {
+            findMany: jest.fn().mockResolvedValue([
+              {
+                id: 'image-clip',
+                sequenceId: 'seq',
+                version: 0,
+                kind: 'image',
+              },
+              {
+                id: 'video-clip',
+                sequenceId: 'seq',
+                version: 0,
+                kind: 'video',
+              },
+            ]),
+          },
+          agentOsModelPreference: { findUnique: preference },
+        } as never,
+        {
+          requireProject: jest
+            .fn()
+            .mockResolvedValue({ project: { workspaceId: scope.workspaceId } }),
+        } as never,
+        { quoteStoryboardClipGeneration } as never,
+        {
+          listCatalog: jest.fn().mockResolvedValue({
+            models: [
+              {
+                id: 'studio-image',
+                type: 'image',
+                enabled: true,
+                schemaVersion: 'v1',
+              },
+              {
+                id: 'studio-video',
+                type: 'video',
+                enabled: true,
+                schemaVersion: 'v1',
+              },
+            ],
+          }),
+          resolveStoryBillingSubject: jest
+            .fn()
+            .mockResolvedValue({ type: 'workspace', id: 'payer' }),
+          getBillingSubjectComputeBalance: jest
+            .fn()
+            .mockResolvedValue({ available: 100n, held: 0n, total: 100n }),
+        } as never,
+      );
+      await service.quoteStoryboardClips(
+        actor,
+        scope.projectId,
+        scope.chapterId,
+        'quote',
+        {
+          targets: ['image-clip', 'video-clip'].map((id) => ({
+            id,
+            sequenceId: 'seq',
+            expectedVersion: 0,
+          })),
+        },
+        aspectRatio
+          ? {
+              dispatchMode: 'sequential',
+              models: {
+                image: { modelId: 'app-image', schemaVersion: 'pinned' },
+                video: {
+                  modelId: 'app-video',
+                  schemaVersion: 'pinned',
+                  options: { aspectRatio },
+                },
+              },
+            }
+          : undefined,
+      );
+      expect(quoteStoryboardClipGeneration).toHaveBeenNthCalledWith(
+        1,
+        actor,
+        scope.workspaceId,
+        scope.projectId,
+        scope.chapterId,
+        'seq',
+        'image-clip',
+        {
+          expectedVersion: 0,
+          modelId: aspectRatio ? 'app-image' : 'studio-image',
+          schemaVersion: aspectRatio ? 'pinned' : 'v1',
+          options: {},
+        },
+      );
+      expect(quoteStoryboardClipGeneration).toHaveBeenNthCalledWith(
+        2,
+        actor,
+        scope.workspaceId,
+        scope.projectId,
+        scope.chapterId,
+        'seq',
+        'video-clip',
+        {
+          expectedVersion: 0,
+          modelId: aspectRatio ? 'app-video' : 'studio-video',
+          schemaVersion: aspectRatio ? 'pinned' : 'v1',
+          options: aspectRatio ? { aspectRatio } : {},
+        },
+      );
+      expect(preference).toHaveBeenCalledTimes(aspectRatio ? 0 : 2);
+    },
+  );
+
   it('overrides client preferences for a new quote and replays the frozen quote without reselecting models', async () => {
     const findUnique = jest.fn().mockResolvedValue(null);
     const create = jest
@@ -343,6 +477,17 @@ function makeService(
 }
 
 describe('StoryGenerationBatchService confirmation', () => {
+  it('requires Server authority before admitting App batch spending', async () => {
+    const initial = batch({ idempotencyKey: 'app:run:asset_media:0' });
+    const { service, updateBatch } = makeService(initial, initial);
+    await expect(
+      service.confirm(actor, scope.projectId, scope.chapterId, scope.batchId, {
+        expectedVersion: 0,
+      }),
+    ).rejects.toThrow('Server production authorization');
+    expect(updateBatch).not.toHaveBeenCalled();
+  });
+
   it('atomically moves a quoted batch and its items into the dispatch queue', async () => {
     const initial = batch();
     const winner = batch({
@@ -609,6 +754,55 @@ describe('StoryGenerationBatchService cancellation', () => {
 });
 
 describe('StoryGenerationBatchService recovery', () => {
+  it('keeps cancelled Studio batches terminal without App authorization', async () => {
+    const initial = batch({
+      status: StoryGenerationBatchStatus.cancelled,
+      confirmedAt: new Date(),
+    });
+    const { service, updateBatch, updateItems } = makeService(initial, initial);
+    await expect(
+      service.resume(actor, scope.projectId, scope.chapterId, scope.batchId),
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    expect(updateBatch).not.toHaveBeenCalled();
+    expect(updateItems).not.toHaveBeenCalled();
+  });
+
+  it('resumes a confirmed cancelled App batch under a renewed Server lease without repeating completed items', async () => {
+    const initial = batch({
+      status: StoryGenerationBatchStatus.cancelled,
+      confirmedAt: new Date(),
+      idempotencyKey: 'app:run:asset_media:0',
+    });
+    const winner = batch({
+      status: StoryGenerationBatchStatus.queued,
+      confirmedAt: initial.confirmedAt,
+      idempotencyKey: initial.idempotencyKey,
+    });
+    const { service, updateItems } = makeService(initial, winner);
+    const authority = jest.fn(async () => {});
+    await service.resume(
+      actor,
+      scope.projectId,
+      scope.chapterId,
+      scope.batchId,
+      authority,
+    );
+    expect(authority).toHaveBeenCalledTimes(1);
+    expect(updateItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: {
+            in: [
+              StoryGenerationBatchItemStatus.awaiting_confirmation,
+              StoryGenerationBatchItemStatus.failed,
+              StoryGenerationBatchItemStatus.cancelled,
+            ],
+          },
+        }),
+      }),
+    );
+  });
+
   it('resumes the same blocked batch from its first unfinished item', async () => {
     const initial = batch({
       status: StoryGenerationBatchStatus.blocked,

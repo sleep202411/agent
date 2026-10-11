@@ -325,40 +325,70 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     );
   });
 
-  it('authors Storyboard only from the exact approved Asset plan', async () => {
-    const { runs, pipeline, worker } = harness();
-    const job = {
-      ...JOB,
-      mode: 'downstream_reconcile' as const,
-      targetStage: 'storyboard' as const,
-      screenplaySnapshot: APPROVED_SCREENPLAY,
-      assetPlan: AUTHORED_ASSET_PLAN,
-    };
-    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+  it.each([true, false])(
+    'authors Storyboard only from the approved plan without leaking App pacing (App=%s)',
+    async (app) => {
+      const { runs, pipeline, worker } = harness();
+      const job = {
+        ...JOB,
+        mode: 'downstream_reconcile' as const,
+        targetStage: 'storyboard' as const,
+        ...(app
+          ? {
+              videoClipDurationSeconds: [5, 10, 15],
+              creatorMessage:
+                'Use the uploaded screenplay; each route is 25 seconds.',
+            }
+          : {}),
+        document: {
+          id: RUN_ID,
+          name: 'screenplay.docx',
+          text: 'Each playable route lasts about 20 seconds.',
+        },
+        screenplaySnapshot: APPROVED_SCREENPLAY,
+        assetPlan: AUTHORED_ASSET_PLAN,
+      };
+      runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
 
-    await worker.drainOnce();
-    await worker.authoringIdle();
+      await worker.drainOnce();
+      await worker.authoringIdle();
 
-    expect(pipeline.planAssets).not.toHaveBeenCalled();
-    expect(pipeline.planStoryboard).toHaveBeenCalledWith({
-      screenplay: APPROVED_SCREENPLAY.screenplay,
-      assetPlan: AUTHORED_ASSET_PLAN,
-      creativeProfile: JOB.creativeProfile,
-      signal: expect.any(AbortSignal),
-      onStage: expect.any(Function),
-    });
-    expect(runs.completeStageAuthoring).toHaveBeenCalledWith(
-      RUN_ID,
-      claimedWorkerId(runs),
-      {
-        targetStage: 'storyboard',
+      expect(pipeline.planAssets).not.toHaveBeenCalled();
+      expect(pipeline.planStoryboard).toHaveBeenCalledWith({
+        ...(app
+          ? {
+              instructions: expect.stringContaining(job.document.text),
+              videoClipDurationSeconds: [5, 10, 15],
+            }
+          : {}),
         screenplay: APPROVED_SCREENPLAY.screenplay,
         assetPlan: AUTHORED_ASSET_PLAN,
-        storyboardPlan: AUTHORED_STORYBOARD_PLAN,
-        authoredAgainst: JOB.snapshot,
-      },
-    );
-  });
+        creativeProfile: JOB.creativeProfile,
+        signal: expect.any(AbortSignal),
+        onStage: expect.any(Function),
+      });
+      if (app) {
+        const instructions = pipeline.planStoryboard.mock.calls[0][0]
+          .instructions as string;
+        expect(instructions).toContain(job.creatorMessage);
+        expect(instructions).toContain(JOB.brief.summary);
+        expect(instructions).toContain(
+          'the latest creator request takes precedence',
+        );
+      }
+      expect(runs.completeStageAuthoring).toHaveBeenCalledWith(
+        RUN_ID,
+        claimedWorkerId(runs),
+        {
+          targetStage: 'storyboard',
+          screenplay: APPROVED_SCREENPLAY.screenplay,
+          assetPlan: AUTHORED_ASSET_PLAN,
+          storyboardPlan: AUTHORED_STORYBOARD_PLAN,
+          authoredAgainst: JOB.snapshot,
+        },
+      );
+    },
+  );
 
   it('completes a canonical no-op without invoking either model pipeline', async () => {
     const { runs, pipeline, worker } = harness();

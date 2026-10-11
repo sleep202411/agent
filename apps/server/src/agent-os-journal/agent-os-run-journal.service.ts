@@ -526,7 +526,11 @@ export class AgentOsRunJournalService {
     const command = AgentOsStartCommandSchema.parse(commandInput);
     const submissionFingerprint = startSubmissionFingerprint(command);
     const committed = await this.prisma.$transaction(async (tx) => {
+      const appStoryEnabled =
+        process.env.APP_STORY_AGENT_ENABLED === 'true' &&
+        command.projectKind === 'story';
       const admissionLocks = [
+        ...(appStoryEnabled ? [`app-story-project:${command.projectId}`] : []),
         `conversation:${command.conversationId}`,
         `submission:${command.actorId}:${command.projectId}:${command.clientSubmissionId}`,
       ].sort();
@@ -599,6 +603,23 @@ export class AgentOsRunJournalService {
           events,
           snapshot: toRealtimeSnapshot(replay, derivePendingUserInput(events)),
         };
+      }
+      if (appStoryEnabled) {
+        const appActive = await tx.appStoryRun.findFirst({
+          where: {
+            projectId: command.projectId,
+            status: {
+              in: ['queued', 'planning', 'producing', 'blocked', 'cancelling'],
+            },
+          },
+          select: { id: true },
+        });
+        if (appActive)
+          throw new ConflictException({
+            code: 'APP_STORY_PROJECT_BUSY',
+            message: 'This project has an active App production.',
+            runId: appActive.id,
+          });
       }
       const active = await tx.agentOsRun.findFirst({
         where: {
