@@ -19,6 +19,10 @@ export interface StoryStoreListingDto {
   screenshots: { url: string }[];
 }
 
+export interface StoryStoreReviewListingDto extends StoryStoreListingDto {
+  coverStatus: 'not_provided' | 'available' | 'unavailable';
+}
+
 const PLACEMENT_SELECT = {
   variantId: true,
   storageProvider: true,
@@ -78,17 +82,27 @@ export class StoryStoreService {
   async getReviewListing(
     gameId: string,
     contentVersion: string,
-  ): Promise<StoryStoreListingDto | null> {
+  ): Promise<StoryStoreReviewListingDto | null> {
     // Historical Java works may predate UUID Story Projects entirely.
     if (!z.uuid().safeParse(gameId).success) return null;
     return this.readFrozenListing(gameId, contentVersion, 'review');
   }
 
+  private readFrozenListing(
+    gameId: string,
+    contentVersion: string,
+    audience: 'public',
+  ): Promise<StoryStoreListingDto | null>;
+  private readFrozenListing(
+    gameId: string,
+    contentVersion: string,
+    audience: 'review',
+  ): Promise<StoryStoreReviewListingDto | null>;
   private async readFrozenListing(
     gameId: string,
     contentVersion: string,
     audience: 'public' | 'review',
-  ): Promise<StoryStoreListingDto | null> {
+  ): Promise<StoryStoreListingDto | StoryStoreReviewListingDto | null> {
     const project = await this.prisma.storyProject.findFirst({
       where: {
         id: gameId,
@@ -167,7 +181,7 @@ export class StoryStoreService {
       .map((asset) => ({ url: resolveMediaPublicUrl(asset) }))
       .filter((slide): slide is { url: string } => Boolean(slide.url));
 
-    return {
+    const listing: StoryStoreListingDto = {
       gameId: project.id,
       title: snapshot.data.title,
       defaultLocale: snapshot.data.defaultLocale,
@@ -180,6 +194,16 @@ export class StoryStoreService {
           : null,
       coverUrl: cover?.kind === 'image' ? resolveMediaPublicUrl(cover) : null,
       screenshots,
+    };
+    if (audience === 'public') return listing;
+    return {
+      ...listing,
+      coverStatus:
+        snapshot.data.coverAssetId === null
+          ? 'not_provided'
+          : listing.coverUrl
+            ? 'available'
+            : 'unavailable',
     };
   }
 }

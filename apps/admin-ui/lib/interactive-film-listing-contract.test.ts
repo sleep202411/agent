@@ -17,12 +17,13 @@ export const listingFixture = {
   developer: "",
   tags: ["Mystery", "Choices matter"],
   coverUrl: "https://media.invalid/cover.jpg",
+  coverStatus: "available" as const,
   trailerUrl: "https://media.invalid/trailer.mp4",
   screenshots: [{ url: "https://media.invalid/shot.jpg" }],
 };
 
 describe("moderation promotional materials contract", () => {
-  it("permits legacy releases but blocks missing snapshots and unusable required covers", () => {
+  it("permits legacy releases but blocks missing snapshots and unavailable selected covers", () => {
     expect(areInteractiveFilmMaterialsReady(null)).toBe(false);
     expect(areInteractiveFilmMaterialsReady({ contentVersion: VERSION, listing: null })).toBe(true);
     expect(
@@ -31,7 +32,7 @@ describe("moderation promotional materials contract", () => {
     expect(
       areInteractiveFilmMaterialsReady({
         contentVersion: VERSION,
-        listing: { ...listingFixture, coverUrl: null },
+        listing: { ...listingFixture, coverUrl: null, coverStatus: "unavailable" },
       })
     ).toBe(false);
   });
@@ -74,6 +75,60 @@ describe("moderation promotional materials contract", () => {
       )
     ).toEqual({ contentVersion: VERSION, listing: listingFixture });
   });
+  it("keeps a release reviewable when its optional promotional details are empty", () => {
+    const listing = {
+      ...listingFixture,
+      description: "",
+      tags: [],
+      developer: "",
+      trailerUrl: null,
+      screenshots: [],
+    };
+    const snapshot = parseAdminInteractiveFilmListingSnapshot(
+      { contentVersion: VERSION, listing },
+      GAME_ID,
+      VERSION
+    );
+    expect(snapshot.listing).toEqual(listing);
+    expect(areInteractiveFilmMaterialsReady(snapshot)).toBe(true);
+  });
+  it("keeps a release reviewable when no optional cover was selected", () => {
+    const listing = { ...listingFixture, coverUrl: null, coverStatus: "not_provided" as const };
+    const snapshot = parseAdminInteractiveFilmListingSnapshot(
+      { contentVersion: VERSION, listing },
+      GAME_ID,
+      VERSION
+    );
+    expect(snapshot.listing).toEqual(listing);
+    expect(areInteractiveFilmMaterialsReady(snapshot)).toBe(true);
+  });
+  it.each([
+    { coverStatus: undefined, coverUrl: null },
+    { coverStatus: "unknown", coverUrl: null },
+    { coverStatus: "available", coverUrl: null },
+    { coverStatus: "not_provided", coverUrl: listingFixture.coverUrl },
+    { coverStatus: "unavailable", coverUrl: listingFixture.coverUrl },
+  ])("rejects missing or inconsistent cover status (case %#)", (cover) => {
+    expect(() =>
+      parseAdminInteractiveFilmListingSnapshot(
+        { contentVersion: VERSION, listing: { ...listingFixture, ...cover } },
+        GAME_ID,
+        VERSION
+      )
+    ).toThrow("invalid");
+  });
+  it.each([undefined, null, 42, {}, "a".repeat(13_001)])(
+    "rejects missing, malformed or oversized descriptions (case %#)",
+    (description) => {
+      expect(() =>
+        parseAdminInteractiveFilmListingSnapshot(
+          { contentVersion: VERSION, listing: { ...listingFixture, description } },
+          GAME_ID,
+          VERSION
+        )
+      ).toThrow("invalid");
+    }
+  );
   it("distinguishes an explicit historical missing snapshot from invalid responses", () => {
     expect(
       parseAdminInteractiveFilmListingSnapshot(

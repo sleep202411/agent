@@ -57,12 +57,12 @@ function render(scope = "task-a", parentId: string | null = "folder-a") {
     )
   );
 }
-async function choose() {
+async function choose(file = new File(["film"], "film.mp4", { type: "video/mp4" })) {
   await act(async () => {
     const input = host.querySelector("input")!;
     Object.defineProperty(input, "files", {
       configurable: true,
-      value: [new File(["film"], "film.mp4", { type: "video/mp4" })],
+      value: [file],
     });
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
@@ -72,6 +72,44 @@ async function retry() {
     [...host.querySelectorAll("button")].find((button) => button.textContent === "retry")!.click()
   );
 }
+async function clearFailedUpload() {
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "clearFailedUpload")!
+      .click()
+  );
+}
+it("allows replacing a permanently rejected file without reopening the task", async () => {
+  state.upload.mockRejectedValueOnce(new Error("MEDIA_FILE_TOO_LARGE"));
+  render();
+  await choose();
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  await clearFailedUpload();
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  const replacement = new File(["smaller"], "smaller.mp4", { type: "video/mp4" });
+  state.upload.mockResolvedValue({ mediaAssetId: "replacement-media" });
+  state.attach.mockResolvedValue({ id: "replacement-node", name: replacement.name });
+  await choose(replacement);
+  expect(state.upload.mock.calls[1][0]).toBe(replacement);
+  expect(onUploaded).toHaveBeenCalledWith({ id: "replacement-node", name: replacement.name });
+});
+it("discards the old checkpoint and media receipt when explicitly clearing a failed attachment", async () => {
+  state.upload.mockImplementationOnce(async (_file, options) => {
+    options.onCheckpoint({ storageKey: "old-key" });
+    return { mediaAssetId: "old-media" };
+  });
+  state.attach.mockRejectedValueOnce(new Error("Attachment rejected"));
+  render();
+  await choose();
+  await clearFailedUpload();
+  state.upload.mockResolvedValue({ mediaAssetId: "new-media" });
+  state.attach.mockResolvedValue({ id: "new-node", name: "new.mp4" });
+  await choose(new File(["new"], "new.mp4", { type: "video/mp4" }));
+  expect(state.upload).toHaveBeenCalledTimes(2);
+  expect(state.upload.mock.calls[1][1].resumeFrom).toBeUndefined();
+  expect(state.attach.mock.calls[1][1].mediaAssetId).toBe("new-media");
+});
 it("binds only a completed attachment and reports its busy lifecycle", async () => {
   state.upload.mockResolvedValue({ mediaAssetId: "media" });
   state.attach.mockResolvedValue({ id: "node", name: "Film" });

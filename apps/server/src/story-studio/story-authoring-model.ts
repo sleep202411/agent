@@ -2,7 +2,6 @@ import { createAlibaba } from '@ai-sdk/alibaba';
 import {
   APICallError,
   generateObject,
-  jsonSchema,
   NoObjectGeneratedError,
   type LanguageModel,
 } from 'ai';
@@ -12,14 +11,14 @@ import { alibabaProviderHeaders } from '../common/alibaba-data-inspection';
 /**
  * Shared model plumbing for the authoring pipeline's batons. Each stage is a
  * bounded, schema-validated structured-output call to Qwen via DashScope. The
- * DashScope quirks (json_schema rejecting propertyNames/patternProperties,
- * content moderation) are handled once here instead of per baton.
+ * JSON Object transport and local schema validation are shared by all stages.
+ * JSON Object mode is portable across the regional provider endpoints.
  *
  * Required env: ALIBABA_API_KEY. Optional: ALIBABA_BASE_URL,
- * STORY_AGENT_AUTHOR_MODEL (default qwen3-max). Structured authoring explicitly
+ * STORY_AGENT_AUTHOR_MODEL (default qwen-plus). Structured authoring explicitly
  * disables thinking so hybrid models use the budget for the required object.
  */
-const DEFAULT_AUTHOR_MODEL = 'qwen3-max';
+const DEFAULT_AUTHOR_MODEL = 'qwen-plus';
 
 export function storyAuthoringModelId(): string {
   return process.env.STORY_AGENT_AUTHOR_MODEL?.trim() || DEFAULT_AUTHOR_MODEL;
@@ -39,62 +38,8 @@ export function createStoryAuthoringModel(
     apiKey,
     ...(baseURL ? { baseURL } : {}),
     headers: alibabaProviderHeaders(),
-    // @ai-sdk/alibaba 1.0.17 omits json_schema.strict. Without it the
-    // provider can treat the schema as guidance instead of a wire contract.
-    fetch: (
-      url: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      if (typeof init?.body !== 'string') return fetch(url, init);
-      const body = JSON.parse(init.body) as {
-        response_format?: {
-          type?: string;
-          json_schema?: Record<string, unknown>;
-        };
-      };
-      if (
-        body.response_format?.type !== 'json_schema' ||
-        !body.response_format.json_schema
-      )
-        return fetch(url, init);
-      body.response_format.json_schema.strict = true;
-      return fetch(url, { ...init, body: JSON.stringify(body) });
-    },
   });
   return provider(modelId) as unknown as LanguageModel;
-}
-
-/**
- * DashScope's json_schema validator rejects object schemas carrying
- * `propertyNames`/`patternProperties` (zod emits both for z.record — our
- * localized-text maps). Strip them for the transport copy only; zod remains
- * the strict validator on the returned value.
- */
-export function dashScopeCompatibleJsonSchema(
-  schema: Record<string, unknown>,
-): Record<string, unknown> {
-  const clone = structuredClone(schema);
-  const walk = (node: unknown): void => {
-    if (Array.isArray(node)) {
-      node.forEach(walk);
-      return;
-    }
-    if (typeof node !== 'object' || node === null) return;
-    const record = node as Record<string, unknown>;
-    if ('propertyNames' in record) delete record.propertyNames;
-    if ('patternProperties' in record) {
-      const patterns = Object.values(
-        record.patternProperties as Record<string, unknown>,
-      );
-      if (record.additionalProperties === undefined && patterns.length === 1) {
-        record.additionalProperties = patterns[0];
-      }
-      delete record.patternProperties;
-    }
-    Object.values(record).forEach(walk);
-  };
-  walk(clone);
-  return clone;
 }
 
 /**
@@ -234,25 +179,13 @@ export async function runStoryAuthoringStage<T>(
   model: LanguageModel,
   call: StoryAuthoringStageCall<T>,
 ): Promise<T> {
-  const providerSchema = jsonSchema<T>(
-    dashScopeCompatibleJsonSchema(
-      // Share repeated scene shapes. Inlining a complete shape for every
-      // required source boundary exceeds the provider's schema capacity.
-      z.toJSONSchema(call.schema, {
-        io: 'input',
-        target: 'draft-7',
-        reused: 'ref',
-      }) as Record<string, unknown>,
-    ) as never,
-    {
-      validate: (value) => {
-        const parsed = call.schema.safeParse(value);
-        return parsed.success
-          ? { success: true, value: parsed.data }
-          : { success: false, error: parsed.error };
-      },
-    },
-  );
+  // Keep the complete schema in the prompt; validate with the original Zod
+  // schema locally. JSON Object is supported by the default Qwen3-Max model.
+  const responseSchema = z.toJSONSchema(call.schema, {
+    io: 'input',
+    target: 'draft-7',
+    reused: 'ref',
+  });
 
   let repairNote: string | null = null;
   let lastFailureDetail: string | null = null;
@@ -262,8 +195,8 @@ export async function runStoryAuthoringStage<T>(
       const invokeGenerate = () =>
         generateObject({
           model,
-          schema: providerSchema,
-          system: call.system,
+          output: 'no-schema',
+          system: `${call.system}\nReturn only a JSON object conforming to this schema: ${JSON.stringify(responseSchema)}`,
           prompt: repairNote ? `${prompt}\n\n${repairNote}` : prompt,
           maxRetries: 0,
           maxOutputTokens: call.maxOutputTokens,
@@ -291,8 +224,15 @@ export async function runStoryAuthoringStage<T>(
           await sleepAbortable(delayMs, call.signal);
         }
       }
-      // providerSchema validates and transforms the wire object into T.
-      const value: T = (result as { object: T }).object;
+      const parsed = call.schema.safeParse(result.object);
+      if (!parsed.success) {
+        const detail = parsed.error.message;
+        lastFailureDetail = detail;
+        call.onAttempt?.(attempt, 'error', detail);
+        repairNote = buildRepairNote([detail], result.object);
+        continue;
+      }
+      const value: T = parsed.data;
       const issues: string[] = call.validate?.(value) ?? [];
       if (issues.length === 0) {
         call.onAttempt?.(attempt, 'ok');

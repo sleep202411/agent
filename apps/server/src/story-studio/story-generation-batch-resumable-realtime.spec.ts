@@ -121,3 +121,131 @@ describe('enqueueStoryBatchesResumableIfFunded', () => {
     expect(enqueueRealtimeEventMock).not.toHaveBeenCalled();
   });
 });
+
+it('continues past a full unaffordable page and emits bounded notification pages', async () => {
+  enqueueRealtimeEventMock.mockClear();
+  const row = (id: string, quotedPoints: number) => ({
+    id,
+    storyProjectId: 'p',
+    storyChapterId: id,
+    items: [{ quotedPoints }],
+  });
+  const tx = makeTx([]);
+  tx.storyGenerationBatch.findMany
+    .mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, i) => row(`expensive-${i}`, 50000)),
+    )
+    .mockResolvedValueOnce(
+      Array.from({ length: 20 }, (_, i) => row(`funded-${i}`, 10)),
+    )
+    .mockResolvedValueOnce([row('last', 10)]);
+  await enqueueStoryBatchesResumableIfFunded(tx as never, account({}), 100n);
+  expect(enqueueRealtimeEventMock).toHaveBeenCalledTimes(2);
+  expect(
+    (
+      enqueueRealtimeEventMock.mock.calls[0][1].payload as {
+        batches: unknown[];
+      }
+    ).batches,
+  ).toHaveLength(20);
+  expect(
+    (
+      enqueueRealtimeEventMock.mock.calls[1][1].payload as {
+        batches: unknown[];
+      }
+    ).batches,
+  ).toHaveLength(1);
+  expect(
+    (
+      tx.storyGenerationBatch.findMany.mock.calls[1] as [
+        { where: { id: unknown } },
+      ]
+    )[0].where.id,
+  ).toEqual({
+    gt: 'expensive-19',
+  });
+  expect(
+    (
+      tx.storyGenerationBatch.findMany.mock.calls[2] as [
+        { where: { id: unknown } },
+      ]
+    )[0].where.id,
+  ).toEqual({
+    gt: 'funded-19',
+  });
+});
+
+it('uses the frozen payer for legacy batches rather than the project workspace', async () => {
+  enqueueRealtimeEventMock.mockClear();
+  const rows = [
+    {
+      id: 'personal-paid',
+      workspaceId: 'project-workspace',
+      billingSubjectType: 'workspace',
+      billingSubjectId: 'personal-wallet',
+    },
+    {
+      id: 'other-payer',
+      workspaceId: 'personal-wallet',
+      billingSubjectType: 'workspace',
+      billingSubjectId: 'someone-else',
+    },
+  ].map((row) => ({
+    ...row,
+    storyProjectId: 'project',
+    storyChapterId: 'chapter',
+    items: [{ quotedPoints: 10 }],
+  }));
+  const tx = {
+    storyGenerationBatch: {
+      findMany: jest.fn(
+        ({
+          where,
+        }: {
+          where: {
+            workspaceId?: string;
+            billingSubjectType?: string;
+            billingSubjectId?: string;
+          };
+        }) =>
+          Promise.resolve(
+            rows.filter((row) =>
+              Object.entries(where).every(
+                ([key, value]) =>
+                  ![
+                    'workspaceId',
+                    'billingSubjectType',
+                    'billingSubjectId',
+                  ].includes(key) ||
+                  row[
+                    key as
+                      | 'workspaceId'
+                      | 'billingSubjectType'
+                      | 'billingSubjectId'
+                  ] === value,
+              ),
+            ),
+          ),
+      ),
+    },
+  };
+  await enqueueStoryBatchesResumableIfFunded(
+    tx as never,
+    account({ ownerId: 'personal-wallet' }),
+    100n,
+  );
+  expect(enqueueRealtimeEventMock).toHaveBeenCalledTimes(1);
+  expect(enqueueRealtimeEventMock.mock.calls[0][1]).toMatchObject({
+    channel: 'wallet:workspace:personal-wallet',
+    payload: {
+      batches: [
+        {
+          batchId: 'personal-paid',
+          projectId: 'project',
+          chapterId: 'chapter',
+          requiredPoints: '10',
+        },
+      ],
+    },
+  });
+});

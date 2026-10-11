@@ -17,6 +17,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   cancelStoryGenerationBatch,
+  resumeStoryGenerationBatch,
   confirmStoryGenerationBatch,
   createStoryProductionIdempotencyKey,
   listStoryGenerationBatches,
@@ -224,6 +225,16 @@ export function StoryAssetBatchGeneration({
         ) : null}
       </div>
 
+      {(batchesQuery.data ?? [])
+        .filter((batch) => batch.status === "blocked")
+        .map((batch) => (
+          <BlockedAssetBatch
+            key={batch.id}
+            batch={batch}
+            projectId={projectId}
+            chapterId={chapterId}
+          />
+        ))}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -362,4 +373,69 @@ function batchFailureMessage(
     return insufficientCredits;
   }
   return failure?.message ?? fallback;
+}
+
+export function BlockedAssetBatch({
+  batch,
+  projectId,
+  chapterId,
+}: {
+  batch: StoryGenerationBatch;
+  projectId: string;
+  chapterId: string;
+}) {
+  const t = useTranslations("storyStudio.assetsPage.batch");
+  const client = useQueryClient();
+  const action = useMutation({
+    retry: false,
+    mutationFn: (operation: "resume" | "cancel") => {
+      if (!batch.canCancel) throw new Error(t("recoveryOwner"));
+      return operation === "resume"
+        ? resumeStoryGenerationBatch(projectId, chapterId, batch.id)
+        : cancelStoryGenerationBatch(projectId, chapterId, batch.id);
+    },
+    onSuccess: (updated) => {
+      client.setQueryData<StoryGenerationBatch[]>(
+        storyProductionKeys.batches(projectId, chapterId),
+        (current) => current?.map((item) => (item.id === updated.id ? updated : item))
+      );
+      void client.invalidateQueries({
+        queryKey: storyProductionKeys.batches(projectId, chapterId),
+      });
+      void client.invalidateQueries({ queryKey: storyBillingBalanceQueryKey(projectId) });
+      void client.invalidateQueries({ queryKey: storyProductionKeys.assets(projectId, chapterId) });
+    },
+  });
+  return (
+    <div className="space-y-2 rounded-xl bg-white/[0.045] p-3 text-xs text-white/70">
+      <p role="status">
+        {t("recoveryPaused", { completed: batch.counts.completed, total: batch.itemCount })}
+      </p>
+      {batch.canCancel ? (
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="quiet"
+            disabled={action.isPending}
+            onClick={() => action.mutate("resume")}
+          >
+            {t("recoveryResume")}
+          </Button>
+          <Button
+            type="button"
+            variant="quiet"
+            disabled={action.isPending}
+            onClick={() => action.mutate("cancel")}
+          >
+            {t("cancel")}
+          </Button>
+        </div>
+      ) : (
+        <p>{t("recoveryOwner")}</p>
+      )}
+      {action.error ? (
+        <p role="alert">{storyApiErrorMessage(action.error, t("recoveryError"))}</p>
+      ) : null}
+    </div>
+  );
 }

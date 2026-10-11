@@ -114,3 +114,70 @@ it("filters income rows by status", async () => {
   expect(container.textContent).toContain("学员2");
   expect(container.textContent).not.toContain("学员1");
 });
+
+it("shows the lecturer's recorded share rather than the combined teacher payout", async () => {
+  await render(
+    <CourseIncomePanel
+      siteLabel="CN"
+      databaseLabel="CN"
+      summary={{ ...summary, earnedCredits: "30" }}
+      items={[
+        {
+          ...item,
+          teacherCredits: "100",
+          instructorShares: [
+            { teacherId: "137996", credits: "30" },
+            { teacherId: "201", credits: "70" },
+          ],
+        },
+      ]}
+      loadError={null}
+    />
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("+30");
+  expect(container.querySelector("tbody")?.textContent).not.toContain("+100");
+});
+it("preserves exact large credit amounts", async () => {
+  await render(
+    <CourseIncomePanel
+      siteLabel="CN"
+      databaseLabel="CN"
+      summary={{ ...summary, earnedCredits: "9007199254740993" }}
+      items={[{ ...item, teacherCredits: "9007199254740993" }]}
+      loadError={null}
+    />
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("+9,007,199,254,740,993");
+});
+
+it("keeps an operator's combined payout and a lecturer's fallback distinct", async () => {
+  const shared = {
+    ...item,
+    instructorShares: [
+      { teacherId: "137996", credits: "30" },
+      { teacherId: "201", credits: "70" },
+    ],
+  };
+  await render(
+    <CourseIncomePanel
+      siteLabel="CN"
+      databaseLabel="CN"
+      summary={null}
+      platformUserId="201"
+      items={[shared]}
+      loadError="Summary unavailable"
+    />
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("+70");
+  await render(
+    <CourseIncomePanel
+      siteLabel="CN"
+      databaseLabel="CN"
+      summary={null}
+      platformUserId={null}
+      items={[shared]}
+      loadError={null}
+    />
+  );
+  expect(container.querySelector("tbody")?.textContent).toContain("+100");
+});

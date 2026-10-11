@@ -6,7 +6,8 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { learningApi, type Enrollment } from "../../courses/_learning/api";
+import { useHomeworkAttachment } from "./use-homework-attachment";
+import { instructorEarnedCredits, learningApi, type Enrollment } from "../../courses/_learning/api";
 
 export default function TeacherWorkspace() {
   const { user } = useCurrentUser();
@@ -84,7 +85,7 @@ export default function TeacherWorkspace() {
                     <td className="p-3">{t(row.status)}</td>
                     <td className="p-3">
                       {t("credits", {
-                        amount: row.status === "approved" ? row.teacherCredits : "0",
+                        amount: instructorEarnedCredits(row, user.id),
                       })}
                     </td>
                     <td className="p-3">
@@ -134,6 +135,7 @@ function Review({
   const lock = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const attachment = useHomeworkAttachment();
   const [score, setScore] = useState("");
   const [feedback, setFeedback] = useState("");
   async function decide(decision: "approved" | "revision") {
@@ -171,21 +173,29 @@ function Review({
           </Button>
         </div>
         <p className="whitespace-pre-wrap">{row.description}</p>
-        {row.assetIds.map((id, i) => (
-          <Button
-            key={id}
-            onClick={async () => {
-              try {
-                const result = await learningApi.attachment(row.id, id);
-                window.open(result.url, "_blank", "noopener,noreferrer");
-              } catch (e) {
-                setError(e instanceof Error ? e.message : t("failed"));
+        {row.assetIds.map((id, i) =>
+          attachment.link?.id === id ? (
+            <Button key={id} asChild>
+              <a href={attachment.link.url} target="_blank" rel="noopener noreferrer">
+                {t("attachment", { number: i + 1 })}
+              </a>
+            </Button>
+          ) : (
+            <Button
+              key={id}
+              disabled={attachment.pending}
+              onClick={() =>
+                void attachment.open(
+                  id,
+                  async (signal) => (await learningApi.attachment(row.id, id, signal)).url,
+                  (e) => setError(e instanceof Error ? e.message : t("failed"))
+                )
               }
-            }}
-          >
-            {t("attachment", { number: i + 1 })}
-          </Button>
-        ))}
+            >
+              {t("attachment", { number: i + 1 })}
+            </Button>
+          )
+        )}
         {row.feedback && (
           <p>
             {row.score}/100 · {row.feedback}

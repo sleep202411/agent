@@ -82,9 +82,11 @@ export function InteractiveFilmReviewDetail({
   const [listingRefreshRevision, setListingRefreshRevision] = useState(0);
   const [materials, setMaterials] = useState(() => ({
     contentVersion: initialListing.contentVersion,
-    // Legacy releases use the existing Java review. A frozen cover must load
-    // in the review surface before its promotional snapshot is ready.
-    ready: initialListing.data?.listing === null && !initialListing.error,
+    // A selected cover must load in the review surface before approval.
+    ready:
+      areInteractiveFilmMaterialsReady(initialListing.data) &&
+      !initialListing.error &&
+      !initialListing.data?.listing?.coverUrl,
   }));
   const materialsRef = useRef(materials);
   const onMaterialsReadyChange = useCallback((contentVersion: string | null, ready: boolean) => {

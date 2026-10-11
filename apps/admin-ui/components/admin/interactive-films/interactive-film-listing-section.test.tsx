@@ -23,6 +23,7 @@ const listing: AdminInteractiveFilmListing = {
   developer: "",
   tags: ["Mystery"],
   coverUrl: "https://media.invalid/cover.jpg",
+  coverStatus: "available",
   trailerUrl: "https://media.invalid/trailer.mp4",
   screenshots: [{ url: "https://media.invalid/screen.jpg" }],
 };
@@ -111,11 +112,27 @@ it("distinguishes a legacy absent snapshot from an upstream read failure", () =>
   expect(failure).toContain("Retry materials");
   expect(failure).not.toContain("no promotional materials snapshot");
 });
-it("explains a blocked required cover and preserves recovery", () => {
-  const html = render({ ...listing, coverUrl: null });
+it("explains an unavailable selected cover and preserves recovery", () => {
+  const html = render({ ...listing, coverUrl: null, coverStatus: "unavailable" });
   expect(html).toContain("cannot be approved because its cover is unavailable");
   expect(html).toContain("Retry materials");
   expect(html).toContain("Frozen introduction");
+});
+it("keeps an intentionally coverless release reviewable without a media load", async () => {
+  const onReadyChange = await renderDom({
+    ...listing,
+    coverUrl: null,
+    coverStatus: "not_provided",
+    trailerUrl: null,
+    screenshots: [],
+  });
+  expect(container.textContent).toContain("No cover provided.");
+  expect(container.textContent).not.toContain("cannot be approved");
+  expect(onReadyChange).toHaveBeenLastCalledWith(VERSION, true);
+});
+it("keeps an unavailable selected cover blocked even without a media element", async () => {
+  const onReadyChange = await renderDom({ ...listing, coverUrl: null, coverStatus: "unavailable" });
+  expect(onReadyChange).toHaveBeenLastCalledWith(VERSION, false);
 });
 it("keeps a new cover pending until its image has loaded", async () => {
   const onReadyChange = await renderDom(listing);

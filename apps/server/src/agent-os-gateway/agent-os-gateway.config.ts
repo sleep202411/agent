@@ -1,9 +1,18 @@
 import { requiredEnv } from '../common/required-env';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
+import {
+  MODEL_PROFILE_ID_MAX_LENGTH,
+  MODEL_PROFILE_ID_PATTERN,
+} from '@repo/shared';
 
 const configSchema = z.object({
   workerBaseUrl: z.string().url(),
+  mobileChatModelProfileId: z
+    .string()
+    .min(1)
+    .max(MODEL_PROFILE_ID_MAX_LENGTH)
+    .regex(MODEL_PROFILE_ID_PATTERN),
   /**
    * Shared secret for worker → Nest domain tool execution.
    * Required when Agent OS gateway module loads.
@@ -45,6 +54,7 @@ export class AgentOsGatewayConfigService {
     }
     this.value = configSchema.parse({
       workerBaseUrl: raw.replace(/\/$/, ''),
+      mobileChatModelProfileId: requiredEnv('AGENT_OS_MOBILE_CHAT_MODEL'),
       internalToken,
       billing: 'free',
       rateLimit: 'disabled',

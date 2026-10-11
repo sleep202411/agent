@@ -651,6 +651,7 @@ export class LangGraphRunService {
   private readonly inflight = new Map<string, Promise<void>>();
   /** Per-run abort — Stop aborts the LangGraph stream + model calls. */
   private readonly aborts = new Map<string, AbortController>();
+  private readonly gatewayCancellations = new Map<string, Promise<LangGraphRunSnapshot>>();
   /** Full snapshot writes must never overtake one another for the same run. */
   private readonly persistQueues = new Map<string, Promise<JournalReportReceipt>>();
   /** Lease renewal is independent of model/tool events, which may be silent. */
@@ -934,6 +935,12 @@ export class LangGraphRunService {
     runId: string,
     reason = "Stopped by user"
   ): Promise<LangGraphRunSnapshot | undefined> {
+    // In production Nest commits cancellation before notifying this Worker.
+    // Adopting that journal is the only valid response; generating another
+    // random-id RunCancelled at the same sequence corrupts the shared prefix.
+    if (process.env.AGENT_OS_DOMAIN_URL?.trim()) {
+      return this.adoptGatewayCancellation(runId);
+    }
     const existing = this.snapshots.get(runId);
     if (!existing) return undefined;
 
@@ -992,6 +999,83 @@ export class LangGraphRunService {
     this.snapshots.set(runId, cancelled);
     await this.persist(cancelled);
     return cancelled;
+  }
+
+  private async adoptGatewayCancellation(runId: string): Promise<LangGraphRunSnapshot> {
+    const pending = this.gatewayCancellations.get(runId);
+    if (pending) return pending;
+    // Install the promise before aborting: the graph's abort handler calls
+    // cancel too and must await the same authoritative read, never append.
+    const work = Promise.resolve().then(async () => {
+      const durable = await fetchJournalFromNest(runId, { requireExisting: true });
+      if (!durable) throw new Error("Gateway cancellation requires durable journal configuration");
+      const status = AgentRunStatusSchema.parse(durable.status);
+      if (!TERMINAL_STATUSES.has(status)) {
+        throw new Error(`Gateway has not committed a terminal state for Agent OS run ${runId}`);
+      }
+      const existing = this.snapshots.get(runId);
+      if (
+        !durable.events.length ||
+        durable.events.some(
+          (event, index) =>
+            event.sequence !== index + 1 ||
+            event.runId !== runId ||
+            (existing?.conversationId && event.conversationId !== existing.conversationId)
+        )
+      ) {
+        throw new Error(
+          `Gateway cancellation returned the wrong journal for Agent OS run ${runId}`
+        );
+      }
+      const tail = durable.events.at(-1)!;
+      const terminalType = {
+        cancelled: "RunCancelled",
+        completed: "RunCompleted",
+        failed: "RunFailed",
+      };
+      if (
+        tail.type !== terminalType[status as keyof typeof terminalType] ||
+        tail.data.status !== status
+      ) {
+        throw new Error(
+          `Gateway cancellation returned an incomplete terminal journal for Agent OS run ${runId}`
+        );
+      }
+      const journal = this.createJournal();
+      journal.restore(durable.events);
+      const terminal: LangGraphRunSnapshot = {
+        ...existing,
+        runId,
+        status,
+        journal,
+        activeTurnId: typeof tail.data.turnId === "string" ? tail.data.turnId : undefined,
+        conversationId: existing?.conversationId ?? durable.events[0]!.conversationId,
+        assistantText: durable.assistantText ?? "",
+        pendingApproval: undefined,
+        pendingUserInput: undefined,
+        pendingExternal: undefined,
+        activeMessage: undefined,
+        startExecution: undefined,
+        continuationExecution: undefined,
+        continuationCommand: undefined,
+        errorMessage:
+          status === "completed"
+            ? undefined
+            : typeof asUnknownRecord(tail.data.error).message === "string"
+              ? String(asUnknownRecord(tail.data.error).message)
+              : undefined,
+      };
+      this.snapshots.set(runId, terminal);
+      return terminal;
+    });
+    this.gatewayCancellations.set(runId, work);
+    this.aborts.get(runId)?.abort();
+    this.stopStartHeartbeat(runId);
+    try {
+      return await work;
+    } finally {
+      if (this.gatewayCancellations.get(runId) === work) this.gatewayCancellations.delete(runId);
+    }
   }
 
   /**

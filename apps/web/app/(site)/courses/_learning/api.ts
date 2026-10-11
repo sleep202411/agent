@@ -9,6 +9,7 @@ export type Enrollment = {
   version: number;
   priceCredits: string;
   teacherCredits: string;
+  instructorShares?: Array<{ teacherId: string; credits: string }> | null;
   status: "enrolled" | "submitted" | "revision" | "approved";
   description: string | null;
   assetIds: string[];
@@ -17,6 +18,15 @@ export type Enrollment = {
   badgeIssuedAt: string | null;
   createdAt: string;
 };
+/** Enrollment shares are the purchase-time payout snapshot, not today's course configuration. */
+export function instructorEarnedCredits(row: Enrollment, userId: string): string {
+  if (row.status !== "approved") return "0";
+  if (row.instructorShares?.length) {
+    return row.instructorShares.find((share) => share.teacherId === userId)?.credits ?? "0";
+  }
+  return row.teacherId === userId ? row.teacherCredits : "0";
+}
+
 export type Offering = {
   version: number;
   enabled: boolean;
@@ -63,6 +73,8 @@ export const learningApi = {
       "/aurora/academy/learning/teaching",
       { params: { after }, signal }
     ),
-  attachment: (id: string, assetId: string) =>
-    api.get<{ url: string }>(`/aurora/academy/learning/enrollments/${id}/attachments/${assetId}`),
+  attachment: (id: string, assetId: string, signal?: AbortSignal) =>
+    api.get<{ url: string }>(`/aurora/academy/learning/enrollments/${id}/attachments/${assetId}`, {
+      signal,
+    }),
 };

@@ -18,6 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.5",
     "@langchain/openai": "1.2.5",
     "@repo/shared": "*",
     "zod": "^4.3.6"
