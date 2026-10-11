@@ -12,6 +12,7 @@ jest.mock('pdf-parse/lib/pdf-parse.js', () => ({
 import { CrewPdfTaskImportService } from './pdf-task-import';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { generateObject } from 'ai';
+import { createAlibaba } from '@ai-sdk/alibaba';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 const proposals = {
   tasks: [
@@ -318,7 +319,9 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
   try {
     const { service } = fixture();
     jest
-      .mocked(pdfParse)
+      .mocked(
+        pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
+      )
       .mockResolvedValue({ text: proposals.tasks[0].evidence } as never);
     const buffer = Buffer.alloc(20 * 1024 * 1024);
     buffer.write('%PDF-');
@@ -328,7 +331,11 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
         originalname: 'large.pdf',
       }),
     ).resolves.toMatchObject({ status: 'queued' });
-    jest.mocked(pdfParse).mockClear();
+    jest
+      .mocked(
+        pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
+      )
+      .mockClear();
     await expect(
       service.analyze('crew', 'user', 'larger', {
         buffer: Buffer.concat([buffer, Buffer.from('x')]),
@@ -341,3 +348,60 @@ it('accepts a 20 MiB document and rejects anything larger before parsing', async
     else process.env.ALIBABA_API_KEY = old;
   }
 });
+
+it('persists a safe provider failure and returns it after polling', async () => {
+  const old = process.env.ALIBABA_API_KEY;
+  process.env.ALIBABA_API_KEY = 'fixture';
+  try {
+    const { service, row, db } = fixture();
+    row.status = 'analyzing';
+    jest.mocked(generateObject).mockRejectedValue(
+      Object.assign(new Error('private-script secret-key'), {
+        statusCode: 429,
+      }),
+    );
+    await service.process('crew', 'user', 'id', 'private-script');
+    const result = await service.get('crew', 'user', 'id');
+    expect(result).toMatchObject({
+      status: 'failed',
+      failure: { code: 'provider_limit' },
+      tasks: [],
+    });
+    expect(JSON.stringify(result)).not.toContain('private-script');
+    expect(JSON.stringify(row.proposals)).not.toContain('secret-key');
+    expect(db.crewTask.create).not.toHaveBeenCalled();
+  } finally {
+    if (old === undefined) delete process.env.ALIBABA_API_KEY;
+    else process.env.ALIBABA_API_KEY = old;
+  }
+});
+
+it.each([undefined, '  ', ' qwen-plus-2025-12-01 '])(
+  'uses the supported document model or an explicit override (%s)',
+  async (configured) => {
+    const oldKey = process.env.ALIBABA_API_KEY;
+    const oldModel = process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+    process.env.ALIBABA_API_KEY = 'fixture';
+    if (configured === undefined)
+      delete process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+    else process.env.CREW_DOCUMENT_ANALYSIS_MODEL = configured;
+    try {
+      const { service, row } = fixture();
+      row.status = 'analyzing';
+      jest
+        .mocked(generateObject)
+        .mockResolvedValue({ object: proposals } as never);
+      await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
+      const provider = jest.mocked(createAlibaba).mock.results.at(-1)!
+        .value as jest.Mock;
+      expect(provider).toHaveBeenCalledWith(configured?.trim() || 'qwen-plus');
+      expect(row.status).toBe('ready');
+    } finally {
+      if (oldKey === undefined) delete process.env.ALIBABA_API_KEY;
+      else process.env.ALIBABA_API_KEY = oldKey;
+      if (oldModel === undefined)
+        delete process.env.CREW_DOCUMENT_ANALYSIS_MODEL;
+      else process.env.CREW_DOCUMENT_ANALYSIS_MODEL = oldModel;
+    }
+  },
+);

@@ -44,6 +44,14 @@ grep -q 'value: "http://fizzdragon-agent-os:4301"' <<<"$render" ||
   fail "the server must be told the rendered worker Service"
 ok "worker→server and server→worker addresses derive from the chart"
 
+server="$(helm template fizzdragon "$CHART" -s templates/server.yaml)"
+grep -A1 'name: AGENT_OS_MOBILE_CHAT_MODEL' <<<"$server" | grep -q 'value: "qwen3.7-flash"' ||
+  fail "the global mobile model must remain explicitly configured"
+cn_server="$(helm template fizzdragon "$CHART" -f "$CN_VALUES" -s templates/server.yaml)"
+grep -A1 'name: AGENT_OS_MOBILE_CHAT_MODEL' <<<"$cn_server" | grep -q 'value: "qwen3.7-plus"' ||
+  fail "CN mobile must use its qualified fixed chat model"
+ok "mobile chat defaults are explicit and region-owned"
+
 # ── scoped DSN, same execution authority, no unrelated server secrets ────────
 grep -q 'name: fizzdragon-secrets' <<<"$agent_os" &&
   fail "the worker must not receive the server's broad shared secret projection"

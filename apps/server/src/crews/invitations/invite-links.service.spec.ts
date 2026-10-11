@@ -343,3 +343,116 @@ it('lists both community and member links without returning their bearer secrets
     'members.invite',
   );
 });
+
+describe('invite link management pages', () => {
+  function harness() {
+    const rows = Array.from({ length: 121 }, (_, i) => ({
+      id: String(121 - i).padStart(3, '0'),
+      crewId: 'crew',
+      taskId: i < 60 ? 'other-task' : i < 115 ? 'task' : null,
+      createdAt: NOW,
+      revokedAt: null as Date | null,
+      expiresAt: null,
+      maxUses: null,
+      useCount: 0,
+      kind: 'member',
+      policyKeys: [],
+      createdByUserId: 'owner',
+      tokenHash: 'must-not-leak',
+    }));
+    type Scope = { crewId: string; taskId?: string | null };
+    const matches = (row: (typeof rows)[number], scope: Scope) =>
+      row.crewId === scope.crewId &&
+      (scope.taskId === undefined || row.taskId === scope.taskId);
+    const findFirst = jest.fn(
+      ({ where }: { where: Scope & { id: string } }) =>
+        rows.find((row) => matches(row, where) && row.id === where.id) ?? null,
+    );
+    const findMany = jest.fn(
+      ({
+        where,
+        take,
+      }: {
+        where: Scope & {
+          OR?: Array<{ createdAt: unknown; id?: { lt: string } }>;
+        };
+        take: number;
+      }) =>
+        rows
+          .filter(
+            (row) =>
+              matches(row, where) &&
+              !row.revokedAt &&
+              (!where.OR || row.id < where.OR[1].id!.lt),
+          )
+          .slice(0, take),
+    );
+    const authorization = { require: jest.fn().mockResolvedValue({}) };
+    const service = new CrewInviteLinksService(
+      { crewInviteLink: { findFirst, findMany } } as never,
+      authorization as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, rows, findMany, authorization };
+  }
+  it('finds older task links beyond 50 unrelated links and pages tied timestamps after revocation', async () => {
+    const h = harness();
+    const first = await h.service.listPage('crew', 'owner', {
+      taskId: 'task',
+      limit: 50,
+    });
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).toBe(first.items[49].id);
+    expect(first.items.every((item) => item.taskId === 'task')).toBe(true);
+    expect(first.items[0]).not.toHaveProperty('tokenHash');
+    h.rows.find((row) => row.id === first.nextCursor)!.revokedAt = NOW;
+    const second = await h.service.listPage('crew', 'owner', {
+      taskId: 'task',
+      limit: 50,
+      cursor: first.nextCursor!,
+    });
+    expect(second.items).toHaveLength(5);
+    expect(second.nextCursor).toBeNull();
+    expect(
+      new Set([...first.items, ...second.items].map((item) => item.id)).size,
+    ).toBe(55);
+    expect(h.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 51,
+      }),
+    );
+  });
+  it('separates general links and rejects cursors from another scope or crew', async () => {
+    const h = harness();
+    expect(
+      (
+        await h.service.listPage('crew', 'owner', {
+          scope: 'general',
+          limit: 50,
+        })
+      ).items,
+    ).toHaveLength(6);
+    await expect(
+      h.service.listPage('crew', 'owner', {
+        taskId: 'task',
+        limit: 50,
+        cursor: '121',
+      }),
+    ).rejects.toThrow('Invalid invite link cursor');
+    await expect(
+      h.service.listPage('other', 'owner', { limit: 50, cursor: '121' }),
+    ).rejects.toThrow('Invalid invite link cursor');
+  });
+  it('requires invite-management permission before reading links', async () => {
+    const h = harness();
+    h.authorization.require.mockRejectedValue(new Error('denied'));
+    await expect(
+      h.service.listPage('crew', 'user', { limit: 50 }),
+    ).rejects.toThrow('denied');
+    expect(h.findMany).not.toHaveBeenCalled();
+  });
+});

@@ -172,6 +172,20 @@ export function TaskDeliveryUpload({
           >
             {t("retry")}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={disabled || busy}
+            onClick={() => {
+              if (request.current) return;
+              job.current = null;
+              setFileName("");
+              setProgress(0);
+              setError(null);
+            }}
+          >
+            {t("clearFailedUpload")}
+          </Button>
         </div>
       ) : null}
     </div>

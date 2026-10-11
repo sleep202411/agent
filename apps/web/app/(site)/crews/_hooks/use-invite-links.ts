@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
@@ -44,6 +44,36 @@ export function useCrewInviteLinks(crewId: string, enabled = true) {
         cache: "no-store",
       }),
   });
+}
+
+/** Scoped pages opt in without changing the legacy array contract used by older clients. */
+export function useCrewInviteLinkPages(crewId: string, enabled: boolean, taskId?: string) {
+  const { user } = useCurrentUser();
+  const query = useInfiniteQuery({
+    queryKey: [...crewKeys.inviteLinks(crewId), "pages", taskId ?? "general", user?.id ?? null],
+    enabled: enabled && !!crewId && Boolean(user),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ signal, pageParam }) => {
+      const params = new URLSearchParams({ paginated: "true", limit: "50" });
+      if (taskId) params.set("taskId", taskId);
+      else params.set("scope", "general");
+      if (pageParam) params.set("cursor", pageParam);
+      const response = await crewApi.get<
+        | CrewInviteLinkDTO[]
+        | {
+            items: CrewInviteLinkDTO[];
+            nextCursor: string | null;
+          }
+      >(`/crews/${encodeURIComponent(crewId)}/invite-links?${params}`, {
+        signal,
+        cache: "no-store",
+      });
+      // Main may deploy before the paginated endpoint reaches production.
+      return Array.isArray(response) ? { items: response, nextCursor: null } : response;
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+  return { ...query, data: query.data?.pages.flatMap((page) => page.items) };
 }
 
 function useMutationRefresh(crewId: string) {

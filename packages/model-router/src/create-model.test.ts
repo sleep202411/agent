@@ -28,6 +28,152 @@ function model() {
   });
 }
 
+function toolResponse(deltas: unknown[], finishReason = "stop") {
+  const chunks = [
+    ...deltas.map((delta) => ({ delta, finish_reason: null })),
+    { delta: {}, finish_reason: finishReason },
+  ];
+  return new Response(
+    chunks
+      .map(
+        (choice) =>
+          `data: ${JSON.stringify({
+            id: "completion-test",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "qwen3.7-plus",
+            choices: [{ index: 0, ...choice }],
+          })}\n\n`
+      )
+      .join("") + "data: [DONE]\n\n",
+    {
+      headers: { "content-type": "text/event-stream" },
+    }
+  );
+}
+
+const storyRead = {
+  type: "function" as const,
+  function: {
+    name: "story_read",
+    description: "Read the current story",
+    parameters: { type: "object" },
+  },
+};
+
+describe("model tool response validation", () => {
+  it("rejects a fragmented bare tool name without exposing it as assistant text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        toolResponse([{ role: "assistant", content: "story_" }, { content: "read" }])
+      )
+    );
+    const emitted: string[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of await model().bindTools([storyRead]).stream("Read the story")) {
+          if (typeof chunk.content === "string") emitted.push(chunk.content);
+        }
+      })()
+    ).rejects.toMatchObject({ code: "MODEL_TOOL_CALL_INVALID" });
+    expect(emitted.join("")).toBe("");
+  });
+
+  it("preserves ordinary prose that mentions a tool", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        toolResponse([
+          { role: "assistant", content: "story_" },
+          { content: "read reads the current story." },
+        ])
+      )
+    );
+    expect((await model().bindTools([storyRead]).invoke("Explain the tool")).content).toBe(
+      "story_read reads the current story."
+    );
+  });
+
+  it.each([
+    { suffix: "}", valid: true },
+    { suffix: "broken", valid: false },
+    { suffix: '\"partial\":', valid: false },
+  ])("validates fragmented tool arguments (suffix=$suffix)", async ({ suffix, valid }) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        toolResponse(
+          [
+            {
+              role: "assistant",
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "read-once",
+                  type: "function",
+                  function: { name: "story_read", arguments: "{" },
+                },
+              ],
+            },
+            { tool_calls: [{ index: 0, function: { arguments: suffix } }] },
+          ],
+          "tool_calls"
+        )
+      )
+    );
+    const response = model().bindTools([storyRead]).invoke("Read the story");
+    if (valid)
+      expect((await response).tool_calls).toEqual([
+        expect.objectContaining({ name: "story_read", args: {}, id: "read-once" }),
+      ]);
+    else await expect(response).rejects.toMatchObject({ code: "MODEL_TOOL_CALL_INVALID" });
+  });
+
+  it.each(["", "story_read"])(
+    "rejects a tool-call finish without a real call (%s)",
+    async (content) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => toolResponse([{ role: "assistant", content }], "tool_calls"))
+      );
+      await expect(model().bindTools([storyRead]).invoke("Read the story")).rejects.toMatchObject({
+        code: "MODEL_TOOL_CALL_INVALID",
+      });
+    }
+  );
+
+  it.each(["not_mounted", "story_read"])(
+    "rejects an unknown tool or non-object arguments (%s)",
+    async (name) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          toolResponse(
+            [
+              {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "invalid-call",
+                    type: "function",
+                    function: { name, arguments: name === "story_read" ? "[]" : "{}" },
+                  },
+                ],
+              },
+            ],
+            "tool_calls"
+          )
+        )
+      );
+      await expect(model().bindTools([storyRead]).invoke("Read the story")).rejects.toMatchObject({
+        code: "MODEL_TOOL_CALL_INVALID",
+      });
+    }
+  );
+});
+
 describe("model stream completion", () => {
   it("rejects an EOF without a provider finish reason instead of returning a partial answer", async () => {
     vi.stubGlobal(

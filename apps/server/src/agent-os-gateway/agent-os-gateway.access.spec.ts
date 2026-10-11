@@ -351,7 +351,7 @@ function makeService(overrides?: {
   const service = new AgentOsGatewayService(
     worker as never, // worker
     projects as never,
-    { value: {} } as never, // config
+    { value: { mobileChatModelProfileId: 'qwen3.7-plus' } } as never, // config
     journal as never,
     {} as never, // domain
     realtimeTokens as never,
@@ -1338,8 +1338,7 @@ describe('run-scoped authorization', () => {
     expect(worker.startRun).toHaveBeenCalledWith(
       expect.objectContaining({
         projectKind: 'story',
-        modelProfileId:
-          process.env.AGENT_OS_MOBILE_CHAT_MODEL || 'qwen3.7-flash',
+        modelProfileId: 'qwen3.7-plus',
         workbenchMode: 'story',
         workbenchContext: {
           chapterId: '11111111-1111-4111-8111-111111111111',

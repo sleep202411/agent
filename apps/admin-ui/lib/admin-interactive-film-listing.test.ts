@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { loadAdminInteractiveFilmListing } from "./admin-interactive-film-listing";
+import { requestAdminInteractiveFilmListing } from "./interactive-film-listing-client";
 
 const jar = vi.hoisted(() => ({ session: "fixture-admin" as string | undefined }));
 vi.mock("server-only", () => ({}));
@@ -52,6 +53,30 @@ it("does not call an upstream without a candidate or authenticated session", asy
     error: "Your admin session has expired. Sign in again.",
   });
   expect(fetchMock).not.toHaveBeenCalled();
+});
+it("preserves a coverless snapshot through the initial load and browser retry", async () => {
+  const data = {
+    contentVersion: VERSION,
+    listing: {
+      gameId: GAME,
+      title: "A film",
+      defaultLocale: "en-US",
+      description: "",
+      tags: [],
+      developer: "",
+      coverUrl: null,
+      coverStatus: "not_provided",
+      trailerUrl: null,
+      screenshots: [],
+    },
+  };
+  fetchMock.mockImplementation(async () => Response.json({ code: 200, data }));
+  expect(await loadAdminInteractiveFilmListing(GAME, VERSION)).toEqual({
+    contentVersion: VERSION,
+    data,
+    error: null,
+  });
+  expect(await requestAdminInteractiveFilmListing(GAME, VERSION)).toEqual(data);
 });
 it("preserves upstream version conflicts and rejects a mismatched success response", async () => {
   fetchMock.mockResolvedValueOnce(

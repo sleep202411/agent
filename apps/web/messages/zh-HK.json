@@ -5397,6 +5397,7 @@
       "pdfCheck": "檢查分析狀態",
       "pdfNewAnalysis": "重新分析",
       "pdfPending": "分析正在進行，請稍後檢查狀態；重複同一請求不會再次呼叫 AI。",
+      "pdfAnalysisId": "分析編號：{id}",
       "pdfFailed": "分析失敗，請啟動新的分析重試。",
       "pdfCreated": "已建立 {count} 個任務。",
       "pdfReview": "請審核 {count} 個建議任務，並選擇需要建立的任務。",
@@ -10608,6 +10609,7 @@
     "correction": "已更正結果"
   },
   "crewDeliveryTemplate": {
+    "clearFailedUpload": "清除失敗的上傳",
     "uploadFile": "上傳檔案",
     "uploadProgress": "上傳中… {percent}%",
     "uploadUnavailable": "暫時無法上傳檔案。",
