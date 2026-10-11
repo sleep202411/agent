@@ -5397,6 +5397,7 @@
       "pdfCheck": "Check analysis status",
       "pdfNewAnalysis": "New analysis",
       "pdfPending": "Analysis is running. Check its status shortly; resending the same request does not run AI again.",
+      "pdfAnalysisId": "Analysis ID: {id}",
       "pdfFailed": "Analysis failed. Start a new analysis to retry.",
       "pdfCreated": "{count} tasks created.",
       "pdfReview": "Review {count} proposed tasks and select the ones to create.",
@@ -10608,6 +10609,7 @@
     "correction": "Result corrected"
   },
   "crewDeliveryTemplate": {
+    "clearFailedUpload": "Clear failed upload",
     "uploadFile": "Upload file",
     "uploadProgress": "Uploading… {percent}%",
     "uploadUnavailable": "File upload is currently unavailable.",

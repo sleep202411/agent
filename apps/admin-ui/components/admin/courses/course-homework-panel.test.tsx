@@ -66,6 +66,7 @@ const summary: AdminTeachingIncome = {
 async function render(view: ReactNode) {
   if (!root) {
     container = document.createElement("div");
+    document.body.appendChild(container);
     root = createRoot(container);
   }
   await act(async () => {
@@ -77,7 +78,9 @@ afterEach(async () => {
   await act(async () => {
     root?.unmount();
   });
+  container?.remove();
   root = undefined;
+  vi.unstubAllGlobals();
 });
 
 it("fills course and monthly counts from the review queue when offerings are empty", () => {
@@ -135,7 +138,7 @@ it("renders the lecturer workbench from the review queue", async () => {
     />
   );
   expect(container.textContent).toContain("Elena老师");
-  expect(container.textContent).toContain("今天共有1份作业等待审批");
+  expect(container.textContent).toContain("今天共有23份作业等待审批");
   expect(container.textContent).toContain("我的课程数");
   expect(container.textContent).toContain("1,842");
   expect(container.textContent).toContain("本月新增购买人数");
@@ -197,4 +200,34 @@ it("opens a review dialog with student, homework and scoring fields", async () =
   expect(dialog?.querySelector("input[aria-label='评分']")).toBeTruthy();
   expect(dialog?.textContent).toContain("通过并提交");
   expect(dialog?.textContent).toContain("退回修改");
+});
+
+it("reduces the total pending count after review and refreshes from the server", async () => {
+  const reviewed = { ...row, status: "approved", score: 80, feedback: "Reviewed" };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 200, data: reviewed })))
+  );
+  const view = (pending: number, initialItems: AdminHomeworkRow[]) => (
+    <CourseHomeworkPanel
+      siteLabel="CN"
+      databaseLabel="CN"
+      displayName="Teacher"
+      initialItems={initialItems}
+      summary={{ ...summary, pending }}
+      loadError={null}
+      canReview
+      scope="lecturer"
+    />
+  );
+  await render(view(23, [{ ...row, score: 80, feedback: "Reviewed" }]));
+  await act(async () => {
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "审批")!.click();
+  });
+  await act(async () => {
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "通过并提交")!.click();
+  });
+  expect(container.textContent).toContain("今天共有22份作业等待审批");
+  await render(view(21, []));
+  expect(container.textContent).toContain("今天共有21份作业等待审批");
 });

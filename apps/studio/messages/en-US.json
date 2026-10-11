@@ -3145,6 +3145,10 @@
       },
       "filterLabel": "Filter Asset Specs by type",
       "batch": {
+        "recoveryPaused": "Generation paused. {completed} of {total} items completed. Add points if needed, then resume.",
+        "recoveryResume": "Resume generation",
+        "recoveryOwner": "Only the creator of this batch can resume or cancel it.",
+        "recoveryError": "Could not update this batch. Please try again.",
         "generate": "Batch generate",
         "allGenerated": "All generated",
         "tooltip": "Use {model} with the selected parameters to batch generate the remaining {count, plural, one {# empty asset} other {# empty assets}} in this category.",

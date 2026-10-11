@@ -1,3 +1,4 @@
+import { CourseLearningPagination } from "@/components/admin/courses/course-learning-pagination";
 import { CourseHomeworkPanel } from "@/components/admin/courses/course-homework-panel";
 import { loadAdminHomework, loadAdminTeachingIncome } from "@/lib/admin-academy-learning";
 import { requireContentPagePermission } from "@/lib/admin-content-permission";
@@ -17,16 +18,23 @@ export default async function CourseHomeworkPage({
     loadAdminTeachingIncome(),
   ]);
   return (
-    <CourseHomeworkPanel
-      siteLabel={session.site.label}
-      databaseLabel={session.site.databaseLabel}
-      displayName={session.user.displayName}
-      initialItems={homework.data?.items ?? []}
-      metricItems={catalog.data?.items ?? homework.data?.items ?? []}
-      summary={income.data}
-      loadError={homework.error || catalog.error || income.error}
-      canReview={Boolean(session.user.permissions.includes("courses.write"))}
-      scope={homework.data?.scope ?? (session.user.platformUserId ? "lecturer" : "operator")}
-    />
+    <>
+      <CourseHomeworkPanel
+        siteLabel={session.site.label}
+        databaseLabel={session.site.databaseLabel}
+        displayName={session.user.displayName}
+        initialItems={homework.data?.items ?? []}
+        metricItems={catalog.data?.items ?? homework.data?.items ?? []}
+        summary={income.data}
+        loadError={homework.error || catalog.error || income.error}
+        canReview={Boolean(session.user.permissions.includes("courses.write"))}
+        scope={homework.data?.scope ?? (session.user.platformUserId ? "lecturer" : "operator")}
+      />
+      <CourseLearningPagination
+        path="/courses/homework"
+        after={after}
+        nextCursor={homework.data?.nextCursor}
+      />
+    </>
   );
 }

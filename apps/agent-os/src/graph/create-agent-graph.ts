@@ -11,7 +11,7 @@ import {
   type SkillMountContext,
 } from "@repo/agent-skills";
 import { StoryProductionStateSchema, storyProductionNeedsContinuation } from "@repo/agent-tools";
-import { IncompleteModelStreamError } from "@repo/model-router";
+import { IncompleteModelStreamError, InvalidToolResponseError } from "@repo/model-router";
 
 import { buildLangChainTools, type ToolRuntimeContext } from "./build-langchain-tools.js";
 import { toLangChainToolName } from "./tool-name.js";
@@ -44,7 +44,11 @@ export function createAgentOsGraph(input: {
             onFailedAttempt: (error) => {
               // Retry only the interrupted model node. Successful tool nodes
               // remain in the checkpoint and must never be executed again.
-              if (!(error instanceof IncompleteModelStreamError)) throw error;
+              if (
+                !(error instanceof IncompleteModelStreamError) &&
+                !(error instanceof InvalidToolResponseError)
+              )
+                throw error;
             },
           }),
     tools,

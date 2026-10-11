@@ -671,13 +671,17 @@ describe('StoryGenerationBatchService recovery', () => {
 describe('StoryGenerationBatchService collaboration visibility', () => {
   it('shows a collaborator active batch without granting cancel authority', async () => {
     const own = batch({ status: StoryGenerationBatchStatus.completed });
-    const collaborator = batch({
-      status: StoryGenerationBatchStatus.running,
-      actorUserId: 'actor-2',
-    });
+    const collaborator = {
+      ...batch({
+        status: StoryGenerationBatchStatus.running,
+        actorUserId: 'actor-2',
+      }),
+      id: 'collaborator-batch',
+    };
     const findMany = jest
       .fn<Promise<Array<ReturnType<typeof batch>>>, [unknown]>()
-      .mockResolvedValue([collaborator, own]);
+      .mockResolvedValueOnce([own])
+      .mockResolvedValueOnce([collaborator]);
     const permissions = {
       requireProject: jest.fn().mockResolvedValue({
         project: { workspaceId: scope.workspaceId },
@@ -738,3 +742,38 @@ function itemStatus(
   }
   return StoryGenerationBatchItemStatus.awaiting_confirmation;
 }
+
+it('retains an older running batch behind twenty newer quotes without duplicates', async () => {
+  const running = {
+    ...batch({ status: StoryGenerationBatchStatus.running }),
+    id: 'older-running',
+  };
+  const quotes = Array.from({ length: 20 }, (_, i) => ({
+    ...batch(),
+    id: `quote-${i}`,
+  }));
+  const findMany = jest
+    .fn()
+    .mockResolvedValueOnce(quotes)
+    .mockResolvedValueOnce([running]);
+  const service = new StoryGenerationBatchService(
+    { storyGenerationBatch: { findMany } } as never,
+    {
+      requireProject: jest
+        .fn()
+        .mockResolvedValue({ project: { workspaceId: scope.workspaceId } }),
+    } as never,
+    {} as never,
+    {} as never,
+  );
+  const visible = await service.list(actor, scope.projectId, scope.chapterId);
+  expect(visible).toHaveLength(21);
+  expect(visible[0].id).toBe('older-running');
+  expect(
+    (findMany.mock.calls[1] as [{ take?: number }])[0].take,
+  ).toBeUndefined();
+  findMany.mockResolvedValueOnce([running]).mockResolvedValueOnce([running]);
+  expect(
+    await service.list(actor, scope.projectId, scope.chapterId),
+  ).toHaveLength(1);
+});

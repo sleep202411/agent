@@ -21,6 +21,152 @@ afterEach(() => {
 });
 
 describe("LangGraph journal persistence", () => {
+  it("keeps token-protected standalone cancellation independent of a Gateway", async () => {
+    delete process.env.AGENT_OS_DOMAIN_URL;
+    process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const service = new LangGraphRunService();
+    const journal = new EventJournal();
+    const runtime = service as unknown as { snapshots: Map<string, LangGraphRunSnapshot> };
+    runtime.snapshots.set(RUN_ID, {
+      runId: RUN_ID,
+      activeTurnId: TURN_ID,
+      status: "running",
+      journal,
+      projectId: "project-1",
+      actorId: "actor-1",
+      conversationId: CONVERSATION_ID,
+      modelProfileId: "qwen3.7-plus",
+    });
+    const cancelled = await service.cancel(RUN_ID, "Stopped");
+    expect(cancelled?.status).toBe("cancelled");
+    expect(cancelled?.journal.all().map((event) => event.type)).toEqual(["RunCancelled"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { status: "cancelled", live: false },
+    { status: "completed", live: false },
+    { status: "cancelled", live: true },
+    { status: "completed", live: true },
+  ] as const)(
+    "adopts the Gateway's $status journal on Stop (live=$live) without a competing suffix",
+    async ({ status, live }) => {
+      process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
+      process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";
+      const journal = new EventJournal();
+      journal.append({
+        sessionId: `agent-os:v1:conversation:${CONVERSATION_ID}`,
+        runId: RUN_ID,
+        conversationId: CONVERSATION_ID,
+        type: "RunStarted",
+        data: {
+          turnId: TURN_ID,
+          status: "running",
+          workspaceType: "project_canvas",
+          modelProfileId: "qwen3.7-plus",
+        },
+      });
+      journal.append({
+        sessionId: `agent-os:v1:conversation:${CONVERSATION_ID}`,
+        runId: RUN_ID,
+        conversationId: CONVERSATION_ID,
+        type: status === "cancelled" ? "RunCancelled" : "RunCompleted",
+        data: {
+          turnId: TURN_ID,
+          status,
+          ...(status === "cancelled"
+            ? {
+                error: { code: "RUN_CANCELLED", message: "user_stop", retryable: false },
+              }
+            : {}),
+        },
+      });
+      const fetchMock = vi.fn(async (_url, init) => {
+        expect(init?.method).not.toBe("POST");
+        return Response.json({
+          ok: true,
+          status,
+          events: journal.all(),
+          assistantText: "Planning",
+        });
+      });
+      globalThis.fetch = fetchMock;
+      const service = new LangGraphRunService();
+      const controller = new AbortController();
+      if (live) {
+        const local = new EventJournal();
+        local.restore(journal.all().slice(0, 1));
+        const runtime = service as unknown as {
+          snapshots: Map<string, LangGraphRunSnapshot>;
+          aborts: Map<string, AbortController>;
+        };
+        runtime.snapshots.set(RUN_ID, {
+          runId: RUN_ID,
+          conversationId: CONVERSATION_ID,
+          status: "running",
+          journal: local,
+          assistantText: "Stale local fragment",
+        });
+        runtime.aborts.set(RUN_ID, controller);
+      }
+      // Concurrent notification and graph abort handlers join one read. A
+      // restarted Worker adopts the same result without a local snapshot.
+      const [result, joined] = await Promise.all([
+        service.cancel(RUN_ID, "user_stop"),
+        service.cancel(RUN_ID, "user_stop"),
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(joined).toBe(result);
+      if (live) expect(controller.signal.aborted).toBe(true);
+      expect(result?.status).toBe(status);
+      expect(result?.journal.all()).toEqual(journal.all());
+      expect(service.getSnapshot(RUN_ID)?.status).toBe(status);
+      const replay = await service.cancel(RUN_ID, "user_stop");
+      expect(replay?.journal.all()).toEqual(journal.all());
+    }
+  );
+
+  it.each(["uncommitted", "unavailable", "wrong_run", "incomplete", "sequence_gap"])(
+    "does not invent a cancellation when the authoritative read is %s",
+    async (outcome) => {
+      process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
+      process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";
+      const journal = new EventJournal();
+      journal.append({
+        sessionId: `agent-os:v1:conversation:${CONVERSATION_ID}`,
+        runId: outcome === "wrong_run" ? OTHER_CONVERSATION_ID : RUN_ID,
+        conversationId: CONVERSATION_ID,
+        type: "RunStarted",
+        data: {
+          turnId: TURN_ID,
+          status: "running",
+          workspaceType: "project_canvas",
+          modelProfileId: "qwen3.7-plus",
+        },
+      });
+      const events = journal
+        .all()
+        .map((event) => ({ ...event, sequence: outcome === "sequence_gap" ? 2 : event.sequence }));
+      const fetchMock = vi.fn(async (_url, init) => {
+        expect(init?.method).not.toBe("POST");
+        return outcome === "unavailable"
+          ? new Response(null, { status: 503 })
+          : Response.json({
+              ok: true,
+              status: outcome === "uncommitted" ? "running" : "cancelled",
+              events,
+            });
+      });
+      globalThis.fetch = fetchMock;
+      const service = new LangGraphRunService();
+      await expect(service.cancel(RUN_ID)).rejects.toThrow();
+      expect(service.getSnapshot(RUN_ID)).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  );
+
   it("serializes full snapshots for the same run so an older write cannot win", async () => {
     process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
     process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";

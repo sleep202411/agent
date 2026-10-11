@@ -42,6 +42,55 @@ function emptySkillMountSnapshot(
   return { ...unsigned, checksum: projectSkillSnapshotChecksum(unsigned) };
 }
 
+function streamedModelResponse(
+  content: string,
+  calls?: Array<{ id: string; name: string; args: unknown }>
+) {
+  const completionId = crypto.randomUUID();
+  const choices = [
+    {
+      delta: {
+        role: "assistant",
+        content,
+        ...(calls
+          ? {
+              tool_calls: calls.map((call, index) => ({
+                index,
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: JSON.stringify(call.args) },
+              })),
+            }
+          : {}),
+      },
+      finish_reason: null,
+    },
+    { delta: {}, finish_reason: calls ? "tool_calls" : "stop" },
+  ];
+  return new Response(
+    choices
+      .map(
+        (choice) =>
+          `data: ${JSON.stringify({
+            id: completionId,
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "qwen3.7-plus",
+            choices: [{ index: 0, ...choice }],
+          })}\n\n`
+      )
+      .join("") + "data: [DONE]\n\n",
+    { headers: { "content-type": "text/event-stream" } }
+  );
+}
+
+function testLiveModel() {
+  return createLiteLlmChatModel({
+    profileId: "qwen3.7-plus",
+    config: { baseUrl: "http://model.test/v1", apiKey: "test-only" },
+  });
+}
+
 async function admitAndExecuteApproval(
   service: LangGraphRunService,
   input: Parameters<LangGraphRunService["beginResumeApproval"]>[0]
@@ -133,7 +182,37 @@ async function executeAdmittedContinuation(
 }
 
 describe("LangGraph golden path: script → characters", () => {
-  it.each(["recovered", "exhausted", "length"])(
+  it("rejects a bare tool name instead of completing an unexecuted mobile request", async () => {
+    const execute = vi.fn();
+    const fetchMock = vi.fn(async () => streamedModelResponse("story_read"));
+    globalThis.fetch = fetchMock;
+    const result = await new LangGraphRunService().start({
+      runId: crypto.randomUUID(),
+      conversationId: CONVERSATION,
+      projectId: PROJECT,
+      projectKind: "story",
+      actorId: "user-1",
+      sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
+      message: "生成一个北京视频",
+      modelProfileId: "qwen3.7-flash",
+      workbenchMode: "story",
+      workbenchContext: { chapterId: crypto.randomUUID(), experience: "mobile_h5" },
+      skillMountSnapshot: emptySkillMountSnapshot("story", "story"),
+      model: testLiveModel(),
+      domain: { execute },
+      checkpointer: new MemorySaver(),
+      permissionMode: "full",
+    });
+    expect(result.status).toBe("failed");
+    expect(result.journal.all().some((event) => event.type === "RunCompleted")).toBe(false);
+    expect(
+      result.journal.all().find((event) => event.type === "RunFailed")?.data.error
+    ).toMatchObject({ code: "MODEL_TOOL_CALL_INVALID" });
+    expect(execute).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["recovered", "exhausted", "length", "invalid_recovered", "invalid_exhausted"])(
     "handles %s model output without repeating a completed write",
     async (outcome) => {
       let calls = 0;
@@ -157,7 +236,12 @@ describe("LangGraph golden path: script → characters", () => {
               }
             : {
                 role: "assistant",
-                content: calls === 2 ? "I will read and" : "The script is saved.",
+                content:
+                  outcome.startsWith("invalid") && (calls === 2 || outcome === "invalid_exhausted")
+                    ? "story_read"
+                    : calls === 2
+                      ? "I will read and"
+                      : "The script is saved.",
               };
         const chunk = (value: unknown, finish: string | null) =>
           JSON.stringify({
@@ -201,7 +285,14 @@ describe("LangGraph golden path: script → characters", () => {
       });
       expect(calls).toBe(outcome === "length" ? 2 : 3);
       expect(execute).toHaveBeenCalledTimes(1);
-      if (outcome !== "recovered") {
+      expect(
+        result.journal
+          .all()
+          .filter((event) => event.type === "MessageDelta")
+          .map((event) => event.data.delta)
+          .join("")
+      ).not.toContain("story_read");
+      if (outcome !== "recovered" && outcome !== "invalid_recovered") {
         expect(result.status).toBe("failed");
         expect(result.journal.all().some((event) => event.type === "RunCompleted")).toBe(false);
         expect(result.journal.all().some((event) => event.type === "RunFailed")).toBe(true);
@@ -216,8 +307,15 @@ describe("LangGraph golden path: script → characters", () => {
           .map((event) => event.data)
       ).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ text: "I will read and", finishReason: "superseded" }),
           expect.objectContaining({ text: "The script is saved.", finishReason: "stop" }),
+          ...(outcome === "recovered"
+            ? [
+                expect.objectContaining({
+                  text: "I will read and",
+                  finishReason: "superseded",
+                }),
+              ]
+            : []),
         ])
       );
     }
@@ -468,20 +566,15 @@ describe("LangGraph golden path: script → characters", () => {
     ).rejects.toThrow(/different answers/);
   });
 
-  it("pauses on a generic external-job handoff for the Gateway continuation", async () => {
+  it.each([false, true])("recovers Story handoff (retry=%s)", async (invalidFirst) => {
     const jobId = "77777777-7777-4777-8777-777777777777";
     const startedMessage = "I’m preparing the screenplay for this chapter.";
     const completionMessage =
       "The screenplay is ready for your review. No image or video media has been generated; use Generate when you want to create media.";
-    const model = fakeModel()
-      .respondWithTools([
-        {
-          name: "story_read",
-          id: "tc-story-read",
-          args: {},
-        },
-      ])
-      .respondWithTools([
+    const replies = [
+      ...(invalidFirst ? [streamedModelResponse("story_read")] : []),
+      streamedModelResponse("", [{ name: "story_read", id: "tc-story-read", args: {} }]),
+      streamedModelResponse("", [
         {
           name: "story_author",
           id: "tc-story-author",
@@ -494,8 +587,15 @@ describe("LangGraph golden path: script → characters", () => {
             completionMessage,
           },
         },
-      ])
-      .respond(new AIMessage("This text must not close the run before the external job."));
+      ]),
+    ];
+    const fetchMock = vi.fn(async () => {
+      const reply = replies.shift();
+      if (!reply) throw new Error("The model must stop at the external-job handoff");
+      return reply;
+    });
+    globalThis.fetch = fetchMock;
+    const model = testLiveModel();
     const observedToolIds: string[] = [];
     const domain: DomainPort = {
       async execute(toolId, input, context) {
@@ -566,14 +666,16 @@ describe("LangGraph golden path: script → characters", () => {
       message: "Create the story",
       modelProfileId: "qwen-plus",
       workbenchMode: "story",
+      workbenchContext: { chapterId: ATTACHMENT, experience: "mobile_h5" },
       skillMountSnapshot: emptySkillMountSnapshot("story", "story"),
       model,
       domain,
       checkpointer: new MemorySaver(),
     });
 
-    expect(waiting.status).toBe("waiting_for_external");
+    expect(fetchMock).toHaveBeenCalledTimes(invalidFirst ? 3 : 2);
     expect(observedToolIds).toEqual(["story.read", "story.author"]);
+    expect(waiting.status).toBe("waiting_for_external");
     expect(waiting.pendingExternal).toMatchObject({
       kind: "external_job",
       jobId,

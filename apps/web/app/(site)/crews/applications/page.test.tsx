@@ -88,10 +88,12 @@ it("opens private terms from applicant-owned history and loads the next bounded 
       .find((b) => b.textContent === "more")!
       .click()
   );
-  expect(h.get).toHaveBeenLastCalledWith(
-    "/me/crew-applications",
-    expect.objectContaining({ query: { limit: 20, cursor: "first", scope: "sent" } })
-  );
+  for (const scope of ["sent", "received"]) {
+    expect(h.get).toHaveBeenCalledWith(
+      "/me/crew-applications",
+      expect.objectContaining({ query: { limit: 20, cursor: "first", scope } })
+    );
+  }
 });
 it("clears selected private terms and history on account switch", async () => {
   await render();
@@ -135,32 +137,31 @@ vi.mock("../_hooks/use-users", () => ({
 vi.mock("../_components/application-review-dialog", () => ({
   ApplicationReviewDialog: () => <div>Review application</div>,
 }));
-it("switches to owner inbox without retaining the selected applicant conversation", async () => {
+it("switches between sent and received conversations in the combined inbox", async () => {
+  const received = { ...row("received"), applicantId: "creator", taskTitle: "Owner task" };
+  h.get.mockImplementation((path: string, options?: { query?: { scope?: string } }) => {
+    const items = path.startsWith("/applications/")
+      ? [row("first"), received]
+      : options?.query?.scope === "received"
+        ? [received]
+        : [row("first")];
+    return Promise.resolve({ items, nextCursor: null });
+  });
   await render();
+  expect(host.querySelectorAll("li button")).toHaveLength(2);
   await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
+  await render();
   expect(host.textContent).toContain("Terms for first");
-  h.get.mockResolvedValue({
-    items: [{ ...row("received"), applicantId: "creator" }],
-    nextCursor: null,
-  });
+  expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "review")).toBe(
+    false
+  );
   await act(async () =>
-    Array.from(host.querySelectorAll("button"))
-      .find((b) => b.textContent === "received")!
+    Array.from(host.querySelectorAll<HTMLButtonElement>("li button"))
+      .find((b) => b.textContent?.includes("Owner task"))!
       .click()
   );
   await render();
   expect(host.textContent).not.toContain("Terms for first");
-  expect(h.get).toHaveBeenLastCalledWith(
-    "/me/crew-applications",
-    expect.objectContaining({ query: { limit: 20, cursor: undefined, scope: "received" } })
-  );
-  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
   expect(host.textContent).toContain("Terms for received");
   expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "review")).toBe(
     true

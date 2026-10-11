@@ -28,12 +28,14 @@ export function CourseIncomePanel({
   summary,
   items,
   loadError,
+  platformUserId = summary?.platformUserId ?? null,
 }: {
   siteLabel: string;
   databaseLabel: string;
   summary: AdminTeachingIncome | null;
   items: AdminHomeworkRow[];
   loadError: string | null;
+  platformUserId?: string | null;
 }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
@@ -51,7 +53,7 @@ export function CourseIncomePanel({
       return true;
     });
   }, [courseId, items, query, status]);
-  const earned = Number(summary?.earnedCredits ?? settledCredits(items)) || 0;
+  const earned = BigInt(summary?.earnedCredits ?? settledCredits(items, platformUserId));
   const values = {
     courses: Math.max(summary?.courses ?? 0, fromRows.courses),
     students: Math.max(summary?.students ?? 0, fromRows.students),
@@ -195,7 +197,7 @@ export function CourseIncomePanel({
               <tbody>
                 {visible.map((row) => {
                   const settled = row.status === "approved";
-                  const credits = Number(row.teacherCredits || 0);
+                  const credits = rowCredits(row, platformUserId);
                   return (
                     <tr
                       key={row.id}
@@ -244,7 +246,7 @@ function MetricCard({
 }: {
   icon: ReactNode;
   iconClass: string;
-  value: number;
+  value: number | bigint;
   label: string;
   emphasize?: boolean;
 }) {
@@ -302,9 +304,18 @@ function StudentMark({ name, src }: { name: string; src?: string | null }) {
   );
 }
 
-function settledCredits(items: AdminHomeworkRow[]) {
+function rowCredits(row: AdminHomeworkRow, platformUserId: string | null) {
+  if (!platformUserId) return BigInt(row.teacherCredits);
+  if (row.instructorShares?.length)
+    return BigInt(
+      row.instructorShares.find((share) => share.teacherId === platformUserId)?.credits ?? "0"
+    );
+  return row.teacherId === platformUserId ? BigInt(row.teacherCredits) : BigInt(0);
+}
+
+function settledCredits(items: AdminHomeworkRow[], platformUserId: string | null) {
   return items
     .filter((row) => row.status === "approved")
-    .reduce((sum, row) => sum + Number(row.teacherCredits || 0), 0)
+    .reduce((sum, row) => sum + rowCredits(row, platformUserId), BigInt(0))
     .toString();
 }
