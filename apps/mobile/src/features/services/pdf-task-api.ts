@@ -24,6 +24,7 @@ export const pdfPreviewSchema = z
     id,
     createdAt: z.string().datetime({ offset: true }),
     status: z.enum(["queued", "analyzing", "ready", "applied", "failed"]),
+    failure: z.object({ code: z.string(), message: z.string() }).nullish(),
     tasks: z
       .array(
         z.object({

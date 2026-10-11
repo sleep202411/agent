@@ -3,6 +3,7 @@ import { readDiscoveryMapConfig } from "../discovery-map/environment";
 import { gpsMapFeatures } from "../discovery-map/features";
 import type { GpsViewport } from "../discovery-map/content-gps-map-types";
 import { gpsPlaybackPath } from "./playback-entry";
+import { DiscoveryAssistantPanel } from "@/features/discovery-assistant/discovery-assistant-panel";
 import { useIpBookmark } from "@/features/ip-collection/use-ip-bookmark";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
@@ -21,6 +22,7 @@ import { useGpsSearch } from "./use-gps-search";
 import {
   EMPTY_GPS_DRAFT,
   gpsLinkKeys,
+  gpsDraftFromQuery,
   gpsDraftUrl,
   normalizeGpsDraft,
   readGpsLink,
@@ -239,6 +241,7 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
   const valid = normalized.success && !initial.invalid;
   const [draft, setDraft] = useState<GpsSearchDraft>(initial.draft),
     [filters, setFilters] = useState(!valid),
+    [assistantOpened, setAssistantOpened] = useState(false),
     [placeText, setPlaceText] = useState(""),
     [placeSearch, setPlaceSearch] = useState("");
   const options = useMemo(
@@ -278,7 +281,7 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     state.page?.selected?.id ?? null,
     active && valid && auth.status !== "hydrating"
   );
-  const genres = useGpsGenres(locale, active && filters);
+  const genres = useGpsGenres(locale, active && (filters || assistantOpened));
   const parsed = normalizeGpsDraft(draft, locale),
     dirty = gpsDraftUrl(draft) !== gpsDraftUrl(initial.draft);
   type LabelKey =
@@ -289,6 +292,7 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
       ? K
       : never;
   const label = (key: LabelKey) => t(`contentGpsDiscovery.${key}`);
+  const assistantQuery = parsed.success ? parsed.data : query;
   const apply = (next: GpsSearchDraft, selected: string | null = null) => {
     const p = new URLSearchParams(gpsDraftUrl(next));
     if (selected) p.set("selected", selected);
@@ -364,6 +368,36 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
                 onPress={() => router.push(toHref("/studios"))}
               />
             </View>
+            <DiscoveryAssistantPanel
+              key={`${auth.generation}:${viewerId}:${locale}:ips`}
+              scope={{ userId: viewerId ?? "", generation: auth.generation, locale, kind: "ips" }}
+              current={{
+                kind: "ips",
+                query: {
+                  schemaVersion: 1,
+                  location: assistantQuery.location,
+                  era: assistantQuery.era,
+                  duration: assistantQuery.duration,
+                  genreCodes: assistantQuery.genreCodes,
+                  moodPreferences: assistantQuery.moodPreferences,
+                },
+              }}
+              genreLabels={genres.data?.items}
+              onOpen={() => setAssistantOpened(true)}
+              valid={parsed.success && !initial.invalid}
+              onReview={(result) => {
+                if (result.kind === "ips") {
+                  setDraft(gpsDraftFromQuery(result.query));
+                  setFilters(true);
+                }
+              }}
+              onApply={(result) => {
+                if (result.kind === "ips") apply(gpsDraftFromQuery(result.query));
+              }}
+              onSelect={(result, id) => {
+                if (result.kind === "ips") apply(gpsDraftFromQuery(result.query), id);
+              }}
+            />
             <Action label={label("conditions")} onPress={() => setFilters(!filters)} />
             {!valid && (
               <View>

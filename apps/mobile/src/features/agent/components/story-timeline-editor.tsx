@@ -1,3 +1,4 @@
+import { StoryBatchPanel } from "./story-batch-panel";
 import { StoryCandidatesPanel } from "./story-candidates-panel";
 import { timelineCandidateId } from "../api/story-timeline-candidate";
 import { TimelineGenerationPanel } from "./story-timeline-generation-panel";
@@ -104,6 +105,7 @@ export function TimelineEditor({
     theme = useTheme();
   const store = useMemo(() => timelinePending(scope, userId), [scope, userId]);
   const mediaStore = useMemo(() => timelineMediaPending(scope, userId), [scope, userId]);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [candidateId, setCandidateId] = useState<string>();
   const [generationTarget, setGenerationTarget] = useState<string>();
   const [preview, setPreview] = useState(false);
@@ -226,6 +228,27 @@ export function TimelineEditor({
       />
     </View>
   );
+  if (batchOpen)
+    return (
+      <StoryBatchPanel
+        scope={scope}
+        userId={userId}
+        mode="storyboard"
+        canGenerate={canGenerate}
+        assets={rows.flatMap((sequence) =>
+          sequence.clips.map((clip) => ({
+            id: clip.id,
+            name: clip.title,
+            version: clip.version,
+            sequenceId: sequence.id,
+          }))
+        )}
+        onClose={() => {
+          setBatchOpen(false);
+          setRevision((value) => value + 1);
+        }}
+      />
+    );
   return (
     <Modal
       visible
@@ -247,6 +270,11 @@ export function TimelineEditor({
         style={{ backgroundColor: theme.background }}
       >
         <ThemedText type="smallBold">{t("timeline.title")}</ThemedText>
+        <Action
+          label={t("storyBatch.title")}
+          disabled={loading || op.busy || dirty || !!pending || !!mediaTarget || !!generationTarget}
+          onPress={() => setBatchOpen(true)}
+        />
         <Action
           label={t("timeline.close")}
           disabled={op.busy}

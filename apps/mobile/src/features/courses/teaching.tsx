@@ -8,6 +8,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { MaxContentWidth } from "@/constants/theme";
 import { formatFinanceMoney } from "@/features/services/crew-finance-api";
+import { instructorEarnedCredits } from "./instructor-income";
 import { learningApi, type Enrollment } from "./learning-api";
 import { useCourseRead } from "./use-course-read";
 import {
@@ -58,6 +59,7 @@ export function TeachingScreen() {
   return <Workspace key={`${auth.generation}:${auth.user?.id ?? auth.user?.userId}`} />;
 }
 function Workspace() {
+  const auth = useAuth();
   const t = useTranslations();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -133,6 +135,12 @@ function Workspace() {
                   <ThemedText>
                     {row.studentName || row.studentId} ·{" "}
                     {t(`academyLearning.${row.status}` as MessageKey)}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {t("academyLearning.yourShare").replace(
+                      "{amount}",
+                      instructorEarnedCredits(row, String(auth.user?.id ?? auth.user?.userId ?? ""))
+                    )}
                   </ThemedText>
                   <LearningButton onPress={() => setSelected(row)}>
                     {t("academyLearning.review")}

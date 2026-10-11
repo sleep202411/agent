@@ -223,17 +223,16 @@ it("selected IP bookmark opens the auth sheet for guests without a collection wr
   }
 });
 
-it("loads public genre labels through filters while the assistant remains deferred", async () => {
+it("loads public genre labels when Copilot is opened so proposals can name their genres", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   try {
     await act(async () => root.render(<GpsSearchScreen />));
     expect(h.get).not.toHaveBeenCalled();
-    expect(host.textContent).not.toContain("discoveryAssistant.title");
     await act(async () =>
       Array.from(host.querySelectorAll("button"))
-        .find((b) => b.textContent === "contentGpsDiscovery.conditions")!
+        .find((b) => b.textContent === "discoveryAssistant.title")!
         .click()
     );
     expect(h.get).toHaveBeenCalledWith(

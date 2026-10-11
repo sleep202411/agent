@@ -25,6 +25,7 @@ import { useLocale, useTranslations } from "@/i18n";
 import { serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 import { emptyStudioQuery, type StudioQuery, type StudioPage } from "./studio-search-api";
+import { DiscoveryAssistantPanel } from "../discovery-assistant/discovery-assistant-panel";
 import { useStudioSearch } from "./use-studio-search";
 import {
   readStudioLink,
@@ -343,6 +344,34 @@ function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudi
                 />
               </View>
             )}
+            <DiscoveryAssistantPanel
+              key={`${auth.generation}:${locale}`}
+              scope={{
+                userId:
+                  auth.status === "authenticated"
+                    ? String(auth.user?.userId ?? auth.user?.id ?? "")
+                    : "",
+                generation: auth.generation,
+                locale,
+                kind: "creators",
+              }}
+              current={{ kind: "creators", query: parsed.success ? parsed.data : query }}
+              valid={parsed.success && !initial.invalid}
+              onReview={(result) => {
+                if (result.kind !== "creators") return;
+                setDraft(studioDraftFromQuery(result.query));
+                setFilters(true);
+              }}
+              onApply={(result) => {
+                if (result.kind !== "creators") return;
+                setSearch(result.query);
+              }}
+              onSelect={(result, id) => {
+                if (result.kind !== "creators") return;
+                setSearch(result.query, id);
+                router.push(toHref(`/creator/${encodeURIComponent(id)}`));
+              }}
+            />
             <TextInput
               accessibilityLabel={t("studioDiscovery.text")}
               placeholder={t("studioDiscovery.text")}

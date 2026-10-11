@@ -206,7 +206,16 @@ export function PdfTaskImport(props: Props) {
           />
         </>
       )}
-      {preview?.status === "failed" && <ThemedText>{t("mobileProduction.pdfFailed")}</ThemedText>}
+      {preview?.status === "failed" && (
+        <View>
+          <ThemedText accessibilityRole="alert">
+            {preview.failure?.message || t("mobileProduction.pdfFailed")}
+          </ThemedText>
+          <ThemedText type="small">
+            {t("mobileProduction.pdfAnalysisId").replace("{id}", preview.id)}
+          </ThemedText>
+        </View>
+      )}
       {preview?.status === "ready" && (
         <>
           <ThemedText>

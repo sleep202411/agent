@@ -179,6 +179,8 @@ function EnrollmentForm({ courseId, onEnrolled }: { courseId: string; onEnrolled
         <LearningButton onPress={read.retry}>{t("academyLearning.retry")}</LearningButton>
       ) : !read.data ? (
         <ActivityIndicator />
+      ) : read.data.instructor ? (
+        <ThemedText>{t("academyLearning.instructorAccess")}</ThemedText>
       ) : row ? (
         <>
           <ThemedText>{t(`academyLearning.${row.status}` as MessageKey)}</ThemedText>

@@ -232,3 +232,18 @@ it("separates task links from general Crew links and rejects unsafe grants", asy
     ).rejects.toThrow();
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("requests task-scoped pages and follows the returned cursor", async () => {
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("/me")
+      ? { userId: "actor", permissions: h.permissions }
+      : { items: [taskLink], nextCursor: taskLink.id }
+  );
+  const first = await fetchCrewLinks("crew", "actor", 1, signal(), taskId);
+  expect(first.links).toEqual([taskLink]);
+  expect(first.nextCursor).toBe(taskLink.id);
+  expect(h.get).toHaveBeenLastCalledWith(
+    `/crews/crew/invite-links?paginated=true&limit=50&taskId=${taskId}`,
+    expect.objectContaining({ retry: false })
+  );
+});
