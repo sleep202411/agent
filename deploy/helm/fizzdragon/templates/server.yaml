@@ -1,4 +1,7 @@
 {{- if .Values.server.enabled -}}
+{{- if .Values.appStoryAgent.enabled -}}
+{{- include "fizzdragon.appStoryAgent.validate" . -}}
+{{- end -}}
 {{- if .Values.gameAgent.enabled -}}
 {{- include "fizzdragon.gameAgent.validate" . -}}
 {{- end -}}
@@ -143,6 +146,27 @@ spec:
             {{- end }}
             - name: AGENT_OS_ENABLED
               value: {{ .Values.agentOs.enabled | quote }}
+            - name: APP_STORY_AGENT_ENABLED
+              value: {{ .Values.appStoryAgent.enabled | quote }}
+            {{- if .Values.appStoryAgent.enabled }}
+            - name: APP_STORY_AGENT_WORKER_URL
+              value: {{ printf "http://%s:4397" (include "fizzdragon.componentName" (merge (dict "component" "app-story-agent") .)) | quote }}
+            - name: APP_STORY_AGENT_MODEL
+              value: {{ .Values.appStoryAgent.model.name | quote }}
+            - name: APP_STORY_AGENT_AUTHOR_MODEL
+              value: {{ .Values.appStoryAgent.model.author | quote }}
+            - name: APP_STORY_AGENT_IMAGE_MODEL
+              value: {{ .Values.appStoryAgent.model.image | quote }}
+            - name: APP_STORY_AGENT_VIDEO_MODEL
+              value: {{ .Values.appStoryAgent.model.video | quote }}
+            - name: APP_STORY_AGENT_AUTHORIZATION_POINTS
+              value: {{ .Values.appStoryAgent.authorizationPoints | quote }}
+            - name: APP_STORY_AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.appStoryAgent.secrets.internalToken.name | quote }}
+                  key: {{ .Values.appStoryAgent.secrets.internalToken.key | quote }}
+            {{- end }}
             {{- if .Values.gameAgent.enabled }}
             - name: GAME_AGENT_ENABLED
               value: "true"

@@ -602,6 +602,27 @@ server:
 # are configured in a deliberate non-Azure deployment overlay. No credentials
 # belong in values files. The worker must never receive sharedEnv/shared Secrets.
 # ---------------------------------------------------------------------------
+appStoryAgent:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: fizzdragon-app-story-agent
+    tag: ""
+    digest: ""
+  model:
+    name: ""
+    baseUrl: ""
+    author: ""
+    image: ""
+    video: ""
+  authorizationPoints: 0
+  secrets:
+    apiKey: { name: "", key: APP_STORY_AGENT_API_KEY }
+    internalToken: { name: "", key: APP_STORY_AGENT_INTERNAL_TOKEN }
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: 2000m, memory: 2Gi }
+
 gameAgent:
   enabled: false
   replicaCount: 1

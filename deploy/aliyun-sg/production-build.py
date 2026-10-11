@@ -21,7 +21,7 @@ from typing import Optional
 
 PUSH_HOST = "fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com"
 RUNTIME_HOST = "fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com"
-SERVICES = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent"}
+SERVICES = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent", "app-story-agent"}
 BUILD_ENV = "apps/web/.env.production.com"
 NPM_REGISTRY_ENV = "FIZZ_COM_NPM_REGISTRY"
 
@@ -248,7 +248,7 @@ def find_reusable_image(root, source, service, image, environment, npm_registry=
 def build_images(root: Path, services: list[str], current_images, source=None, npm_registry=None) -> dict[str, str]:
     """Push all selected amd64 images; return exact VPC runtime digest references."""
     if not services or len(set(services)) != len(services) or not set(services) <= SERVICES:
-        raise ValueError("Select unique services: web server studio admin-ui agent-os game-agent")
+        raise ValueError("Select unique services: web server studio admin-ui agent-os game-agent app-story-agent")
     source = source or committed_source(root)
     registry = optional_npm_registry(npm_registry)
     environment = docker_environment()

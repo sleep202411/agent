@@ -1,6 +1,6 @@
 #!/bin/bash
 # ECS-side selective build — used by deploy-cn-services.sh.
-# SERVICES env: space-separated subset of: server agent agent-os game-agent admin-ui web studio
+# SERVICES env: space-separated subset of: server agent agent-os game-agent app-story-agent admin-ui web studio
 # Does NOT replace cn-remote-build.sh (full five-service builds stay there).
 set -euo pipefail
 REG=fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com
@@ -61,7 +61,7 @@ want() {
 
 for service in $SERVICES; do
   case "$service" in
-    server|agent|agent-os|game-agent|admin-ui|web|studio) ;;
+    server|agent|agent-os|game-agent|app-story-agent|admin-ui|web|studio) ;;
     *) echo "FATAL: unsupported service $service" >&2; exit 2 ;;
   esac
 done
@@ -70,6 +70,7 @@ want server && build server apps/server/Dockerfile --build-arg "APK_MIRROR=$APK_
 want agent && build agent apps/agent/Dockerfile
 want agent-os && build agent-os apps/agent-os/Dockerfile
 want game-agent && build game-agent apps/game-agent/Dockerfile
+want app-story-agent && build app-story-agent apps/app-story-agent/Dockerfile
 want admin-ui && build admin-ui apps/admin-ui/Dockerfile --build-arg NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/
 want web && build web apps/web/Dockerfile \
   --build-arg NEXT_PUBLIC_OSS_BASE_URL="$NEXT_PUBLIC_OSS_BASE_URL" \

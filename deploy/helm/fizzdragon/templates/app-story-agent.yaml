@@ -1,0 +1,111 @@
+{{- define "fizzdragon.appStoryAgent.validate" -}}
+{{- $agent := .Values.appStoryAgent -}}
+{{- if not (kindIs "bool" $agent.enabled) -}}{{- fail "appStoryAgent.enabled must be boolean" -}}{{- end -}}
+{{- if not .Values.server.enabled -}}{{- fail "appStoryAgent requires server.enabled" -}}{{- end -}}
+{{- if .Values.azure.enabled -}}{{- fail "appStoryAgent requires an explicitly configured regional deployment" -}}{{- end -}}
+{{- $_ := required "appStoryAgent image registry is required" .Values.image.registry -}}
+{{- $_ := required "appStoryAgent.image.repository is required" $agent.image.repository -}}
+{{- if not (regexMatch "^[a-f0-9]{7,64}$" ($agent.image.tag | toString)) -}}{{- fail "appStoryAgent.image.tag must be an immutable source revision" -}}{{- end -}}
+{{- if not (regexMatch "^https://[^@?#[:space:]]+$" ($agent.model.baseUrl | toString)) -}}{{- fail "appStoryAgent.model.baseUrl must be a credential-free HTTPS compatibility URL" -}}{{- end -}}
+{{- range $key := list "name" "author" "image" "video" -}}
+{{- $_ := required (printf "appStoryAgent.model.%s is required" $key) (index $agent.model $key) -}}
+{{- end -}}
+{{- if or (not (regexMatch "^[0-9]+$" ($agent.authorizationPoints | toString))) (lt (int $agent.authorizationPoints) 1) (gt (int $agent.authorizationPoints) 1000000) -}}{{- fail "appStoryAgent.authorizationPoints must be 1-1000000" -}}{{- end -}}
+{{- range $key := list "apiKey" "internalToken" -}}
+{{- $secret := index $agent.secrets $key -}}
+{{- $_ := required (printf "appStoryAgent.secrets.%s.name is required" $key) $secret.name -}}
+{{- $_ := required (printf "appStoryAgent.secrets.%s.key is required" $key) $secret.key -}}
+{{- end -}}
+{{- if eq $agent.secrets.apiKey.name $agent.secrets.internalToken.name -}}{{- fail "App provider credentials and internal token must use separate Secrets" -}}{{- end -}}
+{{- range $key := list "APP_STORY_AGENT_ENABLED" "APP_STORY_AGENT_WORKER_URL" "APP_STORY_AGENT_MODEL" "APP_STORY_AGENT_AUTHOR_MODEL" "APP_STORY_AGENT_IMAGE_MODEL" "APP_STORY_AGENT_VIDEO_MODEL" "APP_STORY_AGENT_INTERNAL_TOKEN" "APP_STORY_AGENT_AUTHORIZATION_POINTS" -}}
+{{- if or (hasKey $.Values.sharedEnv $key) (hasKey $.Values.server.env $key) -}}{{- fail (printf "%s is owned by appStoryAgent chart configuration" $key) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if .Values.appStoryAgent.enabled -}}
+{{- include "fizzdragon.appStoryAgent.validate" . -}}
+{{- $agent := .Values.appStoryAgent -}}
+{{- $ctx := merge (dict "component" "app-story-agent") . -}}
+{{- $name := include "fizzdragon.componentName" $ctx -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $agent.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fizzdragon.componentLabels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app-story-agent
+          image: {{ include "fizzdragon.componentImage" (dict "component" "appStoryAgent" "registry" .Values.image.registry "image" $agent.image) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 4397 }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: APP_STORY_AGENT_PORT, value: "4397" }
+            - { name: APP_STORY_AGENT_BIND_ADDRESS, value: "0.0.0.0" }
+            - name: APP_STORY_AGENT_BASE_URL
+              value: {{ $agent.model.baseUrl | quote }}
+            - name: APP_STORY_AGENT_MODEL
+              value: {{ $agent.model.name | quote }}
+            - name: APP_STORY_AGENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $agent.secrets.apiKey.name | quote }}
+                  key: {{ $agent.secrets.apiKey.key | quote }}
+            - name: APP_STORY_AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $agent.secrets.internalToken.name | quote }}
+                  key: {{ $agent.secrets.internalToken.key | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            {{- toYaml $agent.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+          volumeMounts:
+            - { name: temporary, mountPath: /tmp }
+      volumes:
+        - name: temporary
+          emptyDir: { sizeLimit: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fizzdragon.componentLabels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - { name: http, port: 4397, targetPort: http }
+  selector:
+    {{- include "fizzdragon.componentSelector" $ctx | nindent 4 }}
+{{- end -}}
