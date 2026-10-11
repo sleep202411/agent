@@ -1,0 +1,15 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "$TURBO_ROOT$/apps/web/messages/en-US.json",
+        "$TURBO_ROOT$/apps/web/messages/zh-CN.json",
+        "$TURBO_ROOT$/apps/web/messages/zh-HK.json",
+        "$TURBO_ROOT$/packages/experience-player-react/src/**"
+      ]
+    }
+  }
+}

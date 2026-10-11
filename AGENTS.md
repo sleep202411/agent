@@ -24,6 +24,7 @@ content and generation APIs. Keep these service boundaries explicit.
 | `apps/admin-ui`              | Next.js / React                                | Internal operations console                                      |
 | `apps/server`                | NestJS                                         | Session, chat WS, Agent OS Gateway, billing glue                 |
 | `apps/agent-os`              | LangGraph.js + LiteLLM                         | **FizzDragon Agent Platform** (codename Agent OS) — NEW          |
+| `apps/app-story-agent`       | Official Harness + React H5                    | App-only interactive-film Agent and dedicated conversation UI    |
 | `apps/game-agent`            | Official DeepSeek Harness                      | Independent game-authoring Agent; no Agent OS runtime dependency |
 | `apps/agent`                 | Mastra + AI SDK                                | Legacy StoryOS — do not extend                                   |
 | `packages/agent-protocol`    | TypeScript + Zod                               | Agent OS wire protocol (`fizz.agent.v1`)                         |
@@ -48,7 +49,10 @@ content and generation APIs. Keep these service boundaries explicit.
 **Platform Agent work targets `apps/agent-os` only.** Do not import from or add
 coupling to `apps/agent`. The user's explicit game-authoring exception is
 `apps/game-agent`: Harness owns that independent agent loop. See its
-`AGENTS.md` and `README.md`; do not fold it back into Agent OS.
+`AGENTS.md` and `README.md`; do not fold it back into Agent OS. The separately
+authorized App-only story flow lives in `apps/app-story-agent`; its React H5
+and Harness worker share that project, with separate builds. See its
+`AGENTS.md`, `README.md` and `DESIGN.md`. Server retains business API ownership.
 
 - **NestJS server** → no AGENTS yet; conventions live in code comments
   and `apps/server/README.md` (TODO: write one).

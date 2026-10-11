@@ -33,6 +33,7 @@
     "apps/admin-ui",
     "apps/agent",
     "apps/agent-os",
+    "apps/app-story-agent",
     "apps/game-agent",
     "apps/mobile",
     "apps/server",
