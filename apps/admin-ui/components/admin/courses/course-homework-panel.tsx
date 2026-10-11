@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useHomeworkAttachment } from "./use-homework-attachment";
 import { useRouter } from "next/navigation";
 import {
   IconBook2,
@@ -119,7 +120,9 @@ export function CourseHomeworkPanel({
   }
 
   const fromCatalog = queueMetrics(catalog);
-  const pending = items.filter((row) => row.status === "submitted").length;
+  const pagePending = items.filter((row) => row.status === "submitted").length;
+  const initialPending = initialItems.filter((row) => row.status === "submitted").length;
+  const pending = Math.max(0, (summary?.pending ?? initialPending) - initialPending + pagePending);
   const courses = Math.max(summary?.courses ?? 0, fromCatalog.courses);
   const students = Math.max(summary?.students ?? 0, fromCatalog.students);
   const monthly = Math.max(summary?.monthlyNewStudents ?? 0, fromCatalog.monthly);
@@ -448,7 +451,7 @@ function HomeworkReviewDialog({
 }) {
   const lock = useRef(false);
   const [busy, setBusy] = useState(false);
-  const [opening, setOpening] = useState<string | null>(null);
+  const attachment = useHomeworkAttachment();
   const [localError, setLocalError] = useState("");
   const [score, setScore] = useState(row.score != null ? String(row.score) : "");
   const [feedback, setFeedback] = useState(row.feedback ?? "");
@@ -505,28 +508,28 @@ function HomeworkReviewDialog({
   }
 
   async function openAttachment(assetId: string) {
-    setOpening(assetId);
     setLocalError("");
-    try {
-      const response = await fetch(
-        adminUiApiPath(
-          `/api/admin/academy/learning/enrollments/${encodeURIComponent(row.id)}/attachments/${encodeURIComponent(assetId)}`
-        )
-      );
-      const payload = (await response.json().catch(() => null)) as {
-        code?: number;
-        msg?: string;
-        data?: { url: string };
-      } | null;
-      if (!response.ok || payload?.code !== 200 || !payload.data?.url) {
-        throw new Error(payload?.msg || "附件打开失败。");
-      }
-      window.open(payload.data.url, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "附件打开失败。");
-    } finally {
-      setOpening(null);
-    }
+    await attachment.open(
+      assetId,
+      async (signal) => {
+        const response = await fetch(
+          adminUiApiPath(
+            `/api/admin/academy/learning/enrollments/${encodeURIComponent(row.id)}/attachments/${encodeURIComponent(assetId)}`
+          ),
+          { signal }
+        );
+        const payload = (await response.json().catch(() => null)) as {
+          code?: number;
+          msg?: string;
+          data?: { url: string };
+        } | null;
+        if (!response.ok || payload?.code !== 200 || !payload.data?.url) {
+          throw new Error(payload?.msg || "附件打开失败。");
+        }
+        return payload.data.url;
+      },
+      (error) => setLocalError(error instanceof Error ? error.message : "附件打开失败。")
+    );
   }
 
   const reviewReady = score !== "" && feedback.trim() && Number(score) >= 0 && Number(score) <= 100;
@@ -605,18 +608,31 @@ function HomeworkReviewDialog({
               <p className="text-sm text-slate-400">没有附件。</p>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {row.assetIds.map((assetId, index) => (
-                  <button
-                    key={assetId}
-                    type="button"
-                    disabled={opening === assetId}
-                    onClick={() => void openAttachment(assetId)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    <IconPaperclip className="size-3.5 text-slate-400" />
-                    附件 {index + 1}
-                  </button>
-                ))}
+                {row.assetIds.map((assetId, index) =>
+                  attachment.link?.id === assetId ? (
+                    <a
+                      key={assetId}
+                      href={attachment.link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      <IconPaperclip className="size-3.5 text-slate-400" />
+                      附件 {index + 1}
+                    </a>
+                  ) : (
+                    <button
+                      key={assetId}
+                      type="button"
+                      disabled={attachment.pending}
+                      onClick={() => void openAttachment(assetId)}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      <IconPaperclip className="size-3.5 text-slate-400" />
+                      附件 {index + 1}
+                    </button>
+                  )
+                )}
               </div>
             )}
           </section>

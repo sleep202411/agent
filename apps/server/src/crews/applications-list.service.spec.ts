@@ -211,6 +211,7 @@ describe('applicant-owned application history', () => {
           select: {
             positionType: true,
             taskId: true,
+            groupedTasks: { select: { id: true } },
             task: { select: { title: true, dueAt: true } },
           },
         },

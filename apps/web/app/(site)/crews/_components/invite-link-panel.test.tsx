@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   userId: "alice" as string | null,
   error: null as Error | null,
   fetching: false,
+  hasNextPage: false,
+  fetchNextPage: vi.fn(),
   refetch: vi.fn(),
   create: vi.fn(),
   revoke: vi.fn(),
@@ -23,8 +25,10 @@ vi.mock("@/src/hooks/use-user", () => ({
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/(site)/crews/_hooks/use-invite-links", () => ({
   useCreateCrewInviteLink: () => ({ mutateAsync: mocks.create }),
-  useCrewInviteLinks: () => ({
+  useCrewInviteLinkPages: () => ({
     data: mocks.links,
+    hasNextPage: mocks.hasNextPage,
+    fetchNextPage: mocks.fetchNextPage,
     isError: !!mocks.error,
     error: mocks.error,
     isFetching: mocks.fetching,
@@ -256,6 +260,34 @@ it("creates a task-bound single-use link and clears it when the reviewed task ch
     expect(host.querySelector("input")).toBeNull();
   } finally {
     act(() => root.unmount());
+    vi.resetAllMocks();
+  }
+});
+
+it("loads older invitation links and prevents duplicate page requests while fetching", () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  mocks.hasNextPage = true;
+  const render = () =>
+    act(() => root.render(<InviteLinkPanel crewId="crew" open canGrantPolicies={false} />));
+  const more = () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "loadMore"
+    )!;
+  try {
+    render();
+    act(() => more().click());
+    expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+    mocks.fetching = true;
+    render();
+    expect(more().disabled).toBe(true);
+    mocks.hasNextPage = false;
+    render();
+    expect(more()).toBeUndefined();
+  } finally {
+    act(() => root.unmount());
+    mocks.hasNextPage = false;
+    mocks.fetching = false;
     vi.resetAllMocks();
   }
 });

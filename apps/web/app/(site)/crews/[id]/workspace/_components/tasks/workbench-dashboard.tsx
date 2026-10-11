@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconWand, IconFileText } from "@tabler/icons-react";
+import { IconWand, IconFileText, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { CrewTaskListItemDTO } from "@/app/(site)/crews/_hooks/types";
 import { workbenchStatistics } from "./workbench-statistics";
@@ -11,12 +11,14 @@ export function WorkbenchDashboard({
   ready,
   canInitialize,
   disabled,
+  analysisStatus = "idle",
   onInitialize,
 }: {
   tasks: CrewTaskListItemDTO[];
   ready: boolean;
   canInitialize: boolean;
   disabled: boolean;
+  analysisStatus?: string;
   onInitialize: () => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
@@ -26,6 +28,7 @@ export function WorkbenchDashboard({
     return () => clearInterval(timer);
   }, []);
   const stats = workbenchStatistics(tasks, now);
+  const analyzing = analysisStatus === "queued" || analysisStatus === "analyzing";
   return (
     <section className="grid gap-4 @[900px]:grid-cols-12" aria-label={t("dashboardStatistics")}>
       <dl
@@ -52,7 +55,17 @@ export function WorkbenchDashboard({
           className="group flex min-h-20 items-center gap-3 rounded-sm border border-[#e52227]/40 bg-black/20 p-4 text-left transition hover:border-[#e52227] focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 @[900px]:col-span-5"
         >
           <span className="flex size-16 shrink-0 items-center justify-center rounded-sm bg-white/5">
-            <IconFileText className="size-7 text-muted-foreground group-hover:text-primary" />
+            {analyzing ? (
+              <IconLoader2
+                className="size-7 text-primary motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <IconFileText
+                className="size-7 text-muted-foreground group-hover:text-primary"
+                aria-hidden="true"
+              />
+            )}
           </span>
           <span>
             <span className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider">
@@ -61,6 +74,9 @@ export function WorkbenchDashboard({
             </span>
             <span className="mt-2 block text-xs leading-relaxed text-muted-foreground">
               {t("dashboardInitializeHelp")}
+            </span>
+            <span role="status" className="block text-xs text-primary">
+              {analyzing ? t("analysisStatus", { status: t(`analysis_${analysisStatus}`) }) : null}
             </span>
           </span>
         </button>

@@ -18,6 +18,8 @@ import {
   type CreateCrewInvitationInput,
   CreateCrewInviteLinkSchema,
   type CreateCrewInviteLinkInput,
+  ListCrewInviteLinksQuerySchema,
+  type ListCrewInviteLinksQuery,
   ListCrewInvitationsQuerySchema,
   type ListCrewInvitationsQuery,
 } from '../dto';
@@ -36,7 +38,19 @@ export class CrewInvitationsController {
   // yet, so preview/accept live on the scope-agnostic InvitesController.
 
   @Get('crews/:crewId/invite-links')
-  listLinks(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {
+  listLinks(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewInviteLinksQuerySchema))
+    query: ListCrewInviteLinksQuery,
+  ) {
+    if (query.paginated === 'true') {
+      return this.inviteLinks.listPage(
+        parseIdParam(crewId, 'crewId'),
+        user.userId,
+        query,
+      );
+    }
     return this.inviteLinks.list(parseIdParam(crewId, 'crewId'), user.userId);
   }
 

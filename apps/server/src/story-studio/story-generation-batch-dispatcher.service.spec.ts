@@ -291,82 +291,96 @@ describe('Story generation batch fair dispatcher', () => {
     );
   });
 
-  it('blocks a sequential batch on insufficient balance without failing the current item', async () => {
-    const itemUpdateMany = jest
-      .fn<Promise<{ count: number }>, [unknown]>()
-      .mockResolvedValue({ count: 1 });
-    const batchUpdateMany = jest
-      .fn<Promise<{ count: number }>, [unknown]>()
-      .mockResolvedValue({ count: 1 });
-    const createQuotedAssetGeneration = jest.fn().mockRejectedValue(
-      new ConflictException({
-        code: 'INSUFFICIENT_COMPUTE_POINTS',
-        msg: 'Not enough compute points. Recharge and try again.',
-        requiredAmount: '60',
-        availableBalance: '0',
-      }),
-    );
-    const service = new StoryGenerationBatchDispatcherService(
-      {
-        $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
-          callback({
-            storyGenerationBatchItem: { updateMany: itemUpdateMany },
-            storyGenerationBatch: { updateMany: batchUpdateMany },
-          }),
-        ),
-      } as never,
-      { createQuotedAssetGeneration } as never,
-    ) as unknown as {
-      dispatch(item: unknown): Promise<void>;
-    };
+  it.each([
+    ['sequential', 'INSUFFICIENT_COMPUTE_POINTS'],
+    ['sequential', 'INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS'],
+    ['parallel', 'INSUFFICIENT_COMPUTE_POINTS'],
+  ])(
+    'handles %s dispatch with %s without conflating blocked and failed',
+    async (dispatchMode, code) => {
+      const itemUpdateMany = jest
+        .fn<Promise<{ count: number }>, [unknown]>()
+        .mockResolvedValue({ count: 1 });
+      const batchUpdateMany = jest
+        .fn<Promise<{ count: number }>, [unknown]>()
+        .mockResolvedValue({ count: 1 });
+      const createQuotedAssetGeneration = jest.fn().mockRejectedValue(
+        new ConflictException({
+          code,
+          msg: 'Not enough compute points. Recharge and try again.',
+          requiredAmount: '60',
+          availableBalance: '0',
+        }),
+      );
+      const service = new StoryGenerationBatchDispatcherService(
+        {
+          $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+            callback({
+              storyGenerationBatchItem: { updateMany: itemUpdateMany },
+              storyGenerationBatch: { updateMany: batchUpdateMany },
+            }),
+          ),
+        } as never,
+        { createQuotedAssetGeneration } as never,
+      ) as unknown as {
+        dispatch(item: unknown): Promise<void>;
+      };
 
-    await service.dispatch({
-      id: 'item-1',
-      batchId: 'batch-1',
-      ordinal: 0,
-      targetKind: StoryProductionGenerationTargetKind.asset_spec,
-      targetId: 'asset-1',
-      targetVersion: 0,
-      sequenceId: null,
-      outputKind: StoryProductionGenerationKind.image,
-      modelId: 'image-1',
-      schemaVersion: 'v1',
-      options: {},
-      quotedPoints: 60,
-      pricingVersion: 'price-v1',
-      dispatchAttempts: 1,
-      status: StoryGenerationBatchItemStatus.dispatching,
-      batch: {
-        actorUserId: 'actor-1',
-        workspaceId: 'workspace-1',
-        storyProjectId: 'project-1',
-        storyChapterId: 'chapter-1',
-        billingSubjectType: 'workspace',
-        billingSubjectId: 'actor-personal-workspace',
-        dispatchMode: 'sequential',
-        status: StoryGenerationBatchStatus.running,
-      },
-    });
+      await service.dispatch({
+        id: 'item-1',
+        batchId: 'batch-1',
+        ordinal: 0,
+        targetKind: StoryProductionGenerationTargetKind.asset_spec,
+        targetId: 'asset-1',
+        targetVersion: 0,
+        sequenceId: null,
+        outputKind: StoryProductionGenerationKind.image,
+        modelId: 'image-1',
+        schemaVersion: 'v1',
+        options: {},
+        quotedPoints: 60,
+        pricingVersion: 'price-v1',
+        dispatchAttempts: 1,
+        status: StoryGenerationBatchItemStatus.dispatching,
+        batch: {
+          actorUserId: 'actor-1',
+          workspaceId: 'workspace-1',
+          storyProjectId: 'project-1',
+          storyChapterId: 'chapter-1',
+          billingSubjectType: 'workspace',
+          billingSubjectId: 'actor-personal-workspace',
+          dispatchMode,
+          status: StoryGenerationBatchStatus.running,
+        },
+      });
 
-    const update = itemUpdateMany.mock.calls[0]?.[0] as
-      | { data?: Record<string, unknown> }
-      | undefined;
-    expect(update?.data).toMatchObject({
-      status: StoryGenerationBatchItemStatus.ready,
-    });
-    const batchUpdate = batchUpdateMany.mock.calls[0]?.[0] as
-      | { data?: Record<string, unknown> }
-      | undefined;
-    expect(batchUpdate?.data).toMatchObject({
-      status: StoryGenerationBatchStatus.blocked,
-      blockReason: {
-        code: 'INSUFFICIENT_COMPUTE_POINTS',
-        retryable: true,
-        requiredAmount: '60',
-        availableBalance: '0',
-      },
-    });
-  });
+      const update = itemUpdateMany.mock.calls[0]?.[0] as
+        | { data?: Record<string, unknown> }
+        | undefined;
+      expect(update?.data).toMatchObject({
+        status:
+          dispatchMode === 'sequential'
+            ? StoryGenerationBatchItemStatus.ready
+            : StoryGenerationBatchItemStatus.failed,
+      });
+      if (dispatchMode === 'parallel') {
+        expect(batchUpdateMany).not.toHaveBeenCalled();
+        return;
+      }
+      const batchUpdate = batchUpdateMany.mock.calls[0]?.[0] as
+        | { data?: Record<string, unknown> }
+        | undefined;
+      expect(batchUpdate?.data).toMatchObject({
+        status: StoryGenerationBatchStatus.blocked,
+        blockReason: {
+          code,
+          retryable: true,
+          requiredAmount: '60',
+          availableBalance: '0',
+        },
+      });
+    },
+  );
 
   it('requeues an item on a transient reference-download failure instead of failing the batch', async () => {
     const itemUpdateMany = jest

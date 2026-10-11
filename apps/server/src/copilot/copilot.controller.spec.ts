@@ -316,6 +316,11 @@ describe('CopilotController', () => {
       responseStub(),
     );
 
+    expect(mockedStreamText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerOptions: { alibaba: { enableThinking: false } },
+      }),
+    );
     expect(copilotQuota.assertRateLimit).toHaveBeenCalledWith(
       { userId: USER_ID },
       { workspaceId: WORKSPACE_ID },
