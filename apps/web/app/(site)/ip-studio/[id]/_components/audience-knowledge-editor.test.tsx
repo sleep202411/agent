@@ -2,11 +2,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AudienceKnowledgeEditor } from "./audience-knowledge-editor";
-const state = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
+const state = vi.hoisted(() => ({ locale: "en", get: vi.fn(), put: vi.fn() }));
 vi.mock("@/src/lib/api", () => ({ api: state }));
 vi.mock("@/src/i18n/i18n", () => {
-  const t = (key: string) => key;
-  return { useTranslations: () => t };
+  const en = (key: string) => key;
+  const zh = (key: string) => `zh:${key}`;
+  return { useTranslations: () => (state.locale === "en" ? en : zh) };
 });
 let root: Root, host: HTMLDivElement;
 const document = {
@@ -17,6 +18,7 @@ const document = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  state.locale = "en";
   host = globalThis.document.createElement("div");
   root = createRoot(host);
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -83,4 +85,13 @@ it("starts new reference documents as private drafts", async () => {
     [...host.querySelectorAll<HTMLInputElement>('[type="checkbox"]')].map((input) => input.checked)
   ).toEqual([false, false]);
   expect(host.querySelector<HTMLButtonElement>('[type="submit"]')!.disabled).toBe(true);
+});
+
+it("preserves unsaved publication changes when the language changes", async () => {
+  await mount();
+  await act(async () => host.querySelector<HTMLInputElement>('[type="checkbox"]')!.click());
+  state.locale = "zh";
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('[type="checkbox"]')!.checked).toBe(true);
+  expect(state.get).toHaveBeenCalledTimes(1);
 });

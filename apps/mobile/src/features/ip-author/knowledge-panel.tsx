@@ -16,6 +16,10 @@ export function IpKnowledgePanel({ ipId, generation }: { ipId: string; generatio
     [saved, setSaved] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const inFlight = useRef(true);
+  const translate = useRef(t);
+  useEffect(() => {
+    translate.current = t;
+  }, [t]);
   useEffect(() => {
     inFlight.current = true;
     const request = new AbortController();
@@ -26,7 +30,9 @@ export function IpKnowledgePanel({ ipId, generation }: { ipId: string; generatio
       })
       .catch((cause: unknown) => {
         if (!request.signal.aborted)
-          setError(cause instanceof Error ? cause.message : t("ipKnowledgeAdmin.failed"));
+          setError(
+            cause instanceof Error ? cause.message : translate.current("ipKnowledgeAdmin.failed")
+          );
       })
       .finally(() => {
         if (!request.signal.aborted) {
@@ -35,7 +41,7 @@ export function IpKnowledgePanel({ ipId, generation }: { ipId: string; generatio
         }
       });
     return () => controller.current?.abort();
-  }, [ipId, generation, t]);
+  }, [ipId, generation]);
   async function request(save: boolean) {
     if (inFlight.current || (save && (!value || conflict))) return;
     inFlight.current = true;

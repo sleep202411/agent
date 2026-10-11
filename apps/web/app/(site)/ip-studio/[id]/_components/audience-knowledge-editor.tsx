@@ -20,6 +20,10 @@ function EditorSession({ ipId }: { ipId: string }) {
   const [conflict, setConflict] = useState(false);
   const controller = useRef<AbortController | null>(null);
   const inFlight = useRef(true);
+  const translate = useRef(t);
+  useEffect(() => {
+    translate.current = t;
+  }, [t]);
   const endpoint = `/aurora/ip-commerce/me/ips/${ipId}/knowledge-documents`;
 
   useEffect(() => {
@@ -32,7 +36,8 @@ function EditorSession({ ipId }: { ipId: string }) {
         if (!request.signal.aborted) setSnapshot(value);
       })
       .catch((cause: unknown) => {
-        if (!request.signal.aborted) setError(cause instanceof Error ? cause.message : t("failed"));
+        if (!request.signal.aborted)
+          setError(cause instanceof Error ? cause.message : translate.current("failed"));
       })
       .finally(() => {
         if (!request.signal.aborted) {
@@ -43,7 +48,7 @@ function EditorSession({ ipId }: { ipId: string }) {
     return () => {
       controller.current?.abort();
     };
-  }, [endpoint, t]);
+  }, [endpoint]);
 
   async function request(save: boolean) {
     if (inFlight.current || (save && (!snapshot || conflict))) return;

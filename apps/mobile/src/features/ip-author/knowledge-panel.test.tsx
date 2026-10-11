@@ -2,12 +2,13 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IpKnowledgePanel } from "./knowledge-panel";
-const state = vi.hoisted(() => ({ get: vi.fn(), save: vi.fn() }));
+const state = vi.hoisted(() => ({ locale: "en", get: vi.fn(), save: vi.fn() }));
 vi.mock("./knowledge-api", () => ({ fetchKnowledge: state.get, saveKnowledge: state.save }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => {
-  const t = (key: string) => key;
-  return { useTranslations: () => t };
+  const en = (key: string) => key;
+  const zh = (key: string) => `zh:${key}`;
+  return { useTranslations: () => (state.locale === "en" ? en : zh) };
 });
 vi.mock("expo-modules-core", () => ({
   uuid: { v4: () => "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" },
@@ -76,6 +77,7 @@ const doc = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  state.locale = "en";
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div");
   root = createRoot(host);
@@ -132,4 +134,13 @@ it("blocks saves after an access failure", async () => {
   await mount();
   await click("save");
   expect(state.save).not.toHaveBeenCalled();
+});
+
+it("preserves unsaved publication changes when the language changes", async () => {
+  await mount();
+  await act(async () => host.querySelector<HTMLInputElement>('[type="checkbox"]')!.click());
+  state.locale = "zh";
+  await mount();
+  expect(host.querySelector<HTMLInputElement>('[type="checkbox"]')!.checked).toBe(true);
+  expect(state.get).toHaveBeenCalledTimes(1);
 });
