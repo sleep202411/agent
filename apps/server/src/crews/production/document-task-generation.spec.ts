@@ -271,3 +271,75 @@ it('shares the four-minute deadline with the correction attempt', async () => {
     jest.useRealTimers();
   }
 });
+
+it('repairs only rejected excerpts and preserves all validated tasks', async () => {
+  const validTasks = Array.from({ length: 66 }, (_, index) => ({
+    ...proposal.tasks[0],
+    title: `Validated task ${index}`,
+  }));
+  const rejected = [
+    {
+      ...proposal.tasks[0],
+      title: 'Rejected A',
+      evidence: 'Invented castle passage.',
+    },
+    {
+      ...proposal.tasks[0],
+      title: 'Rejected B',
+      evidence: 'Invented forest passage.',
+    },
+  ];
+  const corrected = rejected.map((task) => ({ ...task, evidence: source }));
+  const fetch = transport({ tasks: corrected });
+  fetch.mockImplementationOnce(
+    transport({ tasks: [...validTasks, ...rejected] }),
+  );
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).resolves.toEqual({
+    tasks: [...validTasks, ...corrected],
+  });
+  const body = JSON.parse(requestBody(fetch.mock.calls[1][1])) as {
+    messages: Array<{
+      role: string;
+      content: string | Array<{ type: string; text: string }>;
+    }>;
+  };
+  const content = body.messages.find(
+    (message) => message.role === 'user',
+  )!.content;
+  const retry = JSON.parse(
+    typeof content === 'string'
+      ? content
+      : content.map((part) => part.text).join(''),
+  ) as {
+    previousProposal: { tasks: unknown[] };
+    correction: string;
+  };
+  expect(retry.previousProposal.tasks).toEqual(rejected);
+  expect(retry.correction).toContain('exactly that many tasks');
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it.each(['missing', 'extra', 'identity', 'ungrounded'])(
+  'rejects an incomplete or changed targeted repair (%s)',
+  async (kind) => {
+    const valid = { ...proposal.tasks[0], title: 'Keep this task' };
+    const rejected = {
+      ...proposal.tasks[0],
+      evidence: 'An invented castle passage.',
+    };
+    const repaired =
+      kind === 'missing'
+        ? []
+        : kind === 'extra'
+          ? [proposal.tasks[0], valid]
+          : kind === 'identity'
+            ? [{ ...proposal.tasks[0], title: 'Different task' }]
+            : [rejected];
+    const fetch = transport({ tasks: repaired });
+    fetch.mockImplementationOnce(transport({ tasks: [valid, rejected] }));
+    const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+    await expect(generateDocumentTasks(source, model)).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  },
+);
