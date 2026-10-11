@@ -5999,5 +5999,16 @@
   "ipKnowledgeAdmin.add": "添加資料",
   "ipKnowledgeAdmin.save": "儲存資料",
   "ipKnowledgeAdmin.reload": "重新載入已儲存資料（放棄編輯）",
-  "ipKnowledgeAdmin.heading": "影片知識"
+  "ipKnowledgeAdmin.heading": "影片知識",
+  "mobileProduction.batchSelectGroup": "選擇{title}",
+  "mobileProduction.batchGroup_all": "已載入的所有任務",
+  "mobileProduction.batchGroup_scripts": "劇本",
+  "mobileProduction.batchGroup_characters": "角色",
+  "mobileProduction.batchGroup_scenes": "場景",
+  "mobileProduction.batchGroup_props": "道具",
+  "mobileProduction.batchGroup_art": "其他美術",
+  "mobileProduction.batchGroup_music": "音樂",
+  "mobileProduction.batchGroup_production": "製作",
+  "mobileProduction.batchGroup_finalEditing": "最終剪輯",
+  "mobileProduction.batchGroup_other": "其他任務"
 }

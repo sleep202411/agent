@@ -58,3 +58,11 @@ it('retains only safe HTTP status and known provider codes from SDK errors', () 
   ).toEqual({ httpStatus: 400 });
   expect(documentAnalysisProviderDiagnostic(null)).toEqual({});
 });
+
+it('reports failed breakdown review without disclosing screenplay contents', () => {
+  expect(
+    classifyDocumentAnalysisFailure(
+      new Error('Document task breakdown requires correction.'),
+    ),
+  ).toMatchObject({ code: 'quality' });
+});

@@ -5999,5 +5999,16 @@
   "ipKnowledgeAdmin.add": "添加资料",
   "ipKnowledgeAdmin.save": "保存资料",
   "ipKnowledgeAdmin.reload": "重新加载已保存资料（放弃编辑）",
-  "ipKnowledgeAdmin.heading": "影片知识"
+  "ipKnowledgeAdmin.heading": "影片知识",
+  "mobileProduction.batchSelectGroup": "选择{title}",
+  "mobileProduction.batchGroup_all": "已加载的所有任务",
+  "mobileProduction.batchGroup_scripts": "剧本",
+  "mobileProduction.batchGroup_characters": "角色",
+  "mobileProduction.batchGroup_scenes": "场景",
+  "mobileProduction.batchGroup_props": "道具",
+  "mobileProduction.batchGroup_art": "其他美术",
+  "mobileProduction.batchGroup_music": "音乐",
+  "mobileProduction.batchGroup_production": "制作",
+  "mobileProduction.batchGroup_finalEditing": "最终剪辑",
+  "mobileProduction.batchGroup_other": "其他任务"
 }

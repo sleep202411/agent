@@ -762,6 +762,43 @@ function TaskCreationSession({
                                       <h3 className="mb-3 flex justify-between text-xs font-semibold uppercase text-muted-foreground">
                                         <span>{group.title}</span>
                                         <span>{group.items.length}</span>
+                                        {barKey === "artAssets" &&
+                                          canManageTasks &&
+                                          (() => {
+                                            const ids = group.items.flatMap((draft) => {
+                                              const task = savedTasks.find(
+                                                (task) => task.id === draft.taskId
+                                              );
+                                              return task && canBatchTask(task) ? [task.id] : [];
+                                            });
+                                            const count = ids.filter((id) =>
+                                              selectedTaskIds.includes(id)
+                                            ).length;
+                                            return (
+                                              <input
+                                                type="checkbox"
+                                                className="size-4 accent-[#e52227]"
+                                                aria-label={t("batchSelectCategory", {
+                                                  title: group.title,
+                                                })}
+                                                disabled={busy || !progressReady || !ids.length}
+                                                checked={ids.length > 0 && count === ids.length}
+                                                ref={(element) => {
+                                                  if (element)
+                                                    element.indeterminate =
+                                                      count > 0 && count < ids.length;
+                                                }}
+                                                onChange={(event) => {
+                                                  const checked = event.target.checked;
+                                                  setSelectedTaskIds((current) =>
+                                                    checked
+                                                      ? [...new Set([...current, ...ids])]
+                                                      : current.filter((id) => !ids.includes(id))
+                                                  );
+                                                }}
+                                              />
+                                            );
+                                          })()}
                                       </h3>
                                     )}
                                     <div

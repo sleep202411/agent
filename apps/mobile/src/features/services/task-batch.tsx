@@ -4,7 +4,7 @@ import { PRESET_POSITIONS } from "@repo/shared/crew";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
-import { useTranslations } from "@/i18n";
+import { useTranslations, type MessageKey } from "@/i18n";
 import { crewPositionLabel } from "@/lib/crew-position-label";
 import { fetchCrewMemberPage, type CrewMember } from "./crew-members-api";
 import { fetchBatchTasks, canBatchTask, submitTaskBatch, type BatchTask } from "./task-batch-api";
@@ -77,6 +77,55 @@ function BatchSession(props: Props & { refresh: () => void }) {
       <ThemedText>{t("mobileProduction.batchEligibility")}</ThemedText>
       <ThemedText>{t("mobileProduction.batchTerms")}</ThemedText>
       {loading && <ActivityIndicator />}
+      {(
+        [
+          "all",
+          "scripts",
+          "characters",
+          "scenes",
+          "props",
+          "art",
+          "music",
+          "production",
+          "finalEditing",
+          "other",
+        ] as const
+      ).map((category) => {
+        const ids = tasks
+          .filter(
+            (task) => canBatchTask(task) && (category === "all" || task.assetCategory === category)
+          )
+          .map((task) => task.id);
+        if (!ids.length) return null;
+        const count = ids.filter((id) => selected.includes(id)).length;
+        return (
+          <Pressable
+            key={category}
+            accessibilityRole="checkbox"
+            accessibilityState={{
+              checked: count === ids.length ? true : count ? "mixed" : false,
+              disabled: locked,
+            }}
+            disabled={locked}
+            style={{ padding: 12 }}
+            onPress={() =>
+              setSelected((current) =>
+                count === ids.length || (count > 0 && current.length >= 100)
+                  ? current.filter((id) => !ids.includes(id))
+                  : [...new Set([...current, ...ids])].slice(0, 100)
+              )
+            }
+          >
+            <ThemedText>
+              {t("mobileProduction.batchSelectGroup").replace(
+                "{title}",
+                t(`mobileProduction.batchGroup_${category}` as MessageKey)
+              )}{" "}
+              ({count}/{ids.length})
+            </ThemedText>
+          </Pressable>
+        );
+      })}
       {tasks.map((task) => (
         <View key={task.id} style={{ paddingVertical: 6 }}>
           <Pressable

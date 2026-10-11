@@ -62,3 +62,61 @@ it('rejects model-supplied evidence instead of trusting it', () => {
 it('rejects sources too short to ground a task', () => {
   expect(() => documentTaskSources('short')).toThrow('too short');
 });
+
+it('splits at episode headings and derives episode titles from the source', () => {
+  const source =
+    '第一季·第三集 风雪中前行（时长4分钟）\n雪地里觉如举起石牌。\n第一季·第四集 黎明\n觉如走进王城。';
+  const passages = documentTaskSources(source);
+  expect(passages).toHaveLength(2);
+  const result = resolveDocumentTasks(
+    {
+      tasks: [
+        { ...task, title: '石牌', category: 'props', sourceId: 0 },
+        { ...task, title: '觉如', category: 'characters', sourceId: 0 },
+        { ...task, title: '王城', category: 'scenes', sourceId: 1 },
+      ],
+    },
+    source,
+    passages,
+  );
+  expect(result.tasks[0]).toMatchObject({
+    title: '第三集-石牌',
+    episode: { number: 3, title: '风雪中前行', label: '第三集' },
+  });
+  expect(result.tasks[1].title).toBe('觉如');
+  expect(result.tasks[1].episode).toBeUndefined();
+  expect(result.tasks[2]).toMatchObject({
+    title: '第四集-王城',
+    episode: { number: 4 },
+  });
+});
+it('recognizes English episode headings without treating dialogue mentions as headings', () => {
+  const source =
+    'Episode 12: Snow\nThe guard mentions Episode 15 in his speech.';
+  const result = resolveDocumentTasks(
+    { tasks: [{ ...task, title: 'Snow' }] },
+    source,
+    documentTaskSources(source),
+  );
+  expect(result.tasks[0]).toMatchObject({
+    title: 'Episode 12-Snow',
+    episode: { number: 12, title: 'Snow' },
+  });
+});
+it('does not accept an AI invented episode field', () => {
+  const source = 'The library doors open.';
+  expect(() =>
+    resolveDocumentTasks(
+      {
+        tasks: [
+          {
+            ...task,
+            episode: { number: 99, title: 'Invented', label: 'Episode 99' },
+          },
+        ],
+      },
+      source,
+      documentTaskSources(source),
+    ),
+  ).toThrow();
+});

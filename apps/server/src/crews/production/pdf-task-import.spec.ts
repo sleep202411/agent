@@ -1,3 +1,9 @@
+jest.mock('./document-task-review', () => ({
+  ...jest.requireActual<typeof import('./document-task-review')>(
+    './document-task-review',
+  ),
+  reviewDocumentTasks: jest.fn().mockResolvedValue([]),
+}));
 jest.mock('../tasks/task-delivery-folder', () => ({
   provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
 }));
@@ -35,7 +41,13 @@ function fixture() {
     sourceHash: 'hash',
     status: 'ready',
     sourceText: null as string | null,
-    proposals,
+    proposals: proposals as {
+      tasks: Array<
+        (typeof proposals.tasks)[number] & {
+          episode?: { number: number; title: string; label: string };
+        }
+      >;
+    },
     createdAt: new Date(),
     selection: null as null | number[],
     taskIds: [] as string[],
@@ -68,13 +80,22 @@ function fixture() {
         Promise.resolve(Object.assign(row, data)),
       ),
     },
+    crewEpisode: {
+      findFirst: jest.fn(),
+      aggregate: jest.fn().mockResolvedValue({ _max: { rank: null } }),
+      create: jest
+        .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+        .mockResolvedValue({ id: 'episode' }),
+    },
     crewTaskFieldDefinition: { count: jest.fn().mockResolvedValue(0) },
     crewTaskWorkflowState: {
       findFirst: jest.fn().mockResolvedValue({ id: 'open' }),
     },
     crewTask: {
       findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockResolvedValue({ id: 'task' }),
+      create: jest
+        .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+        .mockResolvedValue({ id: 'task' }),
     },
     crewProductionActivity: { create: jest.fn() },
   };
@@ -85,7 +106,10 @@ function fixture() {
     ),
   };
   const auth = { require: jest.fn() };
-  const conversations = { broadcastCrewTaskChange: jest.fn() };
+  const conversations = {
+    broadcastCrewTaskChange: jest.fn(),
+    broadcastCrewTaskProjectChange: jest.fn(),
+  };
   const service = new CrewPdfTaskImportService(
     database as never,
     auth as never,
@@ -188,9 +212,16 @@ it('parses and grounds a real analysis response without creating tasks', async (
         pdfParse as unknown as (buffer: Buffer) => Promise<{ text: string }>,
       )
       .mockResolvedValue({ text: proposals.tasks[0].evidence } as never);
-    jest
-      .mocked(generateObject)
-      .mockResolvedValue({ object: proposals } as never);
+    jest.mocked(generateObject).mockResolvedValue({
+      object: {
+        tasks: proposals.tasks.map(({ title, description, category }) => ({
+          title,
+          description,
+          category,
+          sourceId: 0,
+        })),
+      },
+    } as never);
     await expect(
       service.analyze('crew', 'user', 'id', {
         buffer: Buffer.from('%PDF-fixture'),
@@ -257,7 +288,16 @@ it('does not revive a failed job after a late provider response', async () => {
   row.status = 'failed';
   const old = process.env.ALIBABA_API_KEY;
   process.env.ALIBABA_API_KEY = 'fixture';
-  jest.mocked(generateObject).mockResolvedValue({ object: proposals } as never);
+  jest.mocked(generateObject).mockResolvedValue({
+    object: {
+      tasks: proposals.tasks.map(({ title, description, category }) => ({
+        title,
+        description,
+        category,
+        sourceId: 0,
+      })),
+    },
+  } as never);
   try {
     await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
     expect(row.status).toBe('failed');
@@ -391,9 +431,16 @@ it.each([undefined, '  ', ' qwen-plus-2025-12-01 '])(
     try {
       const { service, row } = fixture();
       row.status = 'analyzing';
-      jest
-        .mocked(generateObject)
-        .mockResolvedValue({ object: proposals } as never);
+      jest.mocked(generateObject).mockResolvedValue({
+        object: {
+          tasks: proposals.tasks.map(({ title, description, category }) => ({
+            title,
+            description,
+            category,
+            sourceId: 0,
+          })),
+        },
+      } as never);
       await service.process('crew', 'user', 'id', proposals.tasks[0].evidence);
       const provider = jest.mocked(createAlibaba).mock.results.at(-1)!
         .value as jest.Mock;
@@ -408,3 +455,101 @@ it.each([undefined, '  ', ' qwen-plus-2025-12-01 '])(
     }
   },
 );
+
+function episodeFixture() {
+  const f = fixture();
+  f.row.proposals = {
+    tasks: [
+      {
+        ...proposals.tasks[0],
+        title: '第三集-雪地',
+        episode: { number: 3, title: '风雪中前行', label: '第三集' },
+      },
+    ],
+  };
+  return f;
+}
+it('creates an authorized episode and links imported tasks within the same transaction', async () => {
+  const { service, db, auth, conversations } = episodeFixture();
+  await service.apply('crew', 'user', 'id', { indices: [0] });
+  expect(auth.require).toHaveBeenCalledWith(
+    'crew',
+    'user',
+    'production.manage',
+    expect.anything(),
+  );
+  expect(db.crewEpisode.create.mock.calls[0]?.[0]).toMatchObject({
+    data: {
+      crewId: 'crew',
+      number: 3,
+      title: '风雪中前行',
+      createdByUserId: 'user',
+    },
+  });
+  expect(db.crewTask.create.mock.calls[0]?.[0]).toMatchObject({
+    data: {
+      episodeId: 'episode',
+      title: '第三集-雪地',
+    },
+  });
+  expect(conversations.broadcastCrewTaskProjectChange).toHaveBeenCalledWith(
+    'crew',
+    'episode',
+    'episode',
+    'created',
+    'user',
+  );
+});
+it('reuses the matching episode without creating or renaming it', async () => {
+  const { service, db } = episodeFixture();
+  db.crewEpisode.findFirst.mockResolvedValue({
+    id: 'existing',
+    title: '风雪中前行',
+    status: 'planned',
+  });
+  await service.apply('crew', 'user', 'id', { indices: [0] });
+  expect(db.crewEpisode.create).not.toHaveBeenCalled();
+  expect(db.crewTask.create.mock.calls[0]?.[0]).toMatchObject({
+    data: { episodeId: 'existing' },
+  });
+});
+it.each(['completed', 'in_review', 'cancelled'])(
+  'rejects tasks for a closed episode (%s)',
+  async (status) => {
+    const { service, db } = episodeFixture();
+    db.crewEpisode.findFirst.mockResolvedValue({
+      id: 'existing',
+      title: '风雪中前行',
+      status,
+    });
+    await expect(
+      service.apply('crew', 'user', 'id', { indices: [0] }),
+    ).rejects.toThrow('closed');
+    expect(db.crewTask.create).not.toHaveBeenCalled();
+  },
+);
+it('does not overwrite a conflicting existing episode', async () => {
+  const { service, db } = episodeFixture();
+  db.crewEpisode.findFirst.mockResolvedValue({
+    id: 'existing',
+    title: 'Another script',
+    status: 'planned',
+  });
+  await expect(
+    service.apply('crew', 'user', 'id', { indices: [0] }),
+  ).rejects.toThrow('different title');
+  expect(db.crewTask.create).not.toHaveBeenCalled();
+});
+it('does not create an episode without production management authority', async () => {
+  const { service, db, auth } = episodeFixture();
+  auth.require.mockImplementation(
+    (_crew: string, _user: string, permission: string) => {
+      if (permission === 'production.manage') throw new Error('denied');
+    },
+  );
+  await expect(
+    service.apply('crew', 'user', 'id', { indices: [0] }),
+  ).rejects.toThrow('denied');
+  expect(db.crewEpisode.create).not.toHaveBeenCalled();
+  expect(db.crewTask.create).not.toHaveBeenCalled();
+});

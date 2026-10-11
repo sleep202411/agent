@@ -353,6 +353,66 @@ export class CrewPdfTaskImportService
         });
         let number = last?.number ?? 0;
         let rank = last?.rank ?? new Prisma.Decimal(0);
+        const episodeIds = new Map<number, string>();
+        const createdEpisodes: string[] = [];
+        const selectedEpisodes = tasks
+          .filter((_, index) => indices.includes(index))
+          .flatMap((task) => (task.episode ? [task.episode] : []));
+        if (selectedEpisodes.length) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:episodes:${crewId}`})::bigint)`;
+          for (const episode of selectedEpisodes) {
+            if (episodeIds.has(episode.number)) continue;
+            // Episode edits/reviews do not all use the advisory lock. Hold the
+            // row until task creation commits so a concurrent close cannot
+            // invalidate the status check below.
+            await tx.$queryRaw`SELECT id FROM crew_episodes WHERE crew_id=${crewId} AND number=${episode.number} FOR UPDATE`;
+            const existing = await tx.crewEpisode.findFirst({
+              where: { crewId, number: episode.number },
+            });
+            if (existing) {
+              if (
+                ['in_review', 'completed', 'cancelled'].includes(
+                  existing.status,
+                )
+              )
+                throw new ConflictException(
+                  'This episode is closed to new production tasks. Reopen it before importing.',
+                );
+              if (
+                existing.title.normalize('NFKC').trim() !==
+                episode.title.normalize('NFKC').trim()
+              )
+                throw new ConflictException(
+                  `Episode ${episode.number} already exists with a different title. Align the episode with the screenplay before importing.`,
+                );
+              episodeIds.set(episode.number, existing.id);
+            } else {
+              await this.authorization.require(
+                crewId,
+                userId,
+                'production.manage',
+                tx,
+              );
+              const aggregate = await tx.crewEpisode.aggregate({
+                where: { crewId },
+                _max: { rank: true },
+              });
+              const created = await tx.crewEpisode.create({
+                data: {
+                  crewId,
+                  number: episode.number,
+                  title: episode.title,
+                  rank: (aggregate._max.rank ?? new Prisma.Decimal(0)).plus(
+                    1024,
+                  ),
+                  createdByUserId: userId,
+                },
+              });
+              episodeIds.set(episode.number, created.id);
+              createdEpisodes.push(created.id);
+            }
+          }
+        }
         const taskIds: string[] = [];
         for (const index of indices) {
           const proposal = tasks[index];
@@ -373,6 +433,9 @@ export class CrewPdfTaskImportService
               number: ++number,
               rank,
               title: proposal.title,
+              ...(proposal.episode
+                ? { episodeId: episodeIds.get(proposal.episode.number) }
+                : {}),
               description: proposal.description,
               taskKind,
               workflowStateId: workflow.id,
@@ -407,10 +470,29 @@ export class CrewPdfTaskImportService
           },
         });
         await this.authorization.require(crewId, userId, 'tasks.manage', tx);
-        return { taskIds, replayed: false };
+        if (createdEpisodes.length)
+          await this.authorization.require(
+            crewId,
+            userId,
+            'production.manage',
+            tx,
+          );
+        return { taskIds, replayed: false, createdEpisodes };
       },
       { timeout: 30_000 },
     );
+    if (result.createdEpisodes)
+      await Promise.allSettled(
+        result.createdEpisodes.map((episodeId) =>
+          this.conversations.broadcastCrewTaskProjectChange(
+            crewId,
+            'episode',
+            episodeId,
+            'created',
+            userId,
+          ),
+        ),
+      );
     await Promise.allSettled(
       result.taskIds.map((taskId) =>
         this.conversations.broadcastCrewTaskChange(
@@ -421,7 +503,7 @@ export class CrewPdfTaskImportService
         ),
       ),
     );
-    return result;
+    return { taskIds: result.taskIds, replayed: result.replayed };
   }
 }
 @Controller('crews/:crewId/pdf-task-imports')

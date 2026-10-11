@@ -1,3 +1,10 @@
+import { reviewDocumentTasks } from './document-task-review';
+jest.mock('./document-task-review', () => ({
+  ...jest.requireActual<typeof import('./document-task-review')>(
+    './document-task-review',
+  ),
+  reviewDocumentTasks: jest.fn().mockResolvedValue([]),
+}));
 import { createAlibaba } from '@ai-sdk/alibaba';
 import { generateDocumentTasks } from './document-task-generation';
 
@@ -367,7 +374,8 @@ it.each(['missing', 'extra', 'identity', 'ungrounded'])(
 );
 
 it('attaches server-owned text to a provider response containing only a source reference', async () => {
-  const { evidence: _evidence, ...task } = proposal.tasks[0];
+  const { title, description, category } = proposal.tasks[0];
+  const task = { title, description, category };
   const fetch = transport(
     JSON.stringify({ tasks: [{ ...task, sourceId: 0 }] }),
     true,
@@ -383,11 +391,56 @@ it('attaches server-owned text to a provider response containing only a source r
   const content = body.messages.find(
     (message) => message.role === 'user',
   )!.content;
-  const prompt = JSON.parse(
+  const prompt: unknown = JSON.parse(
     typeof content === 'string'
       ? content
       : content.map((part) => part.text).join(''),
   );
-  expect(prompt.document).toEqual([{ sourceId: 0, text: source }]);
+  expect((prompt as { document: unknown }).document).toEqual([
+    { sourceId: 0, text: source },
+  ]);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('repairs unsupported proposals and coverage failures before returning ready tasks', async () => {
+  jest.mocked(reviewDocumentTasks).mockResolvedValueOnce([
+    {
+      taskIndex: -1,
+      reason: 'Missing supported production and voice recording tasks.',
+    },
+  ]);
+  const fetch = transport();
+  const model = createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus');
+  await expect(generateDocumentTasks(source, model)).resolves.toEqual(proposal);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(requestBody(fetch.mock.calls[1][1])).toContain(
+    'Missing supported production',
+  );
+});
+it('does not expose proposals after two failed semantic reviews', async () => {
+  jest
+    .mocked(reviewDocumentTasks)
+    .mockResolvedValueOnce([{ taskIndex: 0, reason: 'Unsupported task.' }])
+    .mockResolvedValueOnce([{ taskIndex: 0, reason: 'Still unsupported.' }]);
+  const fetch = transport();
+  await expect(
+    generateDocumentTasks(
+      source,
+      createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus'),
+    ),
+  ).rejects.toThrow('requires correction');
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+it('does not retry a failed review provider request as a generation repair', async () => {
+  jest
+    .mocked(reviewDocumentTasks)
+    .mockRejectedValueOnce(new Error('Provider unavailable'));
+  const fetch = transport();
+  await expect(
+    generateDocumentTasks(
+      source,
+      createAlibaba({ apiKey: 'fixture', fetch })('qwen-plus'),
+    ),
+  ).rejects.toThrow('Provider unavailable');
   expect(fetch).toHaveBeenCalledTimes(1);
 });

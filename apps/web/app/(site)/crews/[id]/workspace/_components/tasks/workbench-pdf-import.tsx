@@ -105,6 +105,7 @@ function PdfSession({
     await Promise.all(
       [
         crewKeys.tasks(crewId),
+        crewKeys.episodes(crewId),
         crewKeys.taskSummary(crewId),
         crewKeys.productionOverview(crewId),
       ].map((key) => client.invalidateQueries(crewAccountQueries(key, userId)))

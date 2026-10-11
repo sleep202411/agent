@@ -5999,5 +5999,16 @@
   "ipKnowledgeAdmin.add": "Add document",
   "ipKnowledgeAdmin.save": "Save documents",
   "ipKnowledgeAdmin.reload": "Reload saved documents (discard edits)",
-  "ipKnowledgeAdmin.heading": "Film Knowledge"
+  "ipKnowledgeAdmin.heading": "Film Knowledge",
+  "mobileProduction.batchSelectGroup": "Select {title}",
+  "mobileProduction.batchGroup_all": "All loaded tasks",
+  "mobileProduction.batchGroup_scripts": "Scripts",
+  "mobileProduction.batchGroup_characters": "Characters",
+  "mobileProduction.batchGroup_scenes": "Scenes",
+  "mobileProduction.batchGroup_props": "Props",
+  "mobileProduction.batchGroup_art": "Other art",
+  "mobileProduction.batchGroup_music": "Music",
+  "mobileProduction.batchGroup_production": "Production",
+  "mobileProduction.batchGroup_finalEditing": "Final editing",
+  "mobileProduction.batchGroup_other": "Other tasks"
 }

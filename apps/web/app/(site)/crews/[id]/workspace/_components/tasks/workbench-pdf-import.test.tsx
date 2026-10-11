@@ -85,7 +85,7 @@ it("requires review before creation and sends selected task indices", async () =
     body: { indices: [0] },
   });
   expect(host.textContent).toContain("1 tasks created.");
-  expect(state.invalidate).toHaveBeenCalledTimes(3);
+  expect(state.invalidate).toHaveBeenCalledTimes(4);
 });
 it("recovers an ambiguous submission and retries exactly the same selection", async () => {
   localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id, indices: [0] }));

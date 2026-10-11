@@ -11,6 +11,7 @@ export const batchTaskSchema = z.object({
   crewId: crew,
   number: z.number().int().positive(),
   title: z.string().min(1),
+  assetCategory: z.string().optional(),
   version: z.number().int().nonnegative(),
   status: z.string(),
   isRecruiting: z.boolean(),

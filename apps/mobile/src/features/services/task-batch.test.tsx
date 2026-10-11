@@ -89,3 +89,42 @@ it("shows authorization failures and keeps mutations disabled", async () => {
   expect(host.textContent).toContain("Task management permission is required");
   expect(button("mobileProduction.batchAssign").disabled).toBe(true);
 });
+
+it("selects eligible loaded tasks by subgroup without losing another subgroup", async () => {
+  h.tasks.mockResolvedValue({
+    items: [
+      { ...task, assetCategory: "characters" },
+      { ...task, id: "second", number: 2, assetCategory: "characters", isRecruiting: true },
+      { ...task, id: "third", number: 3, assetCategory: "props" },
+    ],
+    nextCursor: null,
+  });
+  await render();
+  // Mock translation preserves the key; order is all, characters, props.
+  const groups = () =>
+    [...host.querySelectorAll("button")].filter((b) =>
+      b.textContent?.startsWith("mobileProduction.batchSelectGroup")
+    );
+  await act(async () => groups()[1]!.click());
+  expect(button("✓ TASK-1")).toBeDefined();
+  expect(button("✓ TASK-2")).toBeUndefined();
+  await act(async () => groups()[2]!.click());
+  await act(async () => groups()[1]!.click());
+  expect(button("✓ TASK-3")).toBeDefined();
+  expect(button("✓ TASK-1")).toBeUndefined();
+});
+it("caps group selection at the supported 100-task batch limit", async () => {
+  h.tasks.mockResolvedValue({
+    items: Array.from({ length: 101 }, (_, i) => ({ ...task, id: `id-${i}`, number: i + 1 })),
+    nextCursor: null,
+  });
+  await render();
+  await act(async () => button("mobileProduction.batchSelectGroup").click());
+  expect(
+    [...host.querySelectorAll("button")].filter((b) => b.textContent?.startsWith("✓ TASK-"))
+  ).toHaveLength(100);
+  await act(async () => button("mobileProduction.batchSelectGroup").click());
+  expect(
+    [...host.querySelectorAll("button")].filter((b) => b.textContent?.startsWith("✓ TASK-"))
+  ).toHaveLength(0);
+});

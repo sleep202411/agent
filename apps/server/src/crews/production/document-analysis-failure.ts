@@ -23,6 +23,8 @@ const messages = {
   evidence:
     'AI returned a task without a matching source excerpt. Analyze the document again.',
   duplicates: 'AI returned duplicate tasks. Analyze the document again.',
+  quality:
+    'The breakdown did not pass source, category or coverage checks. Start a new analysis.',
   internal: 'Document analysis failed. Contact support with the analysis ID.',
 } as const;
 export type DocumentAnalysisFailureCode = keyof typeof messages;
@@ -56,6 +58,8 @@ export function classifyDocumentAnalysisFailure(error: unknown) {
     return documentAnalysisFailure('provider_unavailable');
   if (e?.statusCode && e.statusCode >= 400)
     return documentAnalysisFailure('provider_request');
+  if (e?.message === 'Document task breakdown requires correction.')
+    return documentAnalysisFailure('quality');
   if (e?.message === messages.evidence)
     return documentAnalysisFailure('evidence');
   if (e?.message === messages.duplicates)

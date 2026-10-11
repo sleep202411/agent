@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { documentEpisodeSections } from './document-task-episodes';
 import { PdfTaskSchema, groundedPdfTasks } from './pdf-task-schema';
 
 // The model selects server-owned passages instead of retyping quotations.
@@ -6,8 +7,9 @@ export const ReferencedTasksSchema = z
   .object({
     tasks: z
       .array(
-        PdfTaskSchema.omit({ evidence: true })
+        PdfTaskSchema.omit({ evidence: true, episode: true })
           .extend({
+            title: z.string().trim().min(1).max(120),
             sourceId: z.number().int().min(0),
           })
           .strict(),
@@ -17,7 +19,7 @@ export const ReferencedTasksSchema = z
   })
   .strict();
 
-export function documentTaskSources(source: string): string[] {
+function splitPassages(source: string): string[] {
   const text = source.normalize('NFKC').replace(/\s+/g, ' ').trim();
   if (text.length < 8) throw new Error('Document source is too short.');
   const passages: string[] = [];
@@ -41,12 +43,26 @@ export function documentTaskSources(source: string): string[] {
   return passages;
 }
 
+function sourceEntries(source: string) {
+  return documentEpisodeSections(source).flatMap(({ text, episode }) =>
+    text.trim().length < 8
+      ? []
+      : splitPassages(text).map((passage) => ({ passage, episode })),
+  );
+}
+export function documentTaskSources(source: string): string[] {
+  const entries = sourceEntries(source);
+  if (!entries.length) throw new Error('Document source is too short.');
+  return entries.map(({ passage }) => passage);
+}
+
 export function resolveDocumentTasks(
   value: unknown,
   source: string,
   passages: string[],
 ) {
   const parsed = ReferencedTasksSchema.parse(value);
+  const entries = sourceEntries(source);
   return groundedPdfTasks(
     {
       tasks: parsed.tasks.map(({ sourceId, ...task }) => {
@@ -55,7 +71,19 @@ export function resolveDocumentTasks(
           throw new Error(
             'AI returned a task without a matching source excerpt. Analyze the document again.',
           );
-        return { ...task, evidence };
+        if (entries[sourceId]?.passage !== evidence)
+          throw new Error('Document source references changed.');
+        const episode =
+          task.category === 'characters'
+            ? undefined
+            : entries[sourceId].episode;
+        return {
+          ...task,
+          evidence,
+          ...(episode
+            ? { episode, title: `${episode.label}-${task.title}` }
+            : {}),
+        };
       }),
     },
     source,
