@@ -59,6 +59,7 @@ export default function IpStudioScreen() {
                 { path: "pricing", label: "ipPricing.heading" },
                 { path: "review", label: "ipReview.heading" },
                 { path: "templates", label: "ipTemplates.heading" },
+                { path: "knowledge", label: "ipKnowledgeAdmin.heading" },
                 { path: "locations", label: "contentGpsOwner.title" },
               ] as const
             ).map((item) => (

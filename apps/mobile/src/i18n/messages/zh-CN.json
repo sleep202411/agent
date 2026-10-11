@@ -5985,5 +5985,19 @@
   "storyBatch.status.partial_failed": "部分失败",
   "storyBatch.status.cancelled": "已取消",
   "storyBatch.status.failed": "失败",
-  "storyBatch.status.expired": "报价已过期"
+  "storyBatch.status.expired": "报价已过期",
+  "ipKnowledgeAdmin.description": "为影片知识助手添加官方参考资料。只有标记为已发布并保存的资料对观众可用。请勿发布私人剧本或保密信息。",
+  "ipKnowledgeAdmin.failed": "无法读取或保存参考资料。",
+  "ipKnowledgeAdmin.conflict": "编辑期间该 IP 已有更新。请重新加载已保存的资料后再修改。",
+  "ipKnowledgeAdmin.saved": "参考资料已保存。影片知识助手现在可以使用已发布的资料。",
+  "ipKnowledgeAdmin.loading": "加载中…",
+  "ipKnowledgeAdmin.title": "标题",
+  "ipKnowledgeAdmin.content": "参考资料",
+  "ipKnowledgeAdmin.published": "保存时向观众发布此资料",
+  "ipKnowledgeAdmin.remove": "移除资料",
+  "ipKnowledgeAdmin.empty": "暂无参考资料。请添加并发布资料，以便助手根据官方来源回答问题。",
+  "ipKnowledgeAdmin.add": "添加资料",
+  "ipKnowledgeAdmin.save": "保存资料",
+  "ipKnowledgeAdmin.reload": "重新加载已保存资料（放弃编辑）",
+  "ipKnowledgeAdmin.heading": "影片知识"
 }

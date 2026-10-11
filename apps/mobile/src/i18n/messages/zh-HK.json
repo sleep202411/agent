@@ -5985,5 +5985,19 @@
   "storyBatch.status.partial_failed": "部分失敗",
   "storyBatch.status.cancelled": "已取消",
   "storyBatch.status.failed": "失敗",
-  "storyBatch.status.expired": "報價已過期"
+  "storyBatch.status.expired": "報價已過期",
+  "ipKnowledgeAdmin.description": "為影片知識助手添加官方參考資料。只有標記為已發佈並儲存的資料對觀眾可用。請勿發佈私人劇本或保密資訊。",
+  "ipKnowledgeAdmin.failed": "無法讀取或儲存參考資料。",
+  "ipKnowledgeAdmin.conflict": "編輯期間該 IP 已有更新。請重新載入已儲存的資料後再修改。",
+  "ipKnowledgeAdmin.saved": "參考資料已儲存。影片知識助手現在可以使用已發佈的資料。",
+  "ipKnowledgeAdmin.loading": "載入中…",
+  "ipKnowledgeAdmin.title": "標題",
+  "ipKnowledgeAdmin.content": "參考資料",
+  "ipKnowledgeAdmin.published": "儲存時向觀眾發佈此資料",
+  "ipKnowledgeAdmin.remove": "移除資料",
+  "ipKnowledgeAdmin.empty": "暫無參考資料。請添加並發佈資料，以便助手根據官方來源回答問題。",
+  "ipKnowledgeAdmin.add": "添加資料",
+  "ipKnowledgeAdmin.save": "儲存資料",
+  "ipKnowledgeAdmin.reload": "重新載入已儲存資料（放棄編輯）",
+  "ipKnowledgeAdmin.heading": "影片知識"
 }
