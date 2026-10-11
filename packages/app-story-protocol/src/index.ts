@@ -290,3 +290,89 @@ export const StoryPreviewSchema = z
   })
   .strict();
 export type StoryPreview = z.infer<typeof StoryPreviewSchema>;
+
+/** Native WebView messages carry navigation and resource actions, never session credentials. */
+export const APP_STORY_BRIDGE_PROTOCOL = "fizz.app-story.bridge.v1" as const;
+export const StoryBridgeInitSchema = z
+  .object({
+    projectId: z.uuid(),
+    chapterId: z.uuid(),
+    locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
+    capabilities: z
+      .array(z.enum(["saveResource", "shareResource"]))
+      .max(2)
+      .default([]),
+  })
+  .strict();
+export type StoryBridgeInit = z.infer<typeof StoryBridgeInitSchema>;
+export const StoryBridgeResourceSchema = z
+  .object({
+    projectId: z.uuid(),
+    chapterId: z.uuid(),
+    resource: z
+      .object({
+        id: z.uuid(),
+        kind: z.enum(["image", "video"]),
+        name: z.string().min(1).max(512),
+        url: z.url().refine((value) => {
+          const url = new URL(value);
+          return url.protocol === "https:" && !url.username && !url.password;
+        }, "Resources require HTTPS without URL credentials."),
+      })
+      .strict(),
+  })
+  .strict();
+export type StoryBridgeResource = z.infer<typeof StoryBridgeResourceSchema>;
+const BridgeEnvelope = z.object({
+  protocol: z.literal(APP_STORY_BRIDGE_PROTOCOL),
+  bridgeId: z.uuid(),
+  requestId: z.uuid(),
+});
+const BridgeResult = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("success"), handled: z.boolean().optional() }).strict(),
+  z.object({ status: z.literal("cancelled") }).strict(),
+  z
+    .object({
+      status: z.literal("error"),
+      code: z.string().min(1).max(80),
+      message: z.string().min(1).max(2000),
+    })
+    .strict(),
+]);
+export const StoryBridgeInboundSchema = z.discriminatedUnion("type", [
+  BridgeEnvelope.extend({ type: z.literal("init"), payload: StoryBridgeInitSchema }).strict(),
+  BridgeEnvelope.extend({ type: z.literal("back"), payload: z.object({}).strict() }).strict(),
+  BridgeEnvelope.extend({
+    type: z.literal("appState"),
+    payload: z.object({ state: z.enum(["active", "background"]) }).strict(),
+  }).strict(),
+  BridgeEnvelope.extend({ type: z.literal("result"), payload: BridgeResult }).strict(),
+]);
+export type StoryBridgeInbound = z.infer<typeof StoryBridgeInboundSchema>;
+export const StoryBridgeOutboundSchema = z.discriminatedUnion("type", [
+  BridgeEnvelope.extend({
+    type: z.literal("ready"),
+    payload: z
+      .object({ capabilities: z.array(z.enum(["saveResource", "shareResource"])) })
+      .strict(),
+  }).strict(),
+  BridgeEnvelope.extend({ type: z.literal("close"), payload: z.object({}).strict() }).strict(),
+  BridgeEnvelope.extend({
+    type: z.literal("authExpired"),
+    payload: z.object({}).strict(),
+  }).strict(),
+  BridgeEnvelope.extend({
+    type: z.literal("contentChanged"),
+    payload: z.object({ projectId: z.uuid(), chapterId: z.uuid() }).strict(),
+  }).strict(),
+  BridgeEnvelope.extend({
+    type: z.literal("saveResource"),
+    payload: StoryBridgeResourceSchema,
+  }).strict(),
+  BridgeEnvelope.extend({
+    type: z.literal("shareResource"),
+    payload: StoryBridgeResourceSchema,
+  }).strict(),
+  BridgeEnvelope.extend({ type: z.literal("result"), payload: BridgeResult }).strict(),
+]);
+export type StoryBridgeOutbound = z.infer<typeof StoryBridgeOutboundSchema>;
