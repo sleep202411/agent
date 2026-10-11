@@ -39,10 +39,12 @@ export class ContentGpsSearchService {
       throw new BadRequestException(
         'Mood recommendations are not available for structured catalogue search.',
       );
-    const version = process.env.CONTENT_GPS_ANALYSIS_VERSION?.trim();
-    if (!version || version.length > 200)
+    // Owner locations and published catalogue fields do not require AI analysis.
+    // NULL deliberately excludes all AI snapshots until an explicit version is configured.
+    const version = process.env.CONTENT_GPS_ANALYSIS_VERSION?.trim() || null;
+    if (version && version.length > 200)
       throw new ServiceUnavailableException(
-        'Content GPS analysis version is not configured.',
+        'Content GPS analysis version is invalid.',
       );
     const queryId = createHash('sha256')
       .update(

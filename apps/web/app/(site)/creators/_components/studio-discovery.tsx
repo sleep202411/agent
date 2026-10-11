@@ -33,12 +33,8 @@ import {
 
 import { DiscoveryAssistant } from "../../ips/_components/discovery-assistant";
 import { ContentGpsMap } from "../../ips/_components/content-gps-map";
-import {
-  readGpsMapConfig,
-  type GpsMapConfig,
-  type GpsMapFactory,
-  type GpsViewport,
-} from "../../ips/_data/content-gps-map-types";
+import { type GpsMapFactory, type GpsViewport } from "../../ips/_data/content-gps-map-types";
+import { useContentGpsMapConfig } from "../../ips/_hooks/use-content-gps-map-config";
 import { studioMapFeatures } from "../_data/studio-map";
 
 export function StudioDiscovery({ factory }: { factory?: GpsMapFactory } = {}) {
@@ -395,15 +391,9 @@ function StudioResults({
   );
   const state = useStudioDiscovery(query, viewerId, locale);
   const client = useQueryClient();
-  const [configuration] = useState<{ config: GpsMapConfig | null; error: boolean }>(() => {
-    try {
-      return { config: readGpsMapConfig(), error: false };
-    } catch {
-      return { config: null, error: true };
-    }
-  });
+  const configuration = useContentGpsMapConfig();
   const [viewport, setViewport] = useState<GpsViewport>({
-    coordinateSystem: configuration.config?.provider === "gaode" ? "GCJ02" : "WGS84",
+    coordinateSystem: process.env.NEXT_PUBLIC_SITE_REGION === "cn" ? "GCJ02" : "WGS84",
     west: -180,
     east: 180,
     south: -80,

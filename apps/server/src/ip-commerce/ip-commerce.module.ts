@@ -1,3 +1,4 @@
+import { ContentGpsMapController } from './content-gps-map';
 import {
   ChannelVideosController,
   ChannelVideosService,
@@ -92,6 +93,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     AiGenerationModule,
   ],
   controllers: [
+    ContentGpsMapController,
     ChannelVideosController,
     IpStudiosController,
     ContentGpsSearchController,
