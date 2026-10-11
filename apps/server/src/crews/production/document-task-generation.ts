@@ -77,15 +77,16 @@ export async function generateDocumentTasks(
         });
         if (indices.length) repair = { original: parsed.data, indices };
       }
+      const evidenceRepair = repair;
       prompt = JSON.stringify({
         document: source,
         ...(previousProposal === undefined
           ? {}
           : {
-              previousProposal: repair
+              previousProposal: evidenceRepair
                 ? {
-                    tasks: repair.indices.map(
-                      (index) => repair.original.tasks[index],
+                    tasks: evidenceRepair.indices.map(
+                      (index) => evidenceRepair.original.tasks[index],
                     ),
                   }
                 : previousProposal,
