@@ -12,13 +12,13 @@ import { alibabaProviderHeaders } from '../common/alibaba-data-inspection';
  * Shared model plumbing for the authoring pipeline's batons. Each stage is a
  * bounded, schema-validated structured-output call to Qwen via DashScope. The
  * JSON Object transport and local schema validation are shared by all stages.
- * Qwen3-Max does not support the provider's JSON Schema response format.
+ * JSON Object mode is portable across the regional provider endpoints.
  *
  * Required env: ALIBABA_API_KEY. Optional: ALIBABA_BASE_URL,
- * STORY_AGENT_AUTHOR_MODEL (default qwen3-max). Structured authoring explicitly
+ * STORY_AGENT_AUTHOR_MODEL (default qwen-plus). Structured authoring explicitly
  * disables thinking so hybrid models use the budget for the required object.
  */
-const DEFAULT_AUTHOR_MODEL = 'qwen3-max';
+const DEFAULT_AUTHOR_MODEL = 'qwen-plus';
 
 export function storyAuthoringModelId(): string {
   return process.env.STORY_AGENT_AUTHOR_MODEL?.trim() || DEFAULT_AUTHOR_MODEL;

@@ -20,7 +20,9 @@ const mockedGenerateObject = jest.mocked(generateObject);
 describe('runStoryAuthoringStage', () => {
   it('uses Qwen-compatible JSON Object through the real SDK and provider', async () => {
     const previous = process.env.ALIBABA_API_KEY;
+    const previousModel = process.env.STORY_AGENT_AUTHOR_MODEL;
     process.env.ALIBABA_API_KEY = 'unit-test-key';
+    delete process.env.STORY_AGENT_AUTHOR_MODEL;
     mockedGenerateObject.mockImplementationOnce(
       jest.requireActual<typeof import('ai')>('ai').generateObject,
     );
@@ -35,7 +37,7 @@ describe('runStoryAuthoringStage', () => {
             new Response(
               JSON.stringify({
                 error: {
-                  message: 'Unsupported response_format for qwen3-max',
+                  message: 'Unsupported response_format',
                   type: 'invalid_request_error',
                   code: 'InvalidParameter',
                 },
@@ -49,7 +51,7 @@ describe('runStoryAuthoringStage', () => {
             JSON.stringify({
               id: 'fixture',
               created: 1,
-              model: 'qwen3-max',
+              model: 'qwen-plus',
               choices: [
                 {
                   index: 0,
@@ -69,7 +71,7 @@ describe('runStoryAuthoringStage', () => {
       });
     try {
       await expect(
-        runStoryAuthoringStage(createStoryAuthoringModel('qwen3-max'), {
+        runStoryAuthoringStage(createStoryAuthoringModel(), {
           stage: 'structure',
           schema: z.object({ value: z.string() }),
           system: 'Return the fixture.',
@@ -81,11 +83,13 @@ describe('runStoryAuthoringStage', () => {
         }),
       ).resolves.toEqual({ value: 'ok' });
       const body = JSON.parse(fetchMock.mock.calls[0][1]!.body as string) as {
+        model: string;
         response_format: { type: string };
         messages: unknown;
         max_tokens: number;
         enable_thinking: boolean;
       };
+      expect(body.model).toBe('qwen-plus');
       expect(body.response_format).toEqual({ type: 'json_object' });
       expect(JSON.stringify(body.messages)).toContain('JSON');
       expect(JSON.stringify(body.messages)).toContain('required');
@@ -95,6 +99,9 @@ describe('runStoryAuthoringStage', () => {
       fetchMock.mockRestore();
       if (previous === undefined) delete process.env.ALIBABA_API_KEY;
       else process.env.ALIBABA_API_KEY = previous;
+      if (previousModel === undefined)
+        delete process.env.STORY_AGENT_AUTHOR_MODEL;
+      else process.env.STORY_AGENT_AUTHOR_MODEL = previousModel;
     }
   });
   beforeEach(() => {
