@@ -255,6 +255,37 @@ describe("worker HTTP auth", () => {
     }
   });
 
+  it("reports missing film knowledge configuration instead of selecting an unknown model", async () => {
+    const previous = process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+    delete process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+    try {
+      const response = await fetch(`${baseUrl}/v1/agent-os/film-knowledge`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-agent-os-internal-token": TOKEN },
+        body: JSON.stringify({
+          ipId: "a0000000-0000-4000-8000-000000000001",
+          ipTitle: "Film",
+          question: "Who is the hero?",
+          locale: "en-US",
+          sources: [
+            {
+              documentId: "b0000000-0000-4000-8000-000000000002",
+              title: "Characters",
+              snippet: "Ric is the hero.",
+            },
+          ],
+        }),
+      });
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "FILM_KNOWLEDGE_MODEL_NOT_CONFIGURED" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+      else process.env.AGENT_OS_VIEWER_MODEL_PROFILE = previous;
+    }
+  });
+
   it("refuses a wrong token", async () => {
     const res = await fetch(`${baseUrl}/v1/agent-os/runs`, {
       method: "POST",

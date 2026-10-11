@@ -428,7 +428,16 @@ export function createAgentOsHttpServer() {
           });
           return;
         }
-        const profileId = process.env.AGENT_OS_VIEWER_MODEL_PROFILE?.trim() || "gpt-4o-mini";
+        const profileId = process.env.AGENT_OS_VIEWER_MODEL_PROFILE?.trim();
+        if (!profileId || !isLiveModelConfigured()) {
+          send(res, 503, {
+            error: {
+              code: "FILM_KNOWLEDGE_MODEL_NOT_CONFIGURED",
+              message: "Film knowledge model is not configured.",
+            },
+          });
+          return;
+        }
         const controller = new AbortController();
         const disconnect = () => controller.abort();
         res.once("close", disconnect);
