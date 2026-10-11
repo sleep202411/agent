@@ -60,8 +60,7 @@ it("retains quota-failed edits in memory, then persists them when storage recove
   }
   try {
     await act(async () => root.render(<Consumer />));
-    const original = Storage.prototype.setItem;
-    const fail = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    const fail = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new DOMException("quota", "QuotaExceededError");
     });
     await act(async () =>
@@ -72,7 +71,8 @@ it("retains quota-failed edits in memory, then persists them when storage recove
     window.dispatchEvent(warning);
     expect(warning.defaultPrevented).toBe(true);
     expect(localStorage.getItem("fizzdragon.appearance-ux.v1:quota-test")).toBeNull();
-    fail.mockImplementation(original);
+    expect(fail).toHaveBeenCalled();
+    fail.mockRestore();
     await act(async () => expect(state.update((current) => current)).toBe(true));
     expect(
       decodeAppearanceWorkspace(localStorage.getItem("fizzdragon.appearance-ux.v1:quota-test")!)

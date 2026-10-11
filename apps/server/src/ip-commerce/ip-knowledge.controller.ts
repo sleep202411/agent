@@ -199,9 +199,30 @@ export class IpKnowledgeService {
     );
 
     signal.throwIfAborted();
-    // Re-verify that the film still exists and audience access remains valid
+    // Re-verify audience access and the actual source snapshots. A creator may
+    // withdraw or correct material while the provider is generating its answer.
     await this.ips.ensurePublicEngagementTarget(user, ipId);
-
+    const current = await this.readRaw(ipId);
+    const available = new Map(
+      current.documents.filter((d) => d.isPublished).map((d) => [d.id, d]),
+    );
+    if (
+      sources.some((source) => {
+        const document = available.get(source.documentId);
+        return (
+          !document ||
+          document.title !== source.title ||
+          document.content.slice(0, 4000) !== source.snippet
+        );
+      })
+    ) {
+      throw new ConflictException({
+        code: 'KNOWLEDGE_SOURCES_CHANGED',
+        message:
+          'Published film materials changed during your request. Please ask again.',
+      });
+    }
+    signal.throwIfAborted();
     return response;
   }
 }

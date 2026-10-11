@@ -67,6 +67,65 @@ describe('Academy regional authority', () => {
     );
   });
 
+  it('reads paginated published courses from the same regional Java catalogue as Admin', async () => {
+    fetchMock.mockResolvedValue(
+      reply({
+        list: [
+          {
+            id: 42,
+            published: 1,
+            certificateId: '13',
+            localized: { 'en-US': { title: 'Course' } },
+          },
+        ],
+        total: 21,
+      }),
+    );
+    expect(await service.coursePage(3)).toMatchObject({
+      list: [{ id: 42, published: true, certificateId: 13 }],
+      total: 21,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '/api/admin/courses?published=true&page=3&pageSize=10',
+      ),
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+  it.each([
+    { list: [], total: 1 },
+    {
+      list: [
+        { id: 42, published: true },
+        { id: 42, published: true },
+      ],
+      total: 2,
+    },
+    { list: [{ id: '../private', published: true }], total: 1 },
+    { list: [], total: -1 },
+    { list: [] },
+    {
+      list: Array.from({ length: 11 }, (_, id) => ({ id, published: true })),
+      total: 11,
+    },
+  ])('rejects malformed or incomplete course pages', async (data) => {
+    fetchMock.mockResolvedValue(reply(data));
+    await expect(service.coursePage(1)).rejects.toThrow('catalogue is invalid');
+  });
+  it('accepts an empty catalogue and an exhausted later page', async () => {
+    fetchMock
+      .mockResolvedValueOnce(reply({ list: [], total: 0 }))
+      .mockResolvedValueOnce(reply({ list: [], total: 10 }));
+    expect((await service.coursePage(1)).list).toEqual([]);
+    expect((await service.coursePage(2)).list).toEqual([]);
+  });
+  it('propagates a rejected catalogue request', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ code: 503, msg: 'Unavailable' })),
+    );
+    await expect(service.coursePage(1)).rejects.toThrow('Unavailable');
+  });
+
   it('does not replace an already awarded certificate on retry', async () => {
     fetchMock
       .mockResolvedValueOnce(reply([{ id: 13, name: 'Skill', type: 4 }]))

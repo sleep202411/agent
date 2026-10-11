@@ -7,7 +7,7 @@ import { IpKnowledgeService } from './ip-knowledge.controller';
 
 const user = { userId: 'viewer' } as AuthUser;
 const ipId = '0197f4a2-0800-7000-8000-000000000001';
-function setup(published = false) {
+function setup(published = false, documents?: Array<Record<string, unknown>>) {
   const access = jest.fn().mockResolvedValue(undefined);
   const worker = {
     answerFilmKnowledge: jest.fn().mockResolvedValue({
@@ -21,7 +21,7 @@ function setup(published = false) {
     {
       $queryRaw: jest.fn().mockResolvedValue([
         {
-          audience_documents: [
+          audience_documents: documents ?? [
             {
               id: ipId,
               title: 'Source',
@@ -127,3 +127,36 @@ it('rechecks access before returning an empty-material response', async () => {
   ).rejects.toBeInstanceOf(ForbiddenException);
   expect(get).not.toHaveBeenCalled();
 });
+
+it.each(['unpublish', 'edit', 'remove'])(
+  'does not return an in-flight answer after its source changes (%s)',
+  async (change) => {
+    const documents = [
+      {
+        id: ipId,
+        title: 'Source',
+        content: 'Sensitive source',
+        isPublished: true,
+      },
+    ];
+    const { service, worker } = setup(true, documents);
+    worker.answerFilmKnowledge.mockImplementation(async () => {
+      if (change === 'unpublish') documents[0].isPublished = false;
+      else if (change === 'edit') documents[0].content = 'Corrected source';
+      else documents.splice(0);
+      return {
+        answer: 'Outdated answer',
+        citedDocumentIds: [ipId],
+        unanswered: false,
+      };
+    });
+    await expect(
+      service.askKnowledge(
+        user,
+        ipId,
+        { locale: 'en-US', question: 'What?' },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  },
+);

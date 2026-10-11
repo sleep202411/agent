@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { useTaskScheduleSession } from "./use-task-schedule-session";
 import { TaskSchedule } from "./task-schedule";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), refresh: vi.fn(), generation: 1 }));
@@ -184,4 +185,64 @@ it("suppresses mutation completion after an account change", async () => {
   h.generation = 2;
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
+});
+
+function RefreshingSchedule({ value, visible }: { value: TaskDetail; visible: boolean }) {
+  const session = useTaskScheduleSession(value.id, 1, h.refresh);
+  return visible ? (
+    <TaskSchedule
+      key={value.version}
+      task={value}
+      userId="1"
+      generation={1}
+      onRefresh={h.refresh}
+      session={session}
+    />
+  ) : null;
+}
+const refreshRender = (value = task, visible = true) =>
+  act(async () => root.render(<RefreshingSchedule value={value} visible={visible} />));
+it("preserves dates and priority through refresh and explicitly reviews the new version", async () => {
+  await refreshRender();
+  await act(async () => button("taskSchedule.edit")!.click());
+  await act(async () => type(1, "2026-10-20 12:00"));
+  await act(async () => button("taskSchedule.urgent")!.click());
+  await refreshRender(task, false);
+  const latest = { ...task, version: 5, priority: "low" as const };
+  await refreshRender(latest);
+  expect(host.querySelectorAll("input")[1]!.value).toBe("2026-10-20 12:00");
+  expect(button("taskSchedule.save")!.disabled).toBe(true);
+  expect(host.textContent).toContain("taskSchedule.latest");
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  await act(async () => button("taskSchedule.save")!.click());
+  expect(h.update).toHaveBeenCalledExactlyOnceWith(latest, {
+    expectedVersion: 5,
+    priority: "urgent",
+    startAt: null,
+    dueAt: new Date(2026, 9, 20, 12, 0).toISOString(),
+  });
+});
+it("retains the pending save lock when its editor is remounted during refresh", async () => {
+  let fail!: (e: Error) => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        fail = reject;
+      })
+  );
+  await refreshRender();
+  await act(async () => button("taskSchedule.edit")!.click());
+  await act(async () => button("taskSchedule.high")!.click());
+  await act(async () => button("taskSchedule.save")!.click());
+  await refreshRender(task, false);
+  await refreshRender({ ...task });
+  expect(button("taskSchedule.save")!.disabled).toBe(true);
+  expect(button("myServices.cancel")!.disabled).toBe(true);
+  expect(button("taskBrief.reviewLatest")).toBeUndefined();
+  await act(async () => fail(new Error("Schedule conflict")));
+  expect(host.textContent).toContain("Schedule conflict");
+  expect(h.update).toHaveBeenCalledOnce();
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  expect(button("taskSchedule.save")!.disabled).toBe(false);
+  expect(h.update).toHaveBeenCalledOnce();
 });

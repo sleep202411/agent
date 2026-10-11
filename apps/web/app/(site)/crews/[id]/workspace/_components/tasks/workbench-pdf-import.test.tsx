@@ -85,7 +85,7 @@ it("requires review before creation and sends selected task indices", async () =
     body: { indices: [0] },
   });
   expect(host.textContent).toContain("1 tasks created.");
-  expect(state.invalidate).toHaveBeenCalledTimes(3);
+  expect(state.invalidate).toHaveBeenCalledTimes(4);
 });
 it("recovers an ambiguous submission and retries exactly the same selection", async () => {
   localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id, indices: [0] }));
@@ -247,5 +247,51 @@ it("allows documents up to 20 MiB and blocks larger uploads", async () => {
       (b) => b.textContent === "Analyze document"
     )!;
     expect(button.disabled).toBe(size > 20 * 1024 * 1024);
+  }
+});
+
+it("shows persisted analysis failures and their support ID after recovery", async () => {
+  localStorage.setItem("crew-pdf-import:crew:user", JSON.stringify({ id }));
+  state.get.mockResolvedValue({
+    ...preview,
+    status: "failed",
+    tasks: [],
+    failure: {
+      code: "provider_limit",
+      message: "The AI provider rejected the request because of a rate or quota limit.",
+    },
+  });
+  await mount();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("rate or quota limit");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(id);
+  expect(host.textContent).toContain("New analysis");
+  expect(state.post).not.toHaveBeenCalled();
+});
+
+it("recovers a lost upload response by polling the same request without creating tasks", async () => {
+  vi.useFakeTimers();
+  const upload = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+  vi.stubGlobal("fetch", upload);
+  state.get
+    .mockResolvedValueOnce({ ...preview, status: "queued", tasks: [] })
+    .mockResolvedValue(preview);
+  try {
+    await mount();
+    const input = host.querySelector<HTMLInputElement>("input[type=file]")!;
+    Object.defineProperty(input, "files", { value: [new File(["fixture"], "script.docx")] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await click("Analyze document");
+    const url = String(upload.mock.calls[0][0]);
+    const requestId = url.split("/").at(-2)!;
+    expect(state.get).toHaveBeenCalledWith(`/crews/crew/pdf-task-imports/${requestId}`);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2100);
+    });
+    expect(host.textContent).toContain("The library doors open");
+    expect(host.textContent).not.toContain("Failed to fetch");
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(state.post).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
   }
 });

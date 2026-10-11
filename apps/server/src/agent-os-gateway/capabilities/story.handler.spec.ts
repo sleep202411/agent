@@ -185,7 +185,7 @@ describe('StoryAgentCapabilityHandler', () => {
       storyStoryboardSequence: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findMany: jest.fn().mockResolvedValue([]),
-        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
     const prisma = {
@@ -250,12 +250,14 @@ describe('StoryAgentCapabilityHandler', () => {
       data: { nodeIds: ['scene.gate'], entryNodeId: 'scene.gate' },
     });
     expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(2);
-    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        storyProjectId: projectId,
-        storyChapterId: chapterId,
-        plotNodeId: 'scene.gate',
-      }) as unknown,
+    expect(tx.storyStoryboardSequence.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          plotNodeId: 'scene.gate',
+        }) as unknown,
+      ],
     });
   });
 

@@ -4,6 +4,7 @@
  * Paths omit `/aurora`; `api` resolves the aurora base URL.
  */
 
+import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
 
 const AURORA = { service: "aurora" as const };
@@ -13,6 +14,7 @@ export type StoryProductionSpecStatus = "current" | "archived";
 export type StoryProductionStatus = "missing" | "current";
 
 export type StoryCreativeMediaVersion = {
+  purpose?: "primary" | "turnaround";
   id: string;
   versionNumber: number;
   mediaAssetId: string;
@@ -30,6 +32,17 @@ export type StoryAssetSpec = {
   id: string;
   projectId: string;
   chapterId: string;
+  latestGeneration?: {
+    id: string;
+    purpose: "primary" | "turnaround";
+    outputKind: "image" | "video";
+  } | null;
+  latestGenerations?: Partial<
+    Record<
+      "primary" | "turnaround",
+      { id: string; purpose: "primary" | "turnaround"; outputKind: "image" | "video" } | null
+    >
+  >;
   stableKey: string;
   kind: StoryAssetSpecKind;
   name: string;
@@ -224,12 +237,21 @@ export async function loadStoryScriptSnapshot(
   chapterId: string,
   signal?: AbortSignal
 ): Promise<StoryDocumentRef> {
+  const generation = getAuthGeneration();
+  const assertCurrent = () => {
+    if (signal?.aborted || generation !== getAuthGeneration())
+      throw new Error("Script request expired");
+  };
+  assertCurrent();
   const ensured = await storyProductionApi.ensureScriptDocument(projectId, chapterId, signal);
+  assertCurrent();
   const documentId = ensured.document?.id?.trim();
   if (!documentId) {
     throw new Error("Story Studio did not return a script document id");
   }
   const detail = await storyProductionApi.getDocument(documentId, signal);
+  assertCurrent();
+  if (detail.document?.id !== documentId) throw new Error("Script document identity mismatch");
   return detail.document;
 }
 

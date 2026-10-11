@@ -4,6 +4,9 @@ import {
   getTaskDraftSession,
   type TaskDraftInput,
 } from "./task-draft-session";
+vi.mock("./task-draft-storage", () => ({
+  taskDraftStorage: () => ({ read: () => null, write: () => {} }),
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
   access: vi.fn(),
@@ -31,7 +34,9 @@ const input: TaskDraftInput = {
   description: "Episode 1",
   priority: "normal",
   startAt: null,
-  dueAt: null,
+  dueAt: "2099-01-01T00:00:00Z",
+  taskKind: "script",
+  rewardUsdMinor: 0,
   parentId: null,
   blockedByTaskIds: [],
   assignees: [],
@@ -286,4 +291,167 @@ it("stages one immutable canvas command and replays it after an uncertain reply"
 });
 it("does not stage another crew's canvas", () => {
   expect(() => session().stageCanvas({ ...canvasPreview, crewId: "other" })).toThrow("scope");
+});
+
+function disk() {
+  let value: string | null = null;
+  return {
+    read: () => value,
+    write: vi.fn((next: string) => {
+      value = next;
+    }),
+  };
+}
+it("restores drafts and receipts after a new process without repeating a confirmed POST", async () => {
+  const store = disk();
+  const first = createTaskDraftSession("crew", "user", h.generation, store);
+  first.stage(input, review);
+  const second = createTaskDraftSession("crew", "user", h.generation, store);
+  expect(second.getSnapshot().drafts).toHaveLength(1);
+  await second.createAll(() => true);
+  const third = createTaskDraftSession("crew", "user", h.generation, store);
+  expect(third.getSnapshot().drafts[0]).toMatchObject({ state: "created", taskId: "created" });
+  await third.createAll(() => true);
+  expect(h.create).toHaveBeenCalledTimes(1);
+});
+it("persists the creating marker before POST and restores interrupted singles as uncertain", async () => {
+  const store = disk();
+  const first = createTaskDraftSession("crew", "user", h.generation, store);
+  first.stage(input, review);
+  h.create.mockImplementation(async () => {
+    expect(JSON.parse(store.read()!).drafts[0].state).toBe("creating");
+    const restored = createTaskDraftSession("crew", "user", h.generation, store);
+    expect(restored.getSnapshot().drafts[0].state).toBe("uncertain");
+    await restored.createAll(() => true);
+    return { id: "created" };
+  });
+  await first.createAll(() => true);
+  expect(h.create).toHaveBeenCalledTimes(1);
+});
+it("blocks writes on disk failure, retains the form, and allows an explicit save retry", async () => {
+  const store = disk();
+  const s = createTaskDraftSession("crew", "user", h.generation, store);
+  store.write.mockImplementationOnce(() => {
+    throw new Error("Disk full");
+  });
+  expect(s.stage(input, review)).toBe(false);
+  expect(s.getSnapshot().drafts).toHaveLength(1);
+  expect(s.getSnapshot().storageError).toBe("Disk full");
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(s.save()).toBe(true);
+  await s.createAll(() => true);
+  expect(h.create).toHaveBeenCalledTimes(1);
+});
+it("never posts if the durable creating marker cannot be written", async () => {
+  const store = disk();
+  const s = createTaskDraftSession("crew", "user", h.generation, store);
+  s.stage(input, review);
+  store.write.mockImplementationOnce(() => {
+    throw new Error("Disk full");
+  });
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(s.getSnapshot().drafts[0].state).toBe("staged");
+});
+it("does not overwrite corrupt snapshots or cross-crew canvas data", async () => {
+  for (const saved of [
+    "broken",
+    JSON.stringify({
+      version: 1,
+      drafts: [
+        { id: 1, kind: "canvas", state: "staged", preview: { ...canvasPreview, crewId: "other" } },
+      ],
+    }),
+  ]) {
+    const store = { read: () => saved, write: vi.fn() };
+    const s = createTaskDraftSession("crew", "user", h.generation, store);
+    expect(s.getSnapshot().storageError).toBeTruthy();
+    expect(s.stage(input, review)).toBe(false);
+    s.save();
+    await s.createAll(() => true);
+    expect(store.write).not.toHaveBeenCalled();
+  }
+  expect(h.create).not.toHaveBeenCalled();
+});
+it("edits a staged draft in place and persists all metadata without creating duplicates", async () => {
+  const store = disk();
+  const s = createTaskDraftSession("crew", "user", h.generation, store);
+  s.stage(input, review);
+  expect(
+    s.edit(
+      1,
+      {
+        ...input,
+        title: "Revised",
+        estimatePoints: 8,
+        positionRole: "Storyboard artist",
+        requiredSkills: ["Editing"],
+        contractAssetNodeId: "11111111-1111-4111-8111-111111111111",
+      },
+      review
+    )
+  ).toBe(true);
+  const restored = createTaskDraftSession("crew", "user", h.generation, store);
+  expect(restored.getSnapshot().drafts).toHaveLength(1);
+  expect(restored.getSnapshot().drafts[0]).toMatchObject({
+    id: 1,
+    input: {
+      title: "Revised",
+      estimatePoints: 8,
+      positionRole: "Storyboard artist",
+      requiredSkills: ["Editing"],
+      contractAssetNodeId: "11111111-1111-4111-8111-111111111111",
+    },
+  });
+  await restored.createAll(() => true);
+  expect(restored.edit(1, input, review)).toBe(false);
+});
+it("retains exact custom fields when replaying an interrupted episode batch", async () => {
+  const store = disk();
+  const full = {
+    ...plan,
+    taskFields: [{ templateKey: "script", values: [{ fieldId: episodeId, value: "Reviewed" }] }],
+  };
+  store.write(
+    JSON.stringify({
+      version: 1,
+      drafts: [
+        { id: 1, kind: "episode", episodeId, title: "Episode", state: "creating", plan: full },
+      ],
+    })
+  );
+  const s = createTaskDraftSession("crew", "user", h.generation, store);
+  h.apply.mockResolvedValue({ taskIds: ["task-a"], replayed: true });
+  await s.createAll(() => true);
+  expect(h.apply).toHaveBeenCalledWith("crew", episodeId, full, h.generation);
+});
+it("keeps an expired persisted draft editable without marking an unknown creation", async () => {
+  let raw: string | null = null;
+  const storage = {
+    read: () => raw,
+    write: (value: string) => {
+      raw = value;
+    },
+  };
+  const s = createTaskDraftSession("crew", "user", h.generation, storage);
+  s.stage({ ...input, dueAt: "2000-01-01T00:00:00Z" }, review);
+  const restored = createTaskDraftSession("crew", "user", h.generation, storage);
+  await restored.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(restored.getSnapshot().drafts[0]?.state).toBe("staged");
+  expect(restored.getSnapshot().error).toContain("future deadline");
+});
+
+it("keeps incomplete saved drafts editable and rejects them before recording a write attempt", async () => {
+  const s = session();
+  s.stage({ ...input, dueAt: null, taskKind: null, rewardUsdMinor: null }, review);
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(s.getSnapshot().drafts[0]?.state).toBe("staged");
+  expect(s.getSnapshot().error).toContain("required task fields");
+  expect(s.edit(s.getSnapshot().drafts[0]!.id, input, review)).toBe(true);
+  await s.createAll(() => true);
+  expect(h.create).toHaveBeenCalledOnce();
+  expect(s.getSnapshot().drafts[0]?.state).toBe("created");
 });

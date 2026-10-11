@@ -133,7 +133,7 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
     startingPrice: cheapest?.price ?? summary.startingPrice,
     currency: cheapest?.currency ?? summary.currency,
     startingDeliveryDays: cheapest?.deliveryDays ?? summary.startingDeliveryDays,
-    packageCount: packages.length || summary.packageCount,
+    packageCount: packages.length,
     requirementQuestions: z
       .array(
         z.object({
@@ -162,20 +162,51 @@ export async function fetchCreatorServices(
   limit = 12,
   params: { creatorId?: string } = {}
 ): Promise<CreatorServiceSummary[]> {
-  try {
-    const res = await api.get<CreatorServiceListResponse>("/creator-services", {
-      service: "aurora",
-      params: { limit, creatorId: params.creatorId },
-    });
-    const seen = new Set<string>();
-    return (res.items ?? []).map(mapService).filter((service): service is CreatorServiceSummary => {
-      if (!service || seen.has(service.id)) return false;
-      seen.add(service.id);
-      return true;
-    });
-  } catch {
-    return [];
+  const res = await api.get<CreatorServiceListResponse>("/creator-services", {
+    service: "aurora",
+    params: { limit, creatorId: params.creatorId },
+  });
+  const seen = new Set<string>();
+  return (res.items ?? []).map(mapService).filter((service): service is CreatorServiceSummary => {
+    if (!service || seen.has(service.id)) return false;
+    seen.add(service.id);
+    return true;
+  });
+}
+
+export class InvalidCreatorServicesPageError extends Error {
+  constructor() {
+    super("Invalid service page; please retry.");
   }
+}
+
+export async function fetchCreatorServicesPage(
+  creatorId: string,
+  cursor?: string,
+  signal?: AbortSignal
+) {
+  const res = await api.get<CreatorServiceListResponse>("/creator-services", {
+    service: "aurora",
+    params: { creatorId, status: "listed", limit: 12, cursor },
+    signal,
+    retry: false,
+  });
+  if (
+    !res ||
+    !Array.isArray(res.items) ||
+    (res.nextCursor != null &&
+      (typeof res.nextCursor !== "string" || !res.nextCursor || res.nextCursor === cursor))
+  )
+    throw new InvalidCreatorServicesPageError();
+  const items = res.items.map((item) =>
+    item && typeof item === "object" ? mapService(item) : undefined
+  );
+  if (
+    items.some((item) => !item || item.creatorId !== creatorId) ||
+    new Set(items.map((item) => item?.id)).size !== items.length
+  )
+    throw new InvalidCreatorServicesPageError();
+  return { items: items as CreatorServiceSummary[], nextCursor: res.nextCursor ?? null };
 }
 
 export async function fetchCreatorServiceById(

@@ -1,3 +1,4 @@
+import { ServiceEditorDrafts } from "./service-editor-drafts";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -152,4 +153,68 @@ it("retains a failed draft and offers explicit discard/reload", async () => {
   expect(h.refresh).not.toHaveBeenCalled();
   await act(async () => click("serviceEdit.reload"));
   expect(h.refresh).toHaveBeenCalledOnce();
+});
+
+const renderStored = (visible: boolean, version = 3, owner = "owner") =>
+  act(async () =>
+    root.render(
+      <ServiceEditorDrafts key={owner}>
+        {visible && <ServiceDetailsEditor service={{ ...service, version }} refresh={h.refresh} />}
+      </ServiceEditorDrafts>
+    )
+  );
+const editTitle = async (value: string) =>
+  act(async () => {
+    const input = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+it("preserves a sibling-panel reload draft and its original concurrency token", async () => {
+  document.body.append(host);
+  await renderStored(true);
+  await act(async () => click("serviceEdit.title"));
+  await editTitle("Unsaved film title");
+  await renderStored(false);
+  await renderStored(true, 4);
+  expect(host.querySelector("input")?.value).toBe("Unsaved film title");
+  h.change.mockResolvedValue(undefined);
+  await act(async () => click("profileEdit.save"));
+  expect(h.change).toHaveBeenCalledWith(
+    "s",
+    expect.objectContaining({ title: "Unsaved film title", expectedVersion: 3 })
+  );
+  await renderStored(false);
+  await renderStored(true, 5);
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => click("serviceEdit.title"));
+  expect(host.querySelector("input")?.value).toBe("Film");
+  host.remove();
+});
+it("explicit discard reloads fresh fields and version without reusing the discarded draft", async () => {
+  document.body.append(host);
+  h.change.mockRejectedValue(new Error("Stale version"));
+  await renderStored(true);
+  await act(async () => click("serviceEdit.title"));
+  await editTitle("Discard this edit");
+  await act(async () => click("profileEdit.save"));
+  await act(async () => click("serviceEdit.reload"));
+  await renderStored(false);
+  await renderStored(true, 4);
+  await act(async () => click("serviceEdit.title"));
+  expect(host.querySelector("input")?.value).toBe("Film");
+  h.change.mockResolvedValue(undefined);
+  await act(async () => click("profileEdit.save"));
+  expect(h.change).toHaveBeenLastCalledWith("s", expect.objectContaining({ expectedVersion: 4 }));
+  host.remove();
+});
+it("does not restore service drafts into a new account scope", async () => {
+  document.body.append(host);
+  await renderStored(true);
+  await act(async () => click("serviceEdit.title"));
+  await editTitle("Private draft");
+  await renderStored(true, 3, "different-session");
+  expect(host.querySelector("input")).toBeNull();
+  await act(async () => click("serviceEdit.title"));
+  expect(host.querySelector("input")?.value).toBe("Film");
+  host.remove();
 });

@@ -1095,3 +1095,30 @@ it("shows actual point totals, compact deadlines and a disabled submitted state"
   expect(submitted.disabled).toBe(true);
   expect(button("submit")).toBeUndefined();
 });
+
+it("selects only eligible tasks in an art subgroup and preserves other subgroup selections", async () => {
+  state.tasks = ["characters", "characters", "scenes", "props", "art"].map((assetCategory, i) => ({
+    id: `asset-${i}`,
+    title: `Asset ${i}`,
+    parentId: null,
+    status: "open" as const,
+    assetCategory,
+    taskKind: "art",
+    assignees: i === 1 ? [{ userId: "assigned" }] : [],
+    crewId: "crew",
+    version: 1,
+  }));
+  await render(true, true, "crew", vi.fn());
+  await click("Art Assets");
+  const check = (name: string) =>
+    host.querySelector(`input[aria-label="Select ${name} tasks"]`) as HTMLInputElement;
+  await act(async () => check("Characters").click());
+  expect(host.textContent).toContain("1 selected");
+  await act(async () => check("Props").click());
+  expect(host.textContent).toContain("2 selected");
+  await act(async () => check("Characters").click());
+  expect(host.textContent).toContain("1 selected");
+  expect(check("Props").checked).toBe(true);
+  expect(check("Scenes").checked).toBe(false);
+  expect(check("Other Art")).not.toBeNull();
+});

@@ -1,7 +1,15 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import {
+  FlatList,
+  Platform,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuthGate } from "@/auth";
@@ -24,6 +32,8 @@ export default function CreatorsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { isAuthenticated, openLogin } = useAuthGate();
+  const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const offsetRef = useRef(0);
@@ -49,12 +59,15 @@ export default function CreatorsScreen() {
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
-      const page = await getCreators(PAGE_SIZE);
+      const page = await getCreators(PAGE_SIZE, 0, query);
       if (seq !== sequenceRef.current) return;
       hasDataRef.current = true;
       setCreators(page.creators);
-      offsetRef.current = page.creators.length;
-      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
+      offsetRef.current = page.nextOffset ?? page.creators.length;
+      setHasMore(
+        (page.nextOffset !== undefined ? page.nextOffset > 0 : page.creators.length > 0) &&
+          offsetRef.current < page.total
+      );
       setRequiresLogin(page.requiresLogin);
     } catch (loadError) {
       if (seq === sequenceRef.current && !hasDataRef.current) {
@@ -66,7 +79,7 @@ export default function CreatorsScreen() {
         setLoading(false);
       }
     }
-  }, [t]);
+  }, [t, query]);
 
   useEffect(() => {
     // Synchronize the directory and its request indicators with the current browse scope.
@@ -81,7 +94,7 @@ export default function CreatorsScreen() {
 
   // Authed users keep loading by offset until `total` is reached. Guests stop
   // at the public cap and get the "Sign in to see more" button instead.
-  const canLoadMore = isAuthenticated && !requiresLogin && hasMore;
+  const canLoadMore = (isAuthenticated || !!query) && !requiresLogin && hasMore;
 
   const loadMore = useCallback(async () => {
     if (!canLoadMore || replacingRef.current || loadingMoreRef.current) return;
@@ -90,7 +103,7 @@ export default function CreatorsScreen() {
     loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
-      const page = await getCreators(PAGE_SIZE, offsetRef.current);
+      const page = await getCreators(PAGE_SIZE, offsetRef.current, query);
       if (seq !== sequenceRef.current) return;
       setCreators((current) => {
         const seen = new Set(current.map((creator) => creator.id));
@@ -103,8 +116,9 @@ export default function CreatorsScreen() {
           }),
         ];
       });
-      offsetRef.current += page.creators.length;
-      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
+      const previousOffset = offsetRef.current;
+      offsetRef.current = page.nextOffset ?? previousOffset + page.creators.length;
+      setHasMore(offsetRef.current > previousOffset && offsetRef.current < page.total);
       setRequiresLogin(page.requiresLogin);
     } catch {
       // Retain the loaded directory and position for the next pagination retry.
@@ -114,7 +128,7 @@ export default function CreatorsScreen() {
         setLoadingMore(false);
       }
     }
-  }, [canLoadMore]);
+  }, [canLoadMore, query]);
 
   const onRefresh = useCallback(async () => {
     const pending = load();
@@ -130,6 +144,49 @@ export default function CreatorsScreen() {
   const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
   const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
 
+  const submitSearch = () => {
+    const next = search.trim();
+    if (next === query) {
+      void load();
+      return;
+    }
+    // Invalidate the old query before its next page can arrive.
+    sequenceRef.current += 1;
+    replacingRef.current = true;
+    hasDataRef.current = false;
+    setCreators([]);
+    setError(undefined);
+    setHasMore(false);
+    setRequiresLogin(false);
+    setQuery(next);
+  };
+  const header = (
+    <View style={{ gap: Spacing.three }}>
+      <ScreenHeader title={t("creators.title")} />
+      <Pressable accessibilityRole="button" onPress={() => router.push(toHref("/studios"))}>
+        <ThemedText>{t("studioDiscovery.title")}</ThemedText>
+      </Pressable>
+      <TextInput
+        accessibilityLabel={t("creators.search")}
+        placeholder={t("creators.search")}
+        placeholderTextColor={theme.textSecondary}
+        value={search}
+        onChangeText={setSearch}
+        onSubmitEditing={submitSearch}
+        returnKeyType="search"
+        autoCorrect={false}
+        style={{
+          color: theme.text,
+          backgroundColor: theme.backgroundElement,
+          borderRadius: 8,
+          padding: 12,
+        }}
+      />
+      <Pressable accessibilityRole="button" onPress={submitSearch}>
+        <ThemedText>{t("creators.searchAction")}</ThemedText>
+      </Pressable>
+    </View>
+  );
   if (loading) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
@@ -139,7 +196,7 @@ export default function CreatorsScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("creators.title")} />
+          {header}
           <View style={styles.grid}>
             {[0, 1].map((rowIndex) => (
               <View key={rowIndex} style={styles.gridRow}>
@@ -169,7 +226,7 @@ export default function CreatorsScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("creators.title")} />
+          {header}
           <EmptyState
             title={t("creators.loadErrorTitle")}
             detail={error}
@@ -198,7 +255,7 @@ export default function CreatorsScreen() {
             paddingRight: Math.max(insets.right, Spacing.four),
           },
         ]}
-        ListHeaderComponent={<ScreenHeader title={t("creators.title")} />}
+        ListHeaderComponent={header}
         ListHeaderComponentStyle={styles.listHeader}
         ListEmptyComponent={
           <EmptyState

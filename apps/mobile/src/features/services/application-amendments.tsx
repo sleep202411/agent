@@ -1,3 +1,4 @@
+import { TaskPaymentTermsField } from "./task-payment-terms-field";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -21,6 +22,7 @@ import {
   type AmendmentDecision,
 } from "./application-amendments-api";
 type Props = {
+  active?: boolean;
   crewId: string;
   applicationId: string;
   applicantId: string;
@@ -59,10 +61,12 @@ function Session(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.applicationId, true);
+  const [readRevision, setReadRevision] = useState(0);
   const [context, setContext] = useState<Awaited<ReturnType<typeof fetchAmendmentContext>>>(),
     [page, setPage] = useState<Awaited<ReturnType<typeof fetchApplicationAmendments>>>();
   const [error, setError] = useState<string>(),
     [draft, setDraft] = useState<{
+      paymentTerms: Terms["paymentTerms"];
       scope: string;
       fee: string;
       share: string;
@@ -73,7 +77,16 @@ function Session(
     [denied, setDenied] = useState(false),
     [saved, setSaved] = useState<ApplicationAmendment>(),
     [decision, setDecision] = useState<Extract<Request, { kind: "decision" }>>();
+  const readKey = `${props.active !== false}:${readRevision}`;
+  const [lastReadKey, setLastReadKey] = useState(readKey);
+  if (lastReadKey !== readKey) {
+    setLastReadKey(readKey);
+    setError(undefined);
+    setContext(undefined);
+    setPage(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void (async () => {
       const ctx = await fetchAmendmentContext(
@@ -110,13 +123,22 @@ function Session(
     props.reviewer,
     props.generation,
     props.cursor,
+    props.active,
+    readRevision,
   ]);
   const effective = context?.terms.items.find(
     (r) => r.version === context.terms.currentVersion && r.confirmedAt
   );
   const locked = op.busy || !!retry || denied || !!saved;
   const write = (request: Request) => {
-    if (!context || props.generation !== getAuthGeneration() || denied || saved) return;
+    if (
+      props.active === false ||
+      !context ||
+      props.generation !== getAuthGeneration() ||
+      denied ||
+      saved
+    )
+      return;
     void op.run(
       () => {
         setError(undefined);
@@ -142,13 +164,15 @@ function Session(
     );
   };
   const send = () => {
-    if (!context || !effective || !draft || !context.canPropose || locked) return;
+    if (props.active === false || !context || !effective || !draft || !context.canPropose || locked)
+      return;
     const share = proposalMinor(draft.share);
     const parsed = amendmentProposal.safeParse({
       id: uuid.v4(),
       expectedVersion: effective.version,
       expectedTaskVersion: context.taskVersion,
       scope: draft.scope,
+      paymentTerms: draft.paymentTerms,
       feeAmount: proposalMinor(draft.fee),
       currency: effective.currency,
       feePeriod: "project",
@@ -189,6 +213,11 @@ function Session(
       <ThemedText>
         {t("crewTerms.share")} · {(row.revenueShareBp / 100).toFixed(2)}%
       </ThemedText>
+      {row.paymentTerms && (
+        <ThemedText>
+          {t("taskPaymentTerms.label")}: {t(`taskPaymentTerms.${row.paymentTerms}`)}
+        </ThemedText>
+      )}
       {row.shareBasis && <ThemedText>{row.shareBasis}</ThemedText>}
     </View>
   );
@@ -198,6 +227,7 @@ function Session(
     context.taskVersion !== null &&
     props.cursor === null &&
     !page?.items.some((r) => ["pending", "awaiting_settlement"].includes(r.status));
+  if (props.active === false) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -220,7 +250,7 @@ function Session(
           {t("crewAmendments.saved")} · {t(`crewAmendments.status.${saved.status}`)}
         </ThemedText>
       )}
-      {retry && (
+      {retry && context && (
         <>
           <ThemedText>{t("crewAmendments.retryHelp")}</ThemedText>
           {action(t("crewAmendments.retry"), () => write(retry))}
@@ -234,6 +264,7 @@ function Session(
           t("crewAmendments.propose"),
           () =>
             setDraft({
+              paymentTerms: effective!.paymentTerms ?? null,
               scope: effective!.scope,
               fee: major(effective!.feeAmount),
               share: major(String(effective!.revenueShareBp)),
@@ -252,6 +283,11 @@ function Session(
           <ThemedText>
             {effective.currency} · {t("crewTerms.project")}
           </ThemedText>
+          <TaskPaymentTermsField
+            value={draft.paymentTerms ?? null}
+            onChange={(paymentTerms) => setDraft({ ...draft, paymentTerms })}
+            locked={locked}
+          />
           {(["scope", "fee", "share", "basis", "reason"] as const).map((key) => (
             <View key={key} style={{ gap: 6 }}>
               <ThemedText>{t(`crewAmendments.${key}`)}</ThemedText>
@@ -324,7 +360,7 @@ function Session(
           </View>
         );
       })}
-      {decision && !saved && !retry && (
+      {decision && context && page && !saved && !retry && (
         <>
           <ThemedText>
             {t("nativeAmendments.confirmDecision")
@@ -335,6 +371,7 @@ function Session(
           {action(t("report.cancel"), () => setDecision(undefined), locked)}
         </>
       )}
+      {!context && error && action(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {page?.nextCursor &&
         action(

@@ -42,3 +42,10 @@ it("surfaces upstream failures without defaulting to an invented column", async 
     "Forbidden"
   );
 });
+it("retains system keys without replacing saved workflow names", async () => {
+  for (const systemKey of ["open", "backlog", null]) {
+    const row = { ...state, systemKey, name: "Director review" };
+    vi.mocked(api.get).mockResolvedValue({ workflowStates: [row] });
+    expect(await fetchManualTaskWorkflows("crew", new AbortController().signal)).toEqual([row]);
+  }
+});

@@ -1,3 +1,9 @@
+import { assertTaskCreationRequired } from "./task-creation-required";
+import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
+import { taskWorkflowSchema } from "./task-workflow-api";
+import { taskOption } from "./task-options";
+import { taskMention } from "./task-mentions";
+import { taskDraftStorage, type TaskDraftStorage } from "./task-draft-storage";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { createTask, taskCreateInput } from "./task-create-api";
 import { fetchTaskCommentAccess } from "./task-comment-api";
@@ -14,7 +20,7 @@ import {
   type CanvasTaskPreview,
 } from "./canvas-task-import-api";
 export type TaskDraftInput = ReturnType<typeof taskCreateInput.parse>;
-export type TaskDraftReview = { context: string[]; assignees: string[]; customFields: string[] };
+export type TaskDraftReview = z.infer<typeof reviewSchema>;
 type DraftState = {
   id: number;
   state: "staged" | "creating" | "created" | "uncertain";
@@ -28,16 +34,102 @@ export type TaskDraft = DraftState &
     | { kind: "episode"; episodeId: string; title: string; plan: EpisodeTaskPlan }
     | { kind: "canvas"; preview: CanvasTaskPreview }
   );
-type Snapshot = { drafts: TaskDraft[]; busy: boolean; error?: string };
-/** Memory-only working drafts. Account generations never share a queue. */
-export function createTaskDraftSession(crewId: string, userId: string, generation: number) {
+type Snapshot = { drafts: TaskDraft[]; busy: boolean; error?: string; storageError?: string };
+const stateSchema = z.object({
+  id: z.number().int().positive(),
+  state: z.enum(["staged", "creating", "created", "uncertain"]),
+  taskId: z.string().min(1).optional(),
+  taskIds: z.array(z.string().min(1)).optional(),
+  error: z.string().optional(),
+});
+const planningOption = z.object({ id: z.string().uuid(), name: z.string() });
+const reviewSchema = z.object({
+  context: z.array(z.string()),
+  assignees: z.array(z.string()),
+  customFields: z.array(z.string()),
+  editor: z
+    .object({
+      planning: z.object({
+        labels: z.array(planningOption),
+        cycle: planningOption.nullable(),
+        episode: planningOption.nullable(),
+      }),
+      workflow: taskWorkflowSchema.nullable(),
+      parent: taskOption.nullable(),
+      blockers: z.array(taskOption),
+      assignees: z.array(taskMention),
+    })
+    .optional(),
+});
+const savedSchema = z.object({
+  version: z.literal(1),
+  drafts: z
+    .array(
+      z.union([
+        stateSchema.extend({
+          kind: z.literal("task"),
+          input: taskCreateInput,
+          review: reviewSchema,
+        }),
+        stateSchema.extend({
+          kind: z.literal("episode"),
+          episodeId: z.string().uuid(),
+          title: z.string(),
+          plan: episodeTaskPlan,
+        }),
+        stateSchema.extend({ kind: z.literal("canvas"), preview: canvasTaskPreview }),
+      ])
+    )
+    .refine((rows) => new Set(rows.map((row) => row.id)).size === rows.length),
+});
+/** Durable account/Crew queue; auth generations never share live operations. */
+export function createTaskDraftSession(
+  crewId: string,
+  userId: string,
+  generation: number,
+  storage: TaskDraftStorage = taskDraftStorage(crewId, userId)
+) {
   let snapshot: Snapshot = { drafts: [], busy: false },
     sequence = 0;
+  let unreadable = false;
+  const restore = () => {
+    try {
+      const raw = storage.read();
+      if (raw !== null) {
+        const saved = savedSchema.parse(JSON.parse(raw));
+        if (saved.drafts.some((row) => row.kind === "canvas" && row.preview.crewId !== crewId))
+          throw new Error("Task draft scope mismatch");
+        snapshot.drafts = saved.drafts.map((row) =>
+          row.state === "creating"
+            ? { ...row, state: row.kind === "task" ? "uncertain" : "staged" }
+            : row
+        );
+        sequence = Math.max(0, ...snapshot.drafts.map((row) => row.id));
+      }
+      unreadable = false;
+      snapshot.storageError = undefined;
+    } catch (cause) {
+      unreadable = true;
+      snapshot.storageError = cause instanceof Error ? cause.message : String(cause);
+    }
+  };
+  restore();
   const listeners = new Set<() => void>();
   const current = () => generation === getAuthGeneration();
   const update = (next: Snapshot) => {
     snapshot = next;
     listeners.forEach((fn) => fn());
+  };
+  const persist = () => {
+    if (unreadable) return false;
+    try {
+      storage.write(JSON.stringify({ version: 1, drafts: snapshot.drafts }));
+      if (snapshot.storageError) update({ ...snapshot, storageError: undefined });
+      return true;
+    } catch (cause) {
+      update({ ...snapshot, storageError: cause instanceof Error ? cause.message : String(cause) });
+      return false;
+    }
   };
   const change = (id: number, patch: Partial<DraftState>) =>
     update({
@@ -46,6 +138,29 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
     });
   return {
     getSnapshot: () => snapshot,
+    save: () => {
+      if (!current() || snapshot.busy) return false;
+      if (unreadable) {
+        restore();
+        update({ ...snapshot });
+        return !unreadable;
+      }
+      return persist();
+    },
+    edit(id: number, input: TaskDraftInput, review: TaskDraftReview) {
+      if (!current() || snapshot.busy || unreadable) return false;
+      const row = snapshot.drafts.find((row) => row.id === id);
+      if (!row || row.kind !== "task" || row.state !== "staged") return false;
+      update({
+        ...snapshot,
+        drafts: snapshot.drafts.map((row) =>
+          row.id === id
+            ? { ...row, input: taskCreateInput.parse(input), review: reviewSchema.parse(review) }
+            : row
+        ),
+      });
+      return persist();
+    },
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -53,7 +168,7 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
       };
     },
     stage(input: TaskDraftInput, review: TaskDraftReview) {
-      if (!current() || snapshot.busy) return;
+      if (!current() || snapshot.busy || unreadable) return false;
       update({
         ...snapshot,
         error: undefined,
@@ -63,18 +178,15 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
             id: ++sequence,
             kind: "task",
             input: taskCreateInput.parse(input),
-            review: {
-              context: [...review.context],
-              assignees: [...review.assignees],
-              customFields: [...review.customFields],
-            },
+            review: reviewSchema.parse(review),
             state: "staged",
           },
         ],
       });
+      return persist();
     },
     stageEpisode(episodeId: string, title: string, plan: EpisodeTaskPlan) {
-      if (!current() || snapshot.busy) return false;
+      if (!current() || snapshot.busy || unreadable) return false;
       z.string().uuid().parse(episodeId);
       const parsed = episodeTaskPlan.parse(plan);
       // A retry must retain the original versioned command. Never replace a queued batch.
@@ -95,10 +207,10 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           },
         ],
       });
-      return true;
+      return persist();
     },
     stageCanvas(preview: CanvasTaskPreview) {
-      if (!current() || snapshot.busy) return false;
+      if (!current() || snapshot.busy || unreadable) return false;
       const parsed = canvasTaskPreview.parse(preview);
       if (parsed.crewId !== crewId) throw new Error("Canvas import scope mismatch");
       const count = canvasScenes(parsed).length;
@@ -117,17 +229,19 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           { id: ++sequence, kind: "canvas", preview: parsed, state: "staged" },
         ],
       });
-      return true;
+      return persist();
     },
     remove(id: number) {
-      if (!current() || snapshot.busy) return;
+      if (!current() || snapshot.busy || unreadable) return false;
       update({ ...snapshot, drafts: snapshot.drafts.filter((row) => row.id !== id) });
+      return persist();
     },
     async createAll(isActive: () => boolean) {
       if (
         !current() ||
         !isActive() ||
         snapshot.busy ||
+        snapshot.storageError ||
         snapshot.drafts.some((row) => row.state === "uncertain")
       )
         return;
@@ -140,12 +254,21 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           const access = await fetchTaskCommentAccess(crewId, userId, new AbortController().signal);
           if (!current() || !isActive()) break;
           if (!access.canManage) throw new Error("Task management permission is required.");
+          if (row.kind === "task") {
+            assertTaskCreationRequired(row.input);
+            assertTaskCreationDeadline(row.input.dueAt);
+          }
           change(row.id, { state: "creating" });
+          if (!persist()) {
+            change(row.id, { state: "staged" });
+            break;
+          }
           try {
             if (row.kind === "canvas") {
               const result = await applyCanvasTaskImport(crewId, row.preview, generation);
               if (!current()) break;
               change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              if (!persist()) break;
               continue;
             }
             if (row.kind === "episode") {
@@ -157,18 +280,24 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
               );
               if (!current()) break;
               change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              if (!persist()) break;
               continue;
             }
             const result = await createTask(crewId, row.input);
             if (!current()) break;
             // Keep the receipt if the screen backgrounded while this write was in flight.
             change(row.id, { state: "created", taskId: result.id });
+            if (!persist()) break;
           } catch (cause) {
             if (current())
               change(row.id, {
-                state: row.kind !== "task" ? "staged" : "uncertain",
+                state:
+                  row.kind !== "task" || cause instanceof TaskCreationDeadlineError
+                    ? "staged"
+                    : "uncertain",
                 error: cause instanceof Error ? cause.message : String(cause),
               });
+            if (current()) persist();
             break; // Episode commands are replayable; single-task writes are not.
           }
         }

@@ -392,6 +392,7 @@ export class CopilotController {
 
       const result = streamText({
         model: createCopilotModel(),
+        providerOptions: { alibaba: { enableThinking: false } },
         system,
         messages: modelMessages,
         tools: storyAuthoringContext

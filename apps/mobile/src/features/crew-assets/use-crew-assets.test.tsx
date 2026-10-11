@@ -15,6 +15,7 @@ function Probe({ owner, role }: { owner?: string; role: AssetQuery }) {
         <span key={i.id}>{i.name}</span>
       ))}
       {state.error}
+      {state.accessDenied && <span>Denied</span>}
       <button onClick={state.loadMore}>more</button>
       <button onClick={state.retry}>retry</button>
     </div>
@@ -100,15 +101,38 @@ it("continues through an ACL-filtered empty page", async () => {
   expect(h.load.mock.calls[1][2]).toBe("hidden-boundary");
   expect(host.textContent).toContain("First");
 });
-it("clears revoked data and restarts pagination on explicit retry", async () => {
-  h.load
-    .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
-    .mockRejectedValueOnce(Object.assign(new Error("Access revoked"), { status: 403 }))
-    .mockResolvedValueOnce({ items: [], nextCursor: null });
+it.each([401, 403, 404, 410])(
+  "clears revoked data for %s and restarts pagination on explicit retry",
+  async (status) => {
+    h.load
+      .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
+      .mockRejectedValueOnce(Object.assign(new Error("Access revoked"), { status }))
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    await render("1");
+    await click(0);
+    expect(host.textContent).not.toContain("First");
+    expect(host.textContent).toContain("Access revoked");
+    expect(host.textContent).toContain("Denied");
+    await click(1);
+    expect(h.load.mock.calls[2][2]).toBeNull();
+    expect(host.textContent).not.toContain("Denied");
+  }
+);
+
+it("does not restore stale rows while revalidating a return visit", async () => {
+  let finish!: (value: unknown) => void;
+  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
   await render("1");
-  await click(0);
+  expect(host.textContent).toContain("First");
+  await render();
+  await render("1");
   expect(host.textContent).not.toContain("First");
-  expect(host.textContent).toContain("Access revoked");
-  await click(1);
-  expect(h.load.mock.calls[2][2]).toBeNull();
+  await act(async () => finish({ items: [], nextCursor: null }));
+  expect(host.textContent).not.toContain("First");
+  expect(h.load).toHaveBeenCalledTimes(2);
 });

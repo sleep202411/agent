@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -11,7 +11,8 @@ export default function InvitationManagementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const auth = useAuth(),
     gate = useAuthGate(),
-    active = useScreenActive();
+    active = useScreenActive(),
+    focused = useIsFocused();
   const theme = useTheme(),
     t = useTranslations(),
     router = useRouter();
@@ -36,8 +37,9 @@ export default function InvitationManagementScreen() {
         >
           <ThemedText>{t("inbox.signIn")}</ThemedText>
         </Pressable>
-      ) : active && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
+      ) : focused && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
         <InvitationManagement
+          active={active}
           key={`${id}:${auth.generation}`}
           crewId={id}
           userId={userId}
