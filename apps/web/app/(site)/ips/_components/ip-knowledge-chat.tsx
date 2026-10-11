@@ -71,9 +71,9 @@ export function IpKnowledgeChat({ ipId }: IpKnowledgeChatProps) {
         setAnswer(reply.answer);
         setCitedIds(reply.citedDocumentIds || []);
       }
-    } catch {
+    } catch (cause) {
       if (!controller.signal.aborted && abortControllerRef.current === controller) {
-        setError(t("error"));
+        setError(cause instanceof Error && cause.message ? cause.message : t("error"));
       }
     } finally {
       if (abortControllerRef.current === controller) {
