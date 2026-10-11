@@ -8,7 +8,7 @@ import { contentGpsSourceSnapshotSql } from './content-gps-source-sql';
 export function contentGpsSearchSql(
   input: ContentGpsSearchRequest,
   filters: { accessible: Prisma.Sql; matching: Prisma.Sql },
-  analysisVersion: string,
+  analysisVersion: string | null,
 ) {
   const { query, map } = input;
   const location = query.location;
