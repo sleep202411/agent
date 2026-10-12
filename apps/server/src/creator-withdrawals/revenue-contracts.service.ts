@@ -17,6 +17,7 @@ import type { AdminActor } from '../admin-auth';
 import { PrismaService } from '../infra/db/db.module';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { CURRENT_CELL } from '../common/region/current-cell';
 import { lockLedgerReceipt } from '../crews/earnings/ledger-lock';
 import { requireRevenueAdmin } from './revenue-admin-access';
@@ -40,6 +41,7 @@ export class RevenueContractsService
   ) {}
 
   onApplicationBootstrap() {
+    if (this.stopped || this.timer || !backgroundTasksEnabled()) return;
     const run = () => {
       void this.drainCleanup().catch(() =>
         this.logger.error('Revenue contract cleanup sweep failed.'),
@@ -55,7 +57,7 @@ export class RevenueContractsService
     await this.draining?.catch(() => undefined);
   }
   async drainCleanup() {
-    if (this.stopped) return;
+    if (this.stopped || !backgroundTasksEnabled()) return;
     if (this.draining) return this.draining;
     this.draining = this.sweep().finally(() => {
       this.draining = null;
@@ -67,7 +69,7 @@ export class RevenueContractsService
       { object_key: string }[]
     >`SELECT object_key FROM crew_revenue_contract_uploads WHERE next_attempt_at<=now() ORDER BY next_attempt_at,object_key LIMIT 50`;
     for (const row of rows) {
-      if (this.stopped) break;
+      if (this.stopped || !backgroundTasksEnabled()) break;
       try {
         await this.cleanupObject(row.object_key);
       } catch {

@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import type { MediaStorageProvider, Prisma } from '@prisma/client';
 import type { AdminActor } from '../admin-auth';
+import { backgroundTasksEnabled } from '../common/background-tasks';
 import { CURRENT_CELL } from '../common/region/current-cell';
 import { PrismaService } from '../infra/db/db.module';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
@@ -47,6 +48,7 @@ export class WithdrawalProofsService
   ) {}
 
   onApplicationBootstrap() {
+    if (this.stopped || this.timer || !backgroundTasksEnabled()) return;
     const run = () => {
       void this.drainCleanup().catch(() =>
         this.logger.error('Withdrawal proof cleanup failed.'),
@@ -62,7 +64,7 @@ export class WithdrawalProofsService
     await this.draining?.catch(() => undefined);
   }
   async drainCleanup() {
-    if (this.stopped) return;
+    if (this.stopped || !backgroundTasksEnabled()) return;
     if (this.draining) return this.draining;
     this.draining = this.sweep().finally(() => {
       this.draining = null;
@@ -74,7 +76,7 @@ export class WithdrawalProofsService
       { id: string }[]
     >`SELECT id FROM creator_withdrawal_proofs WHERE next_attempt_at<=now() ORDER BY next_attempt_at,id LIMIT 50`;
     for (const row of rows) {
-      if (this.stopped) break;
+      if (this.stopped || !backgroundTasksEnabled()) break;
       try {
         await this.cleanup(row.id);
       } catch {
