@@ -1,11 +1,11 @@
+import { DIRECT_POINTS_GRANT } from '../admin-auth/admin-points-policy';
 /**
  * Admin endpoints for legacy (Java) points. Mounted at
  * `/admin/legacy-points` — the admin-ui proxies browser → Next route
  * handler → here. Auth + audit mirror BillingAdminController exactly.
  *
- * Permission: `user.read` (lookup/records) / `user.write` (grant) — the
- * 用户管理 domain's own keys, so customer service can manage end-user
- * points without billing write access.
+ * Permission: `user.read` for lookup/records. Manual grants additionally
+ * require `user.write` and the identity-bound Pax direct-grant capability.
  */
 import {
   Body,
@@ -149,7 +149,7 @@ export class LegacyPointsAdminController {
     };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.UserWrite)
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.UserWrite, DIRECT_POINTS_GRANT)
   @Post('grant')
   async grant(
     @CurrentAdmin() admin: AdminActor,

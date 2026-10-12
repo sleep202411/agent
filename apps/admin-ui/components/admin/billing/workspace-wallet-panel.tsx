@@ -28,7 +28,7 @@ export function BillingWorkspaceWalletPanel({
 }: {
   siteLabel: string;
   databaseLabel: string;
-  /** billing.write — gates the 加/扣积分 action (server enforces regardless). */
+  /** Pax-only direct-grant capability — gates the 加/扣积分 action (server enforces regardless). */
   canWrite: boolean;
   initialRows: AdminWorkspaceRow[];
   initialError?: string | null;
@@ -160,7 +160,11 @@ export function BillingWorkspaceWalletPanel({
                     variant="outline"
                     size="sm"
                     disabled={loading || !canWrite || row.status !== "active"}
-                    title={canWrite ? undefined : "需要 billing.write 权限"}
+                    title={
+                      canWrite
+                        ? undefined
+                        : "Only the designated points administrator may grant points directly."
+                    }
                     onClick={() => setTarget(row)}
                   >
                     调整积分

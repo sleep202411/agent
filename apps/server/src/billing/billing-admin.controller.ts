@@ -1,3 +1,4 @@
+import { DIRECT_POINTS_GRANT } from '../admin-auth/admin-points-policy';
 import {
   Body,
   Controller,
@@ -137,7 +138,10 @@ export class BillingAdminController {
     };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
+  @RequireAdminPermissions(
+    ADMIN_PERMISSION_KEYS.BillingWrite,
+    DIRECT_POINTS_GRANT,
+  )
   @Post('wallets/workspace-credits')
   async createWorkspaceWalletCredit(
     @CurrentAdmin() admin: AdminActor,

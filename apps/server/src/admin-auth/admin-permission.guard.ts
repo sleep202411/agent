@@ -11,6 +11,7 @@ import {
 } from './admin-auth.decorator';
 import { ADMIN_ROLE_KEYS } from './admin-auth.constants';
 import type { AdminAuthenticatedRequest } from './admin-auth.types';
+import { DIRECT_POINTS_GRANT, isPointsOperator } from './admin-points-policy';
 
 @Injectable()
 export class AdminPermissionGuard implements CanActivate {
@@ -36,6 +37,14 @@ export class AdminPermissionGuard implements CanActivate {
         code: 'ADMIN_CONTEXT_MISSING',
         msg: '后台登录状态异常，请重新登录。',
       });
+    }
+    if (
+      required?.includes(DIRECT_POINTS_GRANT) &&
+      !isPointsOperator(actor, 'pax')
+    ) {
+      throw new ForbiddenException(
+        'Only the designated points administrator may grant points directly. Submit a creator request for producer approval.',
+      );
     }
     if (actor.roleKeys?.includes(ADMIN_ROLE_KEYS.SuperAdmin)) return true;
     const granted = new Set(actor.permissions);

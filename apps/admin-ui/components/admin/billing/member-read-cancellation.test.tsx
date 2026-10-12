@@ -109,10 +109,11 @@ const workspace = {
   heldBalance: "0",
 } as AdminWorkspaceRow;
 const directory = () => <MemberDirectoryPanel canReadWorkspaces={false} canWriteBilling={false} />;
-const drawer = (id = "alice", canWrite = false) => (
+const drawer = (id = "alice", canWrite = false, canGrantPoints = canWrite) => (
   <MemberWorkspacesDrawer
     member={{ userId: id, nickName: id, email: null, phone: null }}
     canWrite={canWrite}
+    canGrantPoints={canGrantPoints}
     onClose={() => undefined}
   />
 );
@@ -260,3 +261,14 @@ it.each(["调整积分", "工作区会员"])(
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   }
 );
+
+it("keeps membership access without allowing direct points grants", async () => {
+  fetchMock.mockResolvedValueOnce(response({ items: [workspace] }));
+  await render(drawer("alice", true, false));
+  const button = (label: string) =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent?.trim() === label)!;
+  expect(button("调整积分").disabled).toBe(true);
+  expect(button("工作区会员").disabled).toBe(false);
+  await act(async () => button("调整积分").click());
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
+});
