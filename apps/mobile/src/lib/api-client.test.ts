@@ -430,3 +430,46 @@ it("keeps a useful fallback when a validation list has no message strings", asyn
     api.get("/certificates/verify", { service: "aurora", retry: false })
   ).rejects.toMatchObject({ message: "HTTP 400" });
 });
+
+it.each(["/crew-qualification-catalog", "/crew-tasks/task-1"])(
+  "authenticates native Nest requests without a browser cookie: %s",
+  async (path) => {
+    setApiTokenProvider(() => ({ name: "satoken", value: "native-session" }));
+    fetchMock.mockImplementation(
+      async (_url, init) =>
+        new Response(
+          JSON.stringify(
+            init.headers.authorization === "Bearer native-session"
+              ? { skills: ["FD-I"] }
+              : { message: "No session cookie" }
+          ),
+          { status: init.headers.authorization === "Bearer native-session" ? 200 : 401 }
+        )
+    );
+    await expect(api.get(path, { service: "aurora" })).resolves.toEqual({ skills: ["FD-I"] });
+  }
+);
+
+it("keeps Java authentication separate from Nest bearer authentication", async () => {
+  setApiTokenProvider(() => ({ name: "satoken", value: "native-session" }));
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 200, data: [] })));
+  await api.get("/user/levels/options", { service: "content" });
+  expect(fetchMock.mock.calls[0][1].headers.satoken).toBe("native-session");
+  expect(fetchMock.mock.calls[0][1].headers.authorization).toBeUndefined();
+});
+
+it("does not sign out the active user after an overridden Nest credential fails", async () => {
+  const unauthorized = vi.fn();
+  setUnauthorizedHandler(unauthorized);
+  setApiTokenProvider(() => ({ name: "satoken", value: "current" }));
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 })
+  );
+  await expect(
+    api.get("/crew-qualification-catalog", {
+      service: "aurora",
+      headers: { Authorization: "Bearer other" },
+    })
+  ).rejects.toMatchObject({ status: 401 });
+  expect(unauthorized).not.toHaveBeenCalled();
+});

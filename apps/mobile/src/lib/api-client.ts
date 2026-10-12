@@ -253,6 +253,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   // Read at request time — the user can switch language while the app runs,
   // and the backends localize responses off these headers.
   const activeLocale = getLocale();
+  const isAurora = resolveService(path, service ?? "auto") === "aurora";
   const headers: Record<string, string> = {
     "accept-language": activeLocale,
     lan: activeLocale,
@@ -260,6 +261,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     // (e.g. `satoken`), NOT from `Authorization: Bearer`. Browsers get away
     // with the cookie; on native we must send the named header explicitly.
     ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
+    // Nest's AuthGuard accepts bearer credentials independently of native cookies.
+    ...(token && isAurora ? { authorization: `Bearer ${token.value}` } : {}),
     ...(isForm
       ? { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" }
       : data !== undefined
@@ -364,6 +367,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     )
       return;
     if (token && headers[token.name.toLowerCase()] !== token.value) return;
+    if (isAurora && headers.authorization !== (token ? `Bearer ${token.value}` : undefined)) return;
     notifyUnauthorized();
   };
 
@@ -460,6 +464,7 @@ export async function postApiStream(
   try {
     current();
     const locale = getLocale();
+    const isAurora = resolveService(path, config.service ?? "auto") === "aurora";
     const response = await withCancellation(
       streamFetch(buildApiUrl(path, { service: config.service }), {
         method: "POST",
@@ -471,6 +476,8 @@ export async function postApiStream(
           "accept-language": locale,
           lan: locale,
           ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
+          // Nest's AuthGuard accepts bearer credentials independently of native cookies.
+          ...(token && isAurora ? { authorization: `Bearer ${token.value}` } : {}),
         },
         body: JSON.stringify(config.data),
       }),

@@ -128,3 +128,17 @@ it("stops a stalled fetch when the caller cancels", async () => {
   await assertion;
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+it.each(["aurora", "studio"] as const)(
+  "uses the correct credentials for %s streams",
+  async (service) => {
+    fetcher.mockResolvedValue(
+      new Response("data: done\n\n", { headers: { "content-type": "text/event-stream" } })
+    );
+    await postApiStream("/test", { ...options(), service }, vi.fn());
+    expect(fetcher.mock.calls[0][1].headers.satoken).toBe("current");
+    expect(fetcher.mock.calls[0][1].headers.authorization).toBe(
+      service === "aurora" ? "Bearer current" : undefined
+    );
+  }
+);
