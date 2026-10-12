@@ -26,8 +26,17 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     h.keys.push(queryKey);
     return {
-      data: queryKey.includes("options") ? [{ id: 13, name: "AI Producer" }] : h.pending,
+      data: queryKey.includes("options")
+        ? [
+            { id: 13, name: "AI Producer", type: 4 },
+            { id: 1, name: "FD-I · 附属创作者", type: 1 },
+            { id: 30, name: "City Partner", type: 5 },
+            { id: 12, name: "Free viewing", type: 2 },
+          ]
+        : h.pending,
       isLoading: false,
+      isPending: false,
+      isError: false,
       refetch: vi.fn(),
     };
   },
@@ -68,6 +77,32 @@ beforeEach(() => {
   h.submit.mockResolvedValue({});
 });
 afterEach(() => vi.clearAllMocks());
+it("groups apply options by Partner / AI Director / Skill and hides privileges", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<LevelApplyDialog open onOpenChange={() => {}} />));
+    expect(document.querySelector('button[aria-label="help"]')).toBeTruthy();
+    const level = document.querySelector('[role="combobox"]')!;
+    await act(async () =>
+      level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+    );
+    const body = document.body.textContent ?? "";
+    expect(body).toContain("levels.groups.partner");
+    expect(body).toContain("levels.groups.aiDirector");
+    expect(body).toContain("levels.groups.skill");
+    expect(body).toContain("City Partner");
+    expect(body).toContain("FD-I · 附属创作者");
+    expect(body).toContain("AI Producer");
+    expect(body).not.toContain("Free viewing");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
 it.each(["resolve", "reject", "current"] as const)(
   "upload completion belongs to its dialog opening: %s",
   async (outcome) => {
@@ -150,7 +185,7 @@ it.each([
         level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
       );
       const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-        (item) => item.textContent === "producerName"
+        (item) => item.textContent === "AI Producer"
       )!;
       await act(async () => option.click());
     }

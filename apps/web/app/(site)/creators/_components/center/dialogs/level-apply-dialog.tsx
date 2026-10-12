@@ -6,7 +6,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CertificationGuide } from "../certification-guide";
-import { certificationEntry, certificationGroup } from "../certification-guide-data";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useQuery } from "@tanstack/react-query";
 import { IconLoader2, IconPaperclip, IconUpload, IconX } from "@tabler/icons-react";
@@ -26,8 +25,8 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import {
   Select,
   SelectContent,
-  SelectItem,
   SelectGroup,
+  SelectItem,
   SelectLabel,
   SelectTrigger,
   SelectValue,
@@ -50,6 +49,7 @@ import {
   USER_LEVEL_APPLY_STATUS,
   type UserLevelOption,
 } from "@/src/services/user-level-apply";
+import { groupUserLevelOptions, userLevelDisplayCopy } from "@/src/lib/user-level-catalog";
 
 const EXTRA_MAX = 300;
 
@@ -90,7 +90,6 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   }, []);
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
-  const guide = useTranslations("certificationGuide");
   const locale = useLocale() as Locale;
   const { user } = useCurrentUser();
   const heldLevelIds = new Set((user?.raw.levels ?? []).map((level) => Number(level.id)));
@@ -137,8 +136,10 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     const rows = levelsQuery.data ?? [];
     const filtered =
       lockedLevelId == null ? rows : rows.filter((l) => Number(l.id) === lockedLevelId);
-    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+    return groupUserLevelOptions(filtered).flatMap((row) => row.levels);
   }, [levelsQuery.data, lockedLevelId]);
+
+  const groupedLevels = useMemo(() => groupUserLevelOptions(levels), [levels]);
 
   const pendingLevelIds = useMemo(() => {
     const ids = new Set<number>();
@@ -165,6 +166,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     () => levels.find((l) => String(l.id) === levelId) ?? null,
     [levelId, levels]
   );
+  const selectedLevelCopy = selectedLevel ? userLevelDisplayCopy(selectedLevel, t) : null;
   const selectedLevelPending = selectedLevel
     ? !heldLevelIds.has(selectedLevel.id) && pendingLevelIds.has(selectedLevel.id)
     : false;
@@ -319,7 +321,9 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
             <FieldGroup className="gap-5">
               <Field>
                 <div className="flex items-center gap-1">
-                  <FieldLabel required>{t("levels.apply.levelLabel")}</FieldLabel>
+                  <FieldLabel required className="mb-0">
+                    {t("levels.apply.levelLabel")}
+                  </FieldLabel>
                   <CertificationGuide />
                 </div>
                 <Select
@@ -336,36 +340,31 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                         {t("levels.apply.levelEmpty")}
                       </SelectItem>
                     ) : (
-                      ["partner", "director", "skill", "other"].map((group) => {
-                        const options = levels.filter(
-                          (level) => certificationGroup(level.name) === group
-                        );
-                        if (!options.length) return null;
-                        return (
-                          <SelectGroup key={group}>
-                            <SelectLabel>{guide(group)}</SelectLabel>
-                            {options.map((level) => {
-                              const entry = certificationEntry(level.name);
-                              const name = entry ? guide(`${entry}Name`) : level.name;
-                              const pending = pendingLevelIds.has(level.id);
-                              const held = heldLevelIds.has(level.id);
-                              return (
-                                <SelectItem
-                                  key={level.id}
-                                  value={String(level.id)}
-                                  disabled={pending || held}
-                                >
-                                  {held
-                                    ? t("levels.apply.levelHeldOption", { name })
-                                    : pending
-                                      ? t("levels.apply.levelPendingOption", { name })
-                                      : name}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectGroup>
-                        );
-                      })
+                      groupedLevels.map((group) => (
+                        <SelectGroup key={group.group}>
+                          <SelectLabel className="px-2 py-1.5 text-[10px] font-semibold tracking-wide text-muted-foreground">
+                            {t(`levels.groups.${group.group}`)}
+                          </SelectLabel>
+                          {group.levels.map((level) => {
+                            const pending = pendingLevelIds.has(level.id);
+                            const held = heldLevelIds.has(level.id);
+                            const name = userLevelDisplayCopy(level, t).name;
+                            return (
+                              <SelectItem
+                                key={level.id}
+                                value={String(level.id)}
+                                disabled={pending || held}
+                              >
+                                {held
+                                  ? t("levels.apply.levelHeldOption", { name })
+                                  : pending
+                                    ? t("levels.apply.levelPendingOption", { name })
+                                    : name}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
+                      ))
                     )}
                   </SelectContent>
                 </Select>
@@ -376,9 +375,9 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                   <FieldDescription className="mt-1.5 text-[11px] leading-relaxed text-amber-400">
                     {t("levels.apply.levelPendingHint")}
                   </FieldDescription>
-                ) : selectedLevel?.description ? (
+                ) : selectedLevelCopy?.description ? (
                   <FieldDescription className="mt-1.5 line-clamp-3 text-[11px] leading-relaxed">
-                    {selectedLevel.description}
+                    {selectedLevelCopy.description}
                   </FieldDescription>
                 ) : null}
               </Field>

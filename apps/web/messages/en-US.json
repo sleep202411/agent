@@ -2308,8 +2308,78 @@
     },
     "levels": {
       "heading": "FizzDragon Passport",
+      "catalogHelp": "View all verification levels",
+      "catalogTitle": "FizzDragon verification catalog",
       "emptyOwner": "No FD level earned yet. Complete projects and submit for review to unlock badges.",
       "emptyVisitor": "No FD level yet.",
+      "groups": {
+        "partner": "A-Partner Verification",
+        "aiDirector": "B-AI Director Verification",
+        "skill": "C-Skill Verification",
+        "other": "Other"
+      },
+      "items": {
+        "cityPartner": {
+          "name": "City Partner",
+          "description": "Represent FizzDragon commercial products such as education, compute, and content distribution monetization."
+        },
+        "distributor": {
+          "name": "Distributor",
+          "description": "Globally certified distributor who helps FizzDragon platform content reach worldwide markets."
+        },
+        "instructor": {
+          "name": "Instructor",
+          "description": "FizzDragon-certified instructor who can teach at institutions worldwide on behalf of FizzDragon."
+        },
+        "opcFounder": {
+          "name": "OPC Founder",
+          "description": "FizzDragon-certified OPC currently in incubation."
+        },
+        "affiliateCreator": {
+          "name": "FD-I·Entry Creator - Gacha Artist",
+          "description": "Entry-level creator. Understands core prompting and platform tools, and can generate across styles and camera language."
+        },
+        "juniorCreator": {
+          "name": "FD-II·Junior Creator - Rough Cut",
+          "description": "Entry-level creator. Builds on FD-I with rough cuts of generated footage."
+        },
+        "seniorCreator": {
+          "name": "FD-III·Senior Creator - AI Short Drama",
+          "description": "Mid-level creator. Builds on FD-II with fine cuts and can independently produce short-form drama."
+        },
+        "masterCreator": {
+          "name": "FD-IV·Master Creator - AI Web Film",
+          "description": "Advanced creator. Can independently produce web-feature-length work."
+        },
+        "distinguishedCreator": {
+          "name": "FD-V·Distinguished Creator - AI Theatrical Film",
+          "description": "Advanced creator. Can independently produce theatrical-feature-level work."
+        },
+        "aiProducer": {
+          "name": "AI Producer",
+          "description": "AI producer who can coordinate creators across a crew, communicate with clients and management, and deliver."
+        },
+        "artDirector": {
+          "name": "Art Director",
+          "description": "Art director who can produce art assets."
+        },
+        "director": {
+          "name": "Director",
+          "description": "Director. Need not have AI production skills; brings years of directing experience, taste, and quality control to land an artistic project with the full crew."
+        },
+        "editor": {
+          "name": "Editor",
+          "description": "Editor who can cut AI footage into a finished piece."
+        },
+        "musicComposer": {
+          "name": "Music Composer",
+          "description": "Composer who can supply film/TV music assets or score directly."
+        },
+        "scriptwriter": {
+          "name": "Scriptwriter",
+          "description": "Screenwriter."
+        }
+      },
       "apply": {
         "cta": "Apply",
         "emptyCta": "Apply for Certification",

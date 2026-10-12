@@ -6,14 +6,14 @@ export const certificationGroups = [
 ] as const;
 export const certificationAliases: Record<string, string[]> = {
   city: ["City Partner", "城市合伙人", "城市合夥人"],
-  distributor: ["Distributor", "发行人", "發行人"],
+  distributor: ["Distributor", "分销商", "分銷商", "发行人", "發行人"],
   instructor: ["Instructor", "讲师", "講師"],
-  opc: ["OPC Founder", "OPC 创始人", "OPC 創辦人"],
-  producer: ["AI Producer", "AI 制片人", "AI 製片人"],
-  art: ["Art Director", "美术导演", "美術導演"],
+  opc: ["OPC Founder", "OPC创始人", "OPC創始人", "OPC 创始人", "OPC 創辦人"],
+  producer: ["AI Producer", "AI制片人", "AI製片人", "AI 制片人", "AI 製片人"],
+  art: ["Art Director", "艺术总监", "藝術總監", "美术导演", "美術導演"],
   director: ["Director", "导演", "導演"],
   editor: ["Editor", "Video Editor", "剪辑师", "剪輯師"],
-  music: ["Music Composer", "配乐师", "配樂師"],
+  music: ["Music Composer", "音乐作曲", "音樂作曲", "配乐师", "配樂師"],
   writer: ["Writer", "Scriptwriter", "Scriptwritter", "编剧", "編劇"],
 };
 export function certificationEntry(name: string): string | undefined {
