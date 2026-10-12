@@ -563,6 +563,79 @@ describe('CrewAgreementsService', () => {
     expect(t.provider.getEmbeddedSigningLink).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { actor: MEMBER_ID, permissions: [] },
+    { actor: 'other-member', permissions: ['agreements.view_own'] },
+  ])(
+    'rejects unauthorized sync before contacting BoldSign: $actor',
+    async ({ actor, permissions }) => {
+      const t = build();
+      t.authorization.requireMembership.mockResolvedValue({
+        crewId: CREW_ID,
+        memberId: 'member',
+        userId: actor,
+        isOwner: false,
+        policyKeys: [],
+        permissions,
+      });
+      t.prisma.crewAgreement.findUnique.mockResolvedValue(
+        agreement({
+          providerDocumentId: 'document-1',
+          status: CrewAgreementStatus.sent,
+        }),
+      );
+      await expect(t.service.sync(AGREEMENT_ID, actor)).rejects.toThrow(
+        'You cannot access this agreement.',
+      );
+      expect(t.provider.getDocumentStatus).not.toHaveBeenCalled();
+      expect(t.prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([CrewAgreementStatus.sent, CrewAgreementStatus.signed])(
+    'rejects sync when viewing permission is revoked during the provider read (%s)',
+    async (status) => {
+      const t = build();
+      const current = agreement({ providerDocumentId: 'document-1', status });
+      t.prisma.crewAgreement.findUnique.mockResolvedValue(current);
+      t.prisma.crewAgreement.findUniqueOrThrow.mockResolvedValue(current);
+      t.provider.getDocumentStatus.mockImplementation(() => {
+        t.authorization.requireMembership.mockResolvedValue({
+          crewId: CREW_ID,
+          memberId: 'member',
+          userId: MEMBER_ID,
+          isOwner: false,
+          policyKeys: [],
+          permissions: [],
+        });
+        return Promise.resolve('Completed');
+      });
+      await expect(t.service.sync(AGREEMENT_ID, MEMBER_ID)).rejects.toThrow(
+        'You cannot access this agreement.',
+      );
+      expect(t.prisma.crewAgreement.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreementArchiveJob.upsert).not.toHaveBeenCalled();
+      expect(t.notifications.send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('allows a manager to sync another member agreement', async () => {
+    const t = build();
+    const current = agreement({
+      providerDocumentId: 'document-1',
+      status: CrewAgreementStatus.signed,
+    });
+    t.prisma.crewAgreement.findUnique.mockResolvedValue(current);
+    t.prisma.crewAgreement.findUniqueOrThrow.mockResolvedValue(current);
+    await expect(t.service.sync(AGREEMENT_ID, OWNER_ID)).resolves.toMatchObject(
+      {
+        id: AGREEMENT_ID,
+        capabilities: { sign: false },
+      },
+    );
+    expect(t.provider.getDocumentStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('maps a completed BoldSign document to a signed agreement', async () => {
     const t = build();
     const sent = agreement({

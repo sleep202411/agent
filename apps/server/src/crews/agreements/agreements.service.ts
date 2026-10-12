@@ -393,8 +393,13 @@ export class CrewAgreementsService {
       agreement.crewId,
       userId,
     );
-    const canManage = context.permissions.includes('agreements.manage');
-    if (!canManage && agreement.memberUserId !== userId) {
+    let permissions = context.permissions;
+    let canManage = permissions.includes('agreements.manage');
+    if (
+      !canManage &&
+      (agreement.memberUserId !== userId ||
+        !permissions.includes('agreements.view_own'))
+    ) {
       throw new ForbiddenException({
         message: 'You cannot access this agreement.',
       });
@@ -417,6 +422,21 @@ export class CrewAgreementsService {
       const current = await tx.crewAgreement.findUniqueOrThrow({
         where: { id: agreement.id },
       });
+      // Provider reads can be slow; permission revocation during that call
+      // must prevent both synchronization writes and disclosure of the result.
+      permissions = (
+        await this.authorization.requireMembership(current.crewId, userId, tx)
+      ).permissions;
+      canManage = permissions.includes('agreements.manage');
+      if (
+        !canManage &&
+        (current.memberUserId !== userId ||
+          !permissions.includes('agreements.view_own'))
+      ) {
+        throw new ForbiddenException({
+          message: 'You cannot access this agreement.',
+        });
+      }
       if (
         isTerminalAgreementStatus(current.status) ||
         current.providerDocumentId !== agreement.providerDocumentId ||
@@ -457,7 +477,8 @@ export class CrewAgreementsService {
     return agreementDto(
       updated,
       canManage,
-      updated.memberUserId === userId &&
+      permissions.includes('agreements.view_own') &&
+        updated.memberUserId === userId &&
         updated.status === CrewAgreementStatus.sent,
     );
   }
