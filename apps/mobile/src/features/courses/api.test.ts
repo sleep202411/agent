@@ -6,6 +6,15 @@ vi.mock("@/config", () => ({ appEnv: { assets: {} }, resolveAssetUrl: vi.fn() })
 const signal = () => new AbortController().signal;
 const course = { id: 7, title: "Film", videos: [{ id: 8, title: "Lesson" }] };
 beforeEach(() => vi.resetAllMocks());
+it("retains catalogue categories and the Web default for unclassified courses", async () => {
+  const types = [1, "3", 2, undefined, null, "unknown", 0, 99];
+  vi.mocked(api.get).mockResolvedValueOnce(
+    types.map((type, index) => ({ ...course, id: index + 1, type }))
+  );
+  expect((await listCourses("en-US", signal())).map((item) => item.type)).toEqual([
+    1, 3, 2, 2, 2, 2, 2, 2,
+  ]);
+});
 it.each(["en-US", "zh-CN", "zh-HK"])(
   "uses regional Content APIs with locale %s",
   async (locale) => {

@@ -8,8 +8,20 @@ const text = z
   .string()
   .nullish()
   .transform((value) => value ?? "");
+export type CourseType = 1 | 2 | 3;
+export const courseTypeLabels = {
+  1: "courses.typeRequired",
+  2: "courses.typeMaster",
+  3: "courses.typeSkill",
+} as const;
+// Match the public Web catalogue: older/unclassified courses are master classes.
+function courseType(value: unknown): CourseType {
+  const number = typeof value === "string" || typeof value === "number" ? Number(value) : 0;
+  return number === 1 || number === 2 || number === 3 ? number : 2;
+}
 const courseSchema = z.object({
   id: idSchema,
+  type: z.unknown().transform(courseType),
   title: z.string(),
   description: text,
   updateTime: text,

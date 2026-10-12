@@ -19,10 +19,11 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTabScreenInsets } from "@/components/tab-screen";
 import { ThemedView } from "@/components/themed-view";
-import { EmptyState, PosterImage, ScreenHeader } from "@/components/ui";
+import { ChipRail, EmptyState, PosterImage, ScreenHeader } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import {
   courseCover,
+  courseTypeLabels,
   getCourse,
   getLessonUrl,
   listCourses,
@@ -30,6 +31,7 @@ import {
   validCourseId,
   type Course,
   type CourseDetail,
+  type CourseType,
 } from "./api";
 import {
   readSelectedLesson,
@@ -107,11 +109,15 @@ function Catalog() {
     useCallback((signal: AbortSignal) => listCourses(locale, signal), [locale])
   );
   const [search, setSearch] = useState("");
+  const [selectedType, setSelectedType] = useState<CourseType | null>(null);
+  const types = [null, 1, 3, 2] as const;
   const query = search.trim().toLocaleLowerCase();
-  const courses = read.data?.filter((course) =>
-    [course.title, course.description, ...(course.instructors ?? []).map((i) => i.nickName)].some(
-      (text) => (text ?? "").toLocaleLowerCase().includes(query)
-    )
+  const courses = read.data?.filter(
+    (course) =>
+      (selectedType === null || course.type === selectedType) &&
+      [course.title, course.description, ...(course.instructors ?? []).map((i) => i.nickName)].some(
+        (text) => (text ?? "").toLocaleLowerCase().includes(query)
+      )
   );
   return (
     <ThemedView style={styles.screen}>
@@ -132,6 +138,13 @@ function Catalog() {
               value={search}
               onChangeText={setSearch}
               style={[styles.search, { color: theme.text, borderColor: theme.border }]}
+            />
+            <ChipRail
+              items={types.map((type) =>
+                t(type === null ? "courses.typeAll" : courseTypeLabels[type])
+              )}
+              activeIndex={types.indexOf(selectedType)}
+              onChange={(index) => setSelectedType(types[index] ?? null)}
             />
           </View>
         }
@@ -154,6 +167,9 @@ function Catalog() {
           >
             <PosterImage uri={courseCover(item.coverUrl)} label={item.title} style={styles.cover} />
             <ThemedText type="smallBold">{item.title}</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {t(courseTypeLabels[item.type])}
+            </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
               {(item.instructors ?? []).map((i) => i.nickName).join(" · ")}
             </ThemedText>
