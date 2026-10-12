@@ -3410,6 +3410,21 @@
         "replaceError": "无法替换片段媒体。",
         "mediaUnavailable": "项目恢复为可编辑状态后才能替换媒体。",
         "unsupportedMedia": "片段只能使用图片或视频媒体。"
+      },
+      "arrange": {
+        "media": "项目媒体",
+        "earlier": "向前移动片段",
+        "later": "向后移动片段",
+        "hint": "拖入媒体以添加到时间线；拖动片段以调整顺序。",
+        "loading": "正在加载媒体…",
+        "retry": "重试",
+        "empty": "暂无项目图片或视频。请通过片段检查器导入媒体。",
+        "insert": "在所选片段前插入{title}",
+        "error": "无法更新时间线。",
+        "invalidKind": "请选择图片或视频。",
+        "missingDuration": "此视频暂无时长信息。请等待媒体处理完成并刷新媒体列表。",
+        "image": "图片",
+        "video": "视频"
       }
     },
     "canvas": {

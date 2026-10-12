@@ -23,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MediaTimelineTrack, timelineSecondsToPixels } from "@/components/media-timeline";
 import { toast } from "sonner";
+import { StoryTimelineArrange } from "./story-timeline-arrange";
 import { StoryClipGenerationFields } from "./story-clip-generation-fields";
 import {
   AlertDialog,
@@ -73,6 +74,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   appendStoryTimelineClip,
+  insertStoryTimelineClip,
+  moveStoryTimelineClip,
   createManualStoryTimelineClipStableKey,
   removeStoryTimelineClip,
   storySequenceToTimeline,
@@ -117,6 +120,8 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     enabled: Boolean(chapterId),
     retry: false,
   });
+  const candidates = useStoryCandidateAssets({ projectId, canEdit: projectCanEdit });
+  const arrangeLock = useRef(false);
   const requestedPlotNodeId = searchParams.get("node");
   const selectedSequence = useMemo(() => {
     const sequences = storyboardQuery.data ?? [];
@@ -254,6 +259,73 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     onError: (error) => toast.error(storyApiErrorMessage(error, t("deleteError"))),
   });
 
+  const arrangeMutation = useMutation({
+    retry: false,
+    mutationFn: async ({
+      sequence,
+      clipId,
+      candidate,
+      beforeId,
+    }: {
+      sequence: StoryStoryboardSequence;
+      clipId?: string;
+      candidate?: StoryCandidateAsset;
+      beforeId: string | null;
+    }) => {
+      const input = candidate
+        ? insertStoryTimelineClip(
+            sequence,
+            {
+              stableKey: createManualStoryTimelineClipStableKey(),
+              ...timelineCandidateClip(candidate, {
+                invalidKind: t("arrange.invalidKind"),
+                missingDuration: t("arrange.missingDuration"),
+                image: t("arrange.image"),
+                video: t("arrange.video"),
+              }),
+            },
+            beforeId
+          )
+        : moveStoryTimelineClip(sequence, clipId!, beforeId);
+      return putStoryStoryboardTimeline(
+        projectId,
+        sequence.chapterId,
+        sequence.id,
+        createStoryProductionIdempotencyKey("story-timeline-arrange"),
+        input
+      );
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<StoryStoryboardSequence[]>(
+        storyProductionKeys.storyboard(projectId, updated.chapterId),
+        (current) => current?.map((sequence) => (sequence.id === updated.id ? updated : sequence))
+      );
+      setIsPlaying(false);
+      setPlayheadMs(0);
+    },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("arrange.error"))),
+    onSettled: async (_data, _error, { sequence }) => {
+      try {
+        await queryClient.invalidateQueries({
+          queryKey: storyProductionKeys.storyboard(projectId, sequence.chapterId),
+        });
+      } finally {
+        arrangeLock.current = false;
+      }
+    },
+  });
+  const writing = addMutation.isPending || deleteMutation.isPending || arrangeMutation.isPending;
+  const arrange = (action: {
+    clipId?: string;
+    candidate?: StoryCandidateAsset;
+    beforeId: string | null;
+  }) => {
+    if (!projectCanEdit || !selectedSequence || writing || arrangeLock.current) return;
+    arrangeLock.current = true;
+    setIsPlaying(false);
+    arrangeMutation.mutate({ sequence: selectedSequence, ...action });
+  };
+
   const loading = Boolean(chapterId) && storyboardQuery.isPending;
   if (loading) {
     return (
@@ -374,12 +446,12 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
             className="hidden items-center gap-1.5 text-[11px] text-white/45 sm:inline-flex"
             aria-live="polite"
           >
-            {addMutation.isPending || deleteMutation.isPending ? (
+            {writing ? (
               <IconRefresh className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
               <IconCircleCheck className="size-3.5" aria-hidden="true" />
             )}
-            {t(addMutation.isPending || deleteMutation.isPending ? "saving" : "saved")}
+            {t(writing ? "saving" : "saved")}
           </span>
         </div>
       </header>
@@ -389,7 +461,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
           clips={timeline.visualTrack.clips}
           selectedClipId={selectedClip?.id ?? null}
           onSelectClip={selectClip}
-          canEdit={canEdit}
+          canEdit={canEdit && !arrangeMutation.isPending}
           adding={addMutation.isPending}
           deleting={deleteMutation.isPending}
           onAddClip={addClip}
@@ -419,16 +491,30 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
               }
             />
           </section>
-          <TimelineTrack
-            timeline={timeline}
+          <StoryTimelineArrange
+            key={selectedSequence.id}
+            clips={timeline.visualTrack.clips}
             selectedClipId={selectedClip?.id ?? null}
-            playheadMs={playheadMs}
-            playing={isPlaying}
-            onSelectClip={selectClip}
-            onSeek={seekTimeline}
-            onTogglePlayback={togglePlayback}
-            onRestart={restartPlayback}
-          />
+            candidates={candidates.items}
+            disabled={!canEdit || writing}
+            loading={candidates.loading}
+            error={candidates.error}
+            onRetry={() => void candidates.refresh()}
+            onMove={(clipId, beforeId) => arrange({ clipId, beforeId })}
+            onInsert={(candidate, beforeId) => arrange({ candidate, beforeId })}
+          >
+            <TimelineTrack
+              editable={canEdit && !writing}
+              timeline={timeline}
+              selectedClipId={selectedClip?.id ?? null}
+              playheadMs={playheadMs}
+              playing={isPlaying}
+              onSelectClip={selectClip}
+              onSeek={seekTimeline}
+              onTogglePlayback={togglePlayback}
+              onRestart={restartPlayback}
+            />
+          </StoryTimelineArrange>
         </div>
         <aside className="min-h-0 overflow-y-auto border-t border-white/8 bg-white/[0.025] p-5 md:border-t-0 md:border-l">
           <h2 className="text-xs font-semibold tracking-[0.12em] text-white/52 uppercase">
@@ -441,9 +527,9 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
               sequenceId={selectedSequence.id}
               projectId={projectId}
               chapterId={chapterId}
-              editable={canEdit}
-              allowGeneration={allowGeneration}
-              canImportMedia={canImportMedia}
+              editable={canEdit && !writing}
+              allowGeneration={allowGeneration && !writing}
+              canImportMedia={canImportMedia && !writing}
             />
           ) : (
             <p className="mt-4 text-xs leading-5 text-white/55">{t("selectClip")}</p>
@@ -757,6 +843,7 @@ function TimelineClipPreview({
 }
 
 function TimelineTrack({
+  editable,
   timeline,
   selectedClipId,
   playheadMs,
@@ -766,6 +853,7 @@ function TimelineTrack({
   onTogglePlayback,
   onRestart,
 }: {
+  editable: boolean;
   timeline: ReturnType<typeof storySequenceToTimeline>;
   selectedClipId: string | null;
   playheadMs: number;
@@ -913,6 +1001,8 @@ function TimelineTrack({
                   key={clip.id}
                   type="button"
                   aria-label={clip.title}
+                  draggable={editable}
+                  data-story-clip-id={clip.id}
                   aria-current={selected ? "true" : undefined}
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => onSelectClip(clip)}
@@ -1381,4 +1471,26 @@ function formatTimecode(ms: number): string {
   const seconds = Math.floor((safeMs % 60_000) / 1_000);
   const milliseconds = safeMs % 1_000;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
+}
+
+function timelineCandidateClip(
+  candidate: StoryCandidateAsset,
+  labels: { invalidKind: string; missingDuration: string; image: string; video: string }
+): Omit<NewStoryTimelineClip, "stableKey"> {
+  const { asset } = candidate;
+  if (asset.kind !== "image" && asset.kind !== "video") throw new Error(labels.invalidKind);
+  const seconds = candidate.videoVariant?.durationSeconds ?? asset.durationSeconds;
+  if (asset.kind === "video" && (seconds === null || !Number.isFinite(seconds) || seconds <= 0)) {
+    throw new Error(labels.missingDuration);
+  }
+  const title =
+    asset.fileName?.trim().slice(0, 160) || (asset.kind === "image" ? labels.image : labels.video);
+  return {
+    kind: asset.kind,
+    title,
+    prompt: title,
+    description: null,
+    sourceMediaAssetId: asset.id,
+    durationMs: asset.kind === "image" ? 4000 : Math.max(250, Math.round(seconds! * 1000)),
+  };
 }
