@@ -1570,6 +1570,7 @@ export class AppStoryAgentService {
           message: run.message,
           locale: run.locale,
           context: {
+            videoClipDurationSeconds: models.video.clipDurationSeconds,
             title: project.title,
             summary: project.summary,
             profile: {
@@ -1772,7 +1773,7 @@ export class AppStoryAgentService {
             chapterId: run.chapterId,
             title: plan.title,
             summary: plan.summary,
-            brief: `Delivery: ${plan.goal === 'video' ? 'linear video with no choices or branches' : plan.goal === 'interactive_film' ? 'interactive film with meaningful choices and reachable endings' : 'script only'}\nThe creator's explicit requested runtime overrides the project's duration preset; preserve their requested time unit. A maximum of 15 seconds applies to each generated video clip, never to the entire work.\n${plan.brief}`,
+            brief: `Delivery: ${plan.goal === 'video' ? 'linear video with no choices or branches' : plan.goal === 'interactive_film' ? 'interactive film with meaningful choices and reachable endings' : 'script only'}\nSYSTEM PRODUCTION RULES: Every generated video clip must use a supported duration of the selected model and last at most 15 seconds. Split longer action into consecutive clips without dropping story content. Preserve explicit creator/source runtime requirements and their units. When no runtime was specified, choose pacing from the story; inferred durations and project presets are estimates, never hard limits. Keep approved story content and completed assets.\n${plan.brief}`,
             ...(run.phase === 'script' ? {} : { regenerateStage: run.phase }),
             idempotencyKey: stageKey(run),
             sourceAppStoryRunId: run.id,

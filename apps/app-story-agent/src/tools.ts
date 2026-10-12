@@ -108,7 +108,7 @@ export async function apply(
   ctx.tools.register({
     name: "submit_decision",
     description:
-      "Invoke this function through native tool calling to submit the result; printing its JSON arguments as assistant text does nothing. Use kind=reply for greetings, conversation or questions. Use kind=production only when the latest user message asks to create or edit a work. New creation defaults to goal=interactive_film, including casual video requests; goal=video requires an explicit request for linear, non-interactive playback. Preserve existing scope for edits. Duration presets are in seconds, not minutes. Production schedules work; it does not mean a work is completed.",
+      "Invoke this function through native tool calling to submit the result; printing its JSON arguments as assistant text does nothing. Use kind=reply for greetings, conversation or questions. Use kind=production only when the latest user message asks to create or edit a work. New creation defaults to goal=interactive_film, including casual video requests; goal=video requires an explicit request for linear, non-interactive playback. Preserve existing scope for edits. SYSTEM RULE: each video clip must use the selected model's supported durations and be at most 15 seconds; split longer footage without dropping story content. Only an explicit creator/source runtime is mandatory. Inferred runtimes and duration presets are soft estimates in seconds, not minutes. Production schedules work; it does not mean a work is completed.",
     parameters: {
       type: "object",
       properties: { decision: StoryAgentDecisionSchema.toJSONSchema() },

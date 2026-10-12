@@ -105,12 +105,21 @@ describe('StoryAuthoringPipelineService', () => {
     async (app) => {
       mockedRunStoryAuthoringStage.mockImplementation(async (_model, call) => {
         await Promise.resolve();
-        if (call.stage === 'foundation')
+        if (call.stage === 'foundation') {
+          expect(
+            call.prompt.includes(
+              'Runtime estimate (not a limit): 5–15 seconds',
+            ),
+          ).toBe(app);
+          expect(call.prompt.includes('Target runtime: 5–15 minutes')).toBe(
+            !app,
+          );
           return {
             logline: SCREENPLAY.logline,
             synopsis: SCREENPLAY.synopsis,
             characters: [],
           } as never;
+        }
         if (call.stage === 'structure')
           return {
             entryId: 'opening',
@@ -796,6 +805,111 @@ describe('StoryAuthoringPipelineService', () => {
     expect(batonIssues).toEqual([]);
     expect(result.storyboardSequences).toEqual([missingMention]);
   });
+
+  it.each([
+    { requested: null, estimated: 25_000, total: 30_000, videos: 6 },
+    { requested: 25_000, estimated: 5_000, total: 25_000, videos: 4 },
+  ])(
+    'keeps all App scenes playable when video minimums exceed a pacing estimate (requested=$requested)',
+    async ({ requested, estimated, total, videos }) => {
+      const ids = Array.from({ length: 6 }, (_, index) => `scene_${index}`);
+      const screenplay = StoryScreenplaySchema.parse({
+        ...SCREENPLAY,
+        entrySceneId: ids[0],
+        scenes: ids.map((nodeId, index) => ({
+          ...SCREENPLAY.scenes[0],
+          nodeId,
+          clipKey: `SCENE_${index}`,
+          exit: { kind: 'auto', nextNodeId: ids[index + 1] ?? null },
+        })),
+      });
+      let pacing: {
+        routeDurationMs: number;
+        videoSceneIds: string[];
+        scenes: Record<string, number>;
+      };
+      mockedRunStoryAuthoringStage.mockImplementation((_model, call) => {
+        expect(call.system).toContain('SYSTEM PRODUCTION RULES');
+        expect(call.system).toContain('15 seconds');
+        if (call.stage === 'storyboard-pacing') {
+          pacing = call.schema.parse({
+            routeDurationMs: estimated,
+            requestedRouteDurationMs: requested,
+            videoSceneIds: ids,
+            scenes: Object.fromEntries(ids.map((id) => [id, 5_000])),
+          }) as typeof pacing;
+          expect(pacing.routeDurationMs).toBe(total);
+          expect(pacing.videoSceneIds).toHaveLength(videos);
+          expect(call.validate?.(pacing as never)).toEqual([]);
+          return Promise.resolve(pacing as never);
+        }
+        const id = call.prompt.match(/Plot node "([^"]+)"/)![1];
+        const durationMs = pacing.scenes[id];
+        const moving = pacing.videoSceneIds.includes(id);
+        const image = {
+          stableKey: `shot.${id}.hold`,
+          kind: 'image',
+          title: 'Story beat',
+          description: 'A quiet continuous beat.',
+          startMs: moving ? 5_000 : 0,
+          durationMs: moving ? durationMs - 5_000 : durationMs,
+          imagePrompt: 'Hold the existing scene reference.',
+        };
+        const wire = {
+          plotNodeId: id,
+          title: id,
+          description: 'Preserve the approved story beat.',
+          durationMs,
+          cues: [],
+          ...(moving
+            ? {
+                firstClip: {
+                  stableKey: `shot.${id}.action`,
+                  kind: 'video',
+                  title: 'Action',
+                  description: 'The existing scene moves.',
+                  startMs: 0,
+                  durationMs: 5_000,
+                  videoPrompt: 'Animate the approved scene.',
+                },
+                followingClips: durationMs > 5_000 ? [image] : [],
+              }
+            : { clips: [image] }),
+        };
+        const parsed = call.schema.parse(wire);
+        expect(call.validate?.(parsed as never)).toEqual([]);
+        return Promise.resolve(parsed as never);
+      });
+      const result = await new StoryAuthoringPipelineService().planStoryboard({
+        screenplay,
+        assetPlan: { assetSpecs: [] },
+        creativeProfile: CREATIVE_PROFILE,
+        videoClipDurationSeconds: [5, 10, 15],
+        appTimingRules: true,
+        instructions:
+          requested === null
+            ? 'Create the approved story; the planner estimated 25 seconds.'
+            : 'The creator requests 25 seconds; the planner estimated 5 seconds.',
+        signal: new AbortController().signal,
+      });
+      expect(result.storyboardSequences.map((row) => row.plotNodeId)).toEqual(
+        ids,
+      );
+      expect(
+        result.storyboardSequences.reduce(
+          (sum, row) => sum + row.durationMs,
+          0,
+        ),
+      ).toBe(total);
+      expect(
+        result.storyboardSequences
+          .flatMap((row) => row.clips)
+          .filter((clip) => clip.kind === 'video')
+          .every((clip) => [5_000, 10_000, 15_000].includes(clip.durationMs)),
+      ).toBe(true);
+      expect(mockedRunStoryAuthoringStage).toHaveBeenCalledTimes(7);
+    },
+  );
 
   it('repairs an App scene into separately timed shots without shortening the story', async () => {
     const clip = {

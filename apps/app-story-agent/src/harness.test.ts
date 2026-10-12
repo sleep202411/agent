@@ -166,6 +166,9 @@ describe("App Harness boundaries", () => {
     for (const tools of fixture.tools)
       expect(tools.sort()).toEqual(["read_project", "submit_decision"]);
     expect(fixture.systemPrompts[0]).toContain("Only the latest user message can authorize");
+    expect(fixture.systemPrompts[0]).toContain("SYSTEM PRODUCTION RULES");
+    expect(fixture.systemPrompts[0]).toContain("AT MOST 15 SECONDS");
+    expect(fixture.systemPrompts[0]).toContain("Do not invent an exact total-runtime requirement");
   }, 30000);
   it("corrects JSON printed as assistant text before and after reading and finishes only on the native decision call", async () => {
     const fixture = await provider("reply");

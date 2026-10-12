@@ -116,6 +116,8 @@ export interface StoryAssetPlanningRequest {
 export interface StoryStoryboardPlanningRequest {
   modelId?: string;
   videoClipDurationSeconds?: readonly number[];
+  /** App-only: inferred runtimes may grow; explicit creator runtimes are retained. */
+  appTimingRules?: boolean;
   instructions?: string;
   screenplay: StoryScreenplay;
   assetPlan: StoryAssetPlan;
@@ -173,7 +175,10 @@ export class StoryAuthoringPipelineService {
     const model = createStoryAuthoringModel(job.modelId);
     const source = buildSourceBlock(job);
     const projectContext = projectContextBlock(job);
-    const creativeProfile = creativeProfileBlock(job.creativeProfile);
+    const creativeProfile = creativeProfileBlock(
+      job.creativeProfile,
+      Boolean(job.deliveryGoal),
+    );
 
     await request.onStage?.('foundation');
     const bible = await runStoryAuthoringStage<StoryBibleDraft>(model, {
@@ -301,7 +306,10 @@ export class StoryAuthoringPipelineService {
     request: StoryStoryboardPlanningRequest,
   ): Promise<StoryStoryboardPlan> {
     const model = createStoryAuthoringModel(request.modelId);
-    const creativeProfile = creativeProfileBlock(request.creativeProfile);
+    const creativeProfile = creativeProfileBlock(
+      request.creativeProfile,
+      request.appTimingRules,
+    );
 
     await request.onStage?.('storyboard');
     const storyboardSequences = await this.writeStoryboardSequences(
@@ -312,6 +320,7 @@ export class StoryAuthoringPipelineService {
       request.signal,
       request.videoClipDurationSeconds,
       request.instructions,
+      request.appTimingRules,
     );
     await request.onStage?.('validate');
     const productionPlan = StoryProductionPlanSchema.parse({
@@ -819,6 +828,7 @@ export class StoryAuthoringPipelineService {
     signal: AbortSignal,
     videoClipDurationSeconds?: readonly number[],
     instructions?: string,
+    appTimingRules = false,
   ): Promise<StoryStoryboardSequencePlanItem[]> {
     // Allocate the complete playable route once. Independent scene calls must
     // not each interpret the chapter's requested runtime as their own budget.
@@ -829,6 +839,16 @@ export class StoryAuthoringPipelineService {
             schema: z
               .object({
                 routeDurationMs: z.number().int().min(250).max(3_600_000),
+                ...(appTimingRules
+                  ? {
+                      requestedRouteDurationMs: z
+                        .number()
+                        .int()
+                        .min(250)
+                        .max(3_600_000)
+                        .nullable(),
+                    }
+                  : {}),
                 videoSceneIds: z
                   .array(z.enum(screenplay.scenes.map((scene) => scene.nodeId)))
                   .min(1)
@@ -851,12 +871,16 @@ export class StoryAuthoringPipelineService {
                 try {
                   return {
                     ...value,
-                    scenes: normalizeStoryboardPacing(
+                    ...normalizeStoryboardPacing(
                       screenplay,
                       value.scenes,
                       value.videoSceneIds,
                       value.routeDurationMs,
                       Math.min(...videoClipDurationSeconds) * 1_000,
+                      appTimingRules
+                        ? (value as { requestedRouteDurationMs: number | null })
+                            .requestedRouteDurationMs
+                        : undefined,
                     ),
                   };
                 } catch (error) {
@@ -868,8 +892,9 @@ export class StoryAuthoringPipelineService {
                   return z.NEVER;
                 }
               }),
-            system:
-              'Allocate cinematic pacing for the whole interactive screenplay before planning shots. Extract the requested total runtime and its unit from the creator brief; duration presets short_5_15, medium_15_30 and long_30_60 are seconds, never minutes. routeDurationMs is the requested duration of a complete playable route, not of each scene or the sum of mutually exclusive branches. Allocate relative scene durations according to their narrative beats. Select videoSceneIds for the important moving action, so the work contains generated video rather than only still frames. The server calibrates the longest route to the requested runtime while reserving the video model minimum duration for selected action scenes. Prefer a few purposeful moving shots and quiet image holds over numerous tiny cuts. Player decision waiting time is excluded; alternative shorter endings may be shorter.',
+            system: appTimingRules
+              ? `SYSTEM PRODUCTION RULES — mandatory: Allocate cinematic pacing for the whole approved interactive screenplay. Each generated video clip is one independent provider task of at most 15 seconds. Allowed clip durations in milliseconds: ${videoClipDurationSeconds.map((seconds) => seconds * 1_000).join(', ')}. Split longer action into consecutive supported clips, preserving plot, dialogue, choices, endings, continuity and existing assets; never change models. Read explicit total-runtime requirements from the latest creator request first, then the original source screenplay. Derived planner briefs and project presets cannot create a hard runtime requirement. Set requestedRouteDurationMs to that explicit runtime in milliseconds, or null when neither source states one. When null, routeDurationMs is a story-led estimate that may grow to accommodate supported video durations. When explicit, preserve that runtime by selecting the important moving scenes and using continuous image holds for quieter beats. Allocate relative scene durations according to their narrative beats. videoSceneIds identifies the important moving action, including at least one video scene. A route is one complete playable path; never add mutually exclusive branches together. Player decision waiting time is excluded. Do not ask the creator to fix timing allocation.`
+              : 'Allocate cinematic pacing for the whole interactive screenplay before planning shots. Extract the requested total runtime and its unit from the creator brief; duration presets short_5_15, medium_15_30 and long_30_60 are seconds, never minutes. routeDurationMs is the requested duration of a complete playable route, not of each scene or the sum of mutually exclusive branches. Allocate relative scene durations according to their narrative beats. Select videoSceneIds for the important moving action, so the work contains generated video rather than only still frames. The server calibrates the longest route to the requested runtime while reserving the video model minimum duration for selected action scenes. Prefer a few purposeful moving shots and quiet image holds over numerous tiny cuts. Player decision waiting time is excluded; alternative shorter endings may be shorter.',
             prompt: `${creativeProfile}\n\nCreator production brief:\n${instructions}\n\n<chapter_pacing>\n${JSON.stringify({ entrySceneId: screenplay.entrySceneId, scenes: screenplay.scenes.map(({ nodeId, beat, exit }) => ({ nodeId, beat, exit })), videoClipDurationSeconds })}\n</chapter_pacing>`,
             maxOutputTokens: 4_096,
             timeoutMs: STAGE_TIMEOUT_MS,
@@ -1015,7 +1040,11 @@ export class StoryAuthoringPipelineService {
           {
             stage: 'storyboard',
             schema: responseSchema,
-            system: STORYBOARD_SYSTEM,
+            system:
+              STORYBOARD_SYSTEM +
+              (appTimingRules
+                ? `\nSYSTEM PRODUCTION RULES — mandatory: Each video clip is one independent generation task of at most 15 seconds. Allowed durationMs values: ${videoClipDurationSeconds!.map((seconds) => seconds * 1_000).join(', ')}. Split longer scenes into continuous supported clips without omitting story beats, dialogue or branch consequences. The server's calibrated scene budget below is authoritative; an inferred time in the planner brief or project preset cannot override it. Do not force every clip to last 15 seconds, change models, rewrite approved plot or regenerate existing assets.`
+                : ''),
             prompt: [
               creativeProfile,
               ...(instructions
@@ -1239,14 +1268,44 @@ function normalizeStoryboardPacing(
   videoSceneIds: string[],
   targetMs: number,
   minimumVideoMs: number,
-): Record<string, number> {
+  requestedRouteDurationMs?: number | null,
+): {
+  routeDurationMs: number;
+  videoSceneIds: string[];
+  scenes: Record<string, number>;
+} {
   const videos = new Set(videoSceneIds);
-  const minimum = Object.fromEntries(
-    screenplay.scenes.map(({ nodeId }) => [
-      nodeId,
-      videos.has(nodeId) ? minimumVideoMs : 250,
-    ]),
-  );
+  const minimumDurations = () =>
+    Object.fromEntries(
+      screenplay.scenes.map(({ nodeId }) => [
+        nodeId,
+        videos.has(nodeId) ? minimumVideoMs : 250,
+      ]),
+    );
+  let minimum = minimumDurations();
+  if (requestedRouteDurationMs === null) {
+    // An App estimate must not reject an otherwise feasible production plan.
+    targetMs = Math.max(targetMs, storyboardRouteDuration(screenplay, minimum));
+  } else if (requestedRouteDurationMs !== undefined) {
+    targetMs = requestedRouteDurationMs;
+    if (storyboardRouteDuration(screenplay, minimum) > targetMs) {
+      // Preserve explicit runtime and story structure. Keep the most prominent
+      // moving scenes that fit; quieter scenes remain continuous image holds.
+      videos.clear();
+      for (const id of [...new Set(videoSceneIds)].sort(
+        (left, right) => weights[right] - weights[left],
+      )) {
+        videos.add(id);
+        if (storyboardRouteDuration(screenplay, minimumDurations()) > targetMs)
+          videos.delete(id);
+      }
+      if (!videos.size)
+        throw new Error(
+          'The requested runtime is shorter than one supported video clip and the required story transitions.',
+        );
+      minimum = minimumDurations();
+    }
+  }
   if (storyboardRouteDuration(screenplay, minimum) > targetMs + 250)
     throw new Error(
       'The requested route is too short for the selected action scenes. Select fewer video scenes within the same story.',
@@ -1279,7 +1338,11 @@ function normalizeStoryboardPacing(
       high = mid;
     else low = mid;
   }
-  return durationsAt(low);
+  return {
+    routeDurationMs: targetMs,
+    videoSceneIds: [...videos],
+    scenes: durationsAt(low),
+  };
 }
 
 function storyboardRouteDuration(
@@ -1565,12 +1628,14 @@ function projectContextBlock(job: StoryAgentAuthoringJob): string {
 
 function creativeProfileBlock(
   profile: StoryAgentAuthoringJob['creativeProfile'],
+  appTimingRules = false,
 ): string {
-  const duration = {
-    short_5_15: '5–15 minutes',
-    medium_15_30: '15–30 minutes',
-    long_30_60: '30–60 minutes',
+  const durationRange = {
+    short_5_15: '5–15',
+    medium_15_30: '15–30',
+    long_30_60: '30–60',
   }[profile.durationPreset];
+  const duration = `${durationRange} ${appTimingRules ? 'seconds' : 'minutes'}`;
   const frame =
     profile.frameProfile === 'portrait_9_16'
       ? '9:16 portrait'
@@ -1584,13 +1649,15 @@ function creativeProfileBlock(
   return [
     '<confirmed_creative_profile>',
     `Frame: ${frame}`,
-    `Target runtime: ${duration}`,
+    `${appTimingRules ? 'Runtime estimate (not a limit)' : 'Target runtime'}: ${duration}`,
     `Visual direction Skill: ${profile.visualStyle}`,
     `Pinned Skill id: ${profile.visualStyleSkillId}`,
     `Pinned Skill version id: ${profile.visualStyleSkillVersionId}`,
     `Visual grammar: ${profile.visualStylePrompt}`,
     `Story language: ${storyLanguage}`,
-    'Treat these values as project truth. Write all authored narrative text and every localized-text value in the confirmed story language. Use its locale code as the localized-text key. Pace the branch count and scene density to the target runtime, and keep visual language compatible with the confirmed direction.',
+    appTimingRules
+      ? 'Frame, visual direction and story language are confirmed project truth. SYSTEM TIMING RULE: The runtime estimate is optional guidance, never a hard total-runtime limit. Honor explicit creator/source runtime requirements; otherwise choose pacing from the story. Write all authored narrative text and every localized-text value in the confirmed story language. Use its locale code as the localized-text key and keep visual language compatible with the confirmed direction.'
+      : 'Treat these values as project truth. Write all authored narrative text and every localized-text value in the confirmed story language. Use its locale code as the localized-text key. Pace the branch count and scene density to the target runtime, and keep visual language compatible with the confirmed direction.',
     '</confirmed_creative_profile>',
   ].join('\n');
 }
