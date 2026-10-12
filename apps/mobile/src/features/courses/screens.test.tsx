@@ -5,6 +5,7 @@ import { CourseScreen, CoursesScreen } from "./screens";
 import { api } from "@/lib/api-client";
 import { appTabItems } from "@/components/app-tab-items";
 import { lessonProgressKey } from "./lesson-progress";
+vi.mock("./learning-ui", () => ({ CourseLearning: () => <div>Course enrollment</div> }));
 vi.mock("./course-certificate", () => ({ CourseCertificate: () => <div>Mapped certificate</div> }));
 const h = vi.hoisted(() => ({
   locale: "en-US",
@@ -103,7 +104,8 @@ vi.mock("@/components/themed-view", () => ({
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: Box) => <span>{children}</span>,
 }));
-vi.mock("@/components/ui", () => ({
+vi.mock("@/components/ui", async () => ({
+  ...(await vi.importActual("@/components/ui/chip-rail")),
   ScreenHeader: ({ title }: { title: string }) => <h1>{title}</h1>,
   PosterImage: () => null,
   EmptyState: ({
@@ -173,6 +175,45 @@ it("lets guests browse real courses and navigate to their native detail", async 
   expect(host.textContent).toContain("Instructor");
   act(() => button("Film course").click());
   expect(h.push).toHaveBeenCalledWith({ pathname: "/courses/[id]", params: { id: "7" } });
+});
+it("filters required, skill and default master courses together with the existing search", async () => {
+  vi.mocked(api.get).mockResolvedValue([
+    { ...course, id: 1, title: "Required editing", type: 1 },
+    { ...course, id: 2, title: "Skill editing", type: "3" },
+    { ...course, id: 3, title: "Unclassified course" },
+  ]);
+  await act(async () => root.render(<CoursesScreen />));
+  expect(host.textContent).toContain("Required editing");
+  expect(host.textContent).toContain("Skill editing");
+  expect(host.textContent).toContain("Unclassified course");
+  act(() => button("courses.typeSkill").click());
+  expect(host.textContent).toContain("Skill editing");
+  expect(host.textContent).not.toContain("Required editing");
+  expect(host.textContent).not.toContain("Unclassified course");
+  act(() => button("courses.typeRequired").click());
+  expect(host.textContent).toContain("Required editing");
+  expect(host.textContent).not.toContain("Skill editing");
+  act(() => button("courses.typeMaster").click());
+  expect(host.textContent).toContain("Unclassified course");
+  const input = host.querySelector("input")!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "no match"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.textContent).toContain("courses.empty");
+  expect(host.textContent).not.toContain("Unclassified course");
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    button("courses.typeAll").click();
+  });
+  expect(host.textContent).toContain("Required editing");
+  expect(host.textContent).toContain("Skill editing");
+  expect(host.textContent).toContain("Unclassified course");
+  expect(api.get).toHaveBeenCalledTimes(1);
 });
 it("uses lesson ordering and fetches a fresh playback URL when switching", async () => {
   await detail();

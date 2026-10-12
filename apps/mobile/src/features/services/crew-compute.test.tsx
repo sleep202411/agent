@@ -76,7 +76,8 @@ const id = "11111111-1111-4111-8111-111111111111",
 const row = {
   id,
   crewId: "crew",
-  userId: "creator",
+  userId: "user",
+  kind: "top_up",
   requestedByUserId: "user",
   remainingWorkload: "1.5",
   workloadUnit: "hours",
@@ -94,10 +95,12 @@ const row = {
 const page = {
   isOwner: true,
   workspaceLinked: true,
+  projectBudget: null,
+  taskUsage: [],
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
   tasks: [
-    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "creator" }] },
+    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "user" }] },
   ],
   items: [row],
   nextCursor: null,
@@ -187,11 +190,11 @@ it("does not refresh stale account on completion", async () => {
   expect(h.detail).toHaveBeenCalledTimes(1);
 });
 
-it("only lets owners apply for an assigned beneficiary", async () => {
+it("lets assigned creators apply for themselves", async () => {
   h.detail.mockResolvedValue({ ...page, isOwner: false });
   await render();
-  expect(host.textContent).toContain("crewComputeFinance.ownerOnly");
-  expect(button("crewComputeFinance.request")).toBeUndefined();
+  expect(host.textContent).not.toContain("crewComputeFinance.ownerOnly");
+  expect(button("crewComputeFinance.request")).toBeDefined();
 });
 it("blocks a second application even after rejection", async () => {
   h.detail.mockResolvedValue({ ...page, tasks: [{ ...page.tasks[0], topUpRequested: true }] });
@@ -200,17 +203,59 @@ it("blocks a second application even after rejection", async () => {
   expect(host.textContent).toContain("crewComputeFinance.topUpAlreadyApplied");
   expect(button("crewComputeFinance.request").disabled).toBe(true);
 });
-it("sends owner-selected beneficiary and workload", async () => {
+it("sends self-bound beneficiary and workload", async () => {
   await fill();
   await act(async () => button("crewComputeFinance.request").click());
   expect(h.sign).toHaveBeenCalledWith(
     "crew",
     "user",
     expect.objectContaining({
-      beneficiaryUserId: "creator",
+      beneficiaryUserId: "user",
       remainingWorkload: 1.5,
       workloadUnit: "minutes",
     }),
+    1
+  );
+});
+
+it("shows the stored budget rate and separates credited points from allowance", async () => {
+  h.detail.mockResolvedValue({
+    ...page,
+    projectBudget: {
+      pointsPerMinute: 4460,
+      totalPoints: "44600",
+      releasedPoints: "22300",
+      closed: false,
+    },
+    taskUsage: [
+      {
+        taskId: id,
+        taskTitle: "Scene",
+        userId: "user",
+        approvedPoints: "900",
+        creditedPoints: "400",
+        pendingPoints: "0",
+        consumedPoints: "100",
+        committedPoints: "200",
+      },
+    ],
+  });
+  await render();
+  expect(host.textContent).toContain("crewComputeFinance.approvedTotal · 900");
+  expect(host.textContent).toContain("mobileProduction.credited · 400");
+  expect(host.textContent).toContain("crewComputeFinance.committed · 200");
+});
+
+it("submits an assigned creator request without manual workspace setup", async () => {
+  h.detail.mockResolvedValue({ ...page, workspaceLinked: false, isOwner: false });
+  await fill();
+  expect(host.textContent).not.toContain("crewComputeFinance.setupWorkspace");
+  await act(async () => button("crewComputeFinance.request").click());
+  expect(h.sign).toHaveBeenCalledTimes(1);
+  expect(h.sign).toHaveBeenCalledWith(
+    "crew",
+    "user",
+    expect.objectContaining({ beneficiaryUserId: "user", points: 20 }),
     1
   );
 });

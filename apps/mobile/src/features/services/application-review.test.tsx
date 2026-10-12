@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
+vi.mock("expo-router", () => ({
+  useIsFocused: () => true,
+  router: { push: (path: string) => h.push(path) },
+}));
+vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("./application-amendments", () => ({
   ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Amendments</button>
@@ -21,7 +26,16 @@ vi.mock("./application-interview", () => ({
     onClose: () => void;
   }) => <button onClick={onClose}>Interview: {applicantId}</button>,
 }));
-const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  active: true,
+  push: vi.fn(),
+  openUrl: vi.fn(),
+  displays: new Map<string, { nickname: string }>(),
+  get: vi.fn(),
+  post: vi.fn(),
+  close: vi.fn(),
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white", border: "gray" }) }));
@@ -32,7 +46,10 @@ vi.mock("@/i18n", () => ({
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
+vi.mock("./user-displays", () => ({ useUserDisplays: () => h.displays }));
 vi.mock("react-native", () => ({
+  Linking: { openURL: h.openUrl },
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -76,7 +93,8 @@ const app = {
   positionId: "position",
   applicantId: "creator",
   message: "Hello",
-  portfolioUrl: null,
+  portfolioUrl: null as string | null,
+  taskId: null as string | null,
   expectedCompensation: null,
   availableStartDate: null,
   yearsExperience: 2,
@@ -84,6 +102,26 @@ const app = {
   createdAt: "2026-10-01T00:00:00Z",
   reviewedAt: null,
   reviewerId: null,
+};
+const confirmedTerms = {
+  currentVersion: 1,
+  items: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      applicationId: "app",
+      version: 1,
+      scope: "Film",
+      feeAmount: "100",
+      currency: "USD",
+      feePeriod: "project",
+      revenueShareBp: 0,
+      shareBasis: null,
+      proposedByUserId: "manager",
+      createdAt: app.createdAt,
+      confirmedAt: app.createdAt,
+    },
+  ],
+  nextBeforeVersion: null,
 };
 const result = {
   ...app,
@@ -94,6 +132,7 @@ const result = {
 const interview = {
   applicationStatus: "pending",
   canUpdate: true,
+  canMessage: true,
   version: 0,
   state: "not_started",
   scheduledAt: null,
@@ -111,6 +150,7 @@ const render = async () => {
   await act(async () =>
     root.render(
       <ApplicationReview
+        active={h.active}
         crewId="crew"
         userId="manager"
         generation={1}
@@ -127,11 +167,15 @@ const open = async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
+  h.displays.clear();
+  app.portfolioUrl = null;
+  app.taskId = null;
   h.get.mockImplementation(async (path) =>
     path === "/crews/crew/applications"
       ? { items: [app], nextCursor: null }
       : path.endsWith("/terms")
-        ? { currentVersion: 0, items: [], nextBeforeVersion: null }
+        ? confirmedTerms
         : path.endsWith("/interview")
           ? interview
           : app
@@ -251,7 +295,7 @@ it("opens reviewer interview for the selected applicant and reloads on return", 
   expect(host.textContent).toBe("Interview: creator");
   await click("Interview: creator");
   expect(button("applicationReview.approve")).toBeTruthy();
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
 });
 
 it("opens terms proposals and refreshes approval readiness on return", async () => {
@@ -259,15 +303,110 @@ it("opens terms proposals and refreshes approval readiness on return", async () 
   await click("termsProposal.open");
   expect(host.textContent).toBe("Proposal");
   await click("Proposal");
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
 });
 
 it("opens amendments after approval and reloads the application on return", async () => {
+  app.taskId = "00000000-0000-4000-8000-000000000001";
   await open();
   await click("applicationReview.approve");
   await click("applicationReview.confirm");
   await click("crewAmendments.title");
   expect(host.textContent).toBe("Amendments");
   await click("Amendments");
-  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+  expect(h.get.mock.calls.filter((c) => c[0] === "/applications/app")).toHaveLength(2);
+});
+
+it("opens the applicant public profile from review", async () => {
+  await open();
+  await click("crewMembers.viewProfile");
+  expect(h.push).toHaveBeenCalledWith(`/creator/${encodeURIComponent(app.applicantId)}`);
+});
+
+it("opens a valid portfolio and allows retry after an OS failure", async () => {
+  app.portfolioUrl = "https://portfolio.example/artist?work=showreel";
+  h.openUrl.mockRejectedValueOnce(Error("Browser unavailable")).mockResolvedValueOnce(undefined);
+  await open();
+  await click("applicationReview.portfolio");
+  expect(host.textContent).toContain("Browser unavailable");
+  await click("applicationReview.portfolio");
+  expect(h.openUrl).toHaveBeenCalledTimes(2);
+  expect(h.openUrl).toHaveBeenLastCalledWith(app.portfolioUrl);
+  expect(host.textContent).not.toContain("Browser unavailable");
+});
+it.each([
+  "javascript:alert(1)",
+  "file:///private/data",
+  "https://user:secret@example.com",
+  "not a URL",
+])("does not launch an invalid portfolio: %s", async (url) => {
+  app.portfolioUrl = url;
+  await open();
+  await click("applicationReview.portfolio");
+  expect(h.openUrl).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("applicationReview.invalidPortfolio");
+});
+it("uses the applicant display name without changing the profile destination", async () => {
+  h.displays.set("creator", { nickname: "River Chen" });
+  await render();
+  await click("River Chen · position · 2026-10-01");
+  expect(host.textContent).toContain("River Chen");
+  await click("crewMembers.viewProfile");
+  expect(h.push).toHaveBeenCalledWith("/creator/creator");
+});
+
+it("opens an approved task directly from the owner review", async () => {
+  app.taskId = "00000000-0000-4000-8000-000000000001";
+  await open();
+  expect(button("crewFinance.openTask")).toBeUndefined();
+  await click("applicationReview.approve");
+  await click("applicationReview.confirm");
+  await click("crewFinance.openTask");
+  expect(h.push).toHaveBeenCalledWith(`/crew-tasks/crew?task=${app.taskId}`);
+});
+it("omits task-only actions for an approved Crew membership without a task", async () => {
+  await open();
+  await click("applicationReview.approve");
+  await click("applicationReview.confirm");
+  expect(button("crewFinance.openTask")).toBeUndefined();
+  expect(button("crewAmendments.title")).toBeUndefined();
+});
+
+it("preserves selected review across inactivity and reloads its private details", async () => {
+  await open();
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  const previous = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (...args) =>
+    args[0] === "/applications/app" ? { ...app, message: "Updated application" } : previous(...args)
+  );
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Updated application");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications")).toHaveLength(1);
+});
+it("hides the selected review if its session becomes stale", async () => {
+  await open();
+  h.generation = 2;
+  await render();
+  expect(host.textContent).toBe("");
+});
+
+it("keeps approval disabled without terms while retaining rejection and proposal actions", async () => {
+  const previous = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (...args) =>
+    String(args[0]).endsWith("/terms")
+      ? { currentVersion: 0, items: [], nextBeforeVersion: null }
+      : previous(...args)
+  );
+  await open();
+  expect(button("applicationReview.approve").disabled).toBe(true);
+  expect(button("applicationReview.reject").disabled).toBe(false);
+  expect(button("termsProposal.open").disabled).toBe(false);
+  await click("applicationReview.approve");
+  expect(h.post).not.toHaveBeenCalled();
+  h.get.mockImplementation(previous);
+  await click("crewTerms.refresh");
+  expect(button("applicationReview.approve").disabled).toBe(false);
 });

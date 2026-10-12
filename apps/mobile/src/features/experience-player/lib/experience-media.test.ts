@@ -1,5 +1,10 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { resolvePlayableMediaUrl } from "./experience-media";
+import {
+  resolvePlayableMediaUrl,
+  resolveClipPlaybackUri,
+  clipPlaybackEndSeconds,
+  clipPlaybackStalled,
+} from "./experience-media";
 vi.mock("@/config", () => ({ resolveExperienceAssetUrl: (uri: string) => uri }));
 const fetchMock = vi.fn();
 let index = 0;
@@ -157,4 +162,41 @@ it.each([
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("opens uncached clips without waiting for background download", async () => {
+  const warm = vi.fn();
+  const sign = vi.fn().mockResolvedValue("https://cdn.invalid/clip.mp4");
+  expect(
+    await resolveClipPlaybackUri("clip", new AbortController().signal, {
+      cached: () => null,
+      sign,
+      warm,
+    })
+  ).toBe("https://cdn.invalid/clip.mp4");
+  expect(warm).toHaveBeenCalledWith("clip");
+});
+it("uses cached footage directly and distinguishes near-end stalls from pauses", async () => {
+  const sign = vi.fn();
+  const warm = vi.fn();
+  expect(
+    await resolveClipPlaybackUri("clip", new AbortController().signal, {
+      cached: () => "file:///clip",
+      sign,
+      warm,
+    })
+  ).toBe("file:///clip");
+  expect(sign).not.toHaveBeenCalled();
+  expect(clipPlaybackEndSeconds(10000, 12)).toBe(10);
+  const stall = {
+    currentTimeSeconds: 9.8,
+    anchoredTimeSeconds: 9.8,
+    anchoredForMs: 2000,
+    endSeconds: 10,
+    moved: true,
+    held: false,
+  };
+  expect(clipPlaybackStalled(stall)).toBe(true);
+  expect(clipPlaybackStalled({ ...stall, held: true })).toBe(false);
+  expect(clipPlaybackStalled({ ...stall, moved: false })).toBe(false);
 });

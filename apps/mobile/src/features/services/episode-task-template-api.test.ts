@@ -48,7 +48,7 @@ it("permits explicit retry with the same snapshot and accepts a replay receipt",
     .mockRejectedValueOnce(new Error("Response lost"))
     .mockResolvedValueOnce({ taskIds: [id], replayed: true });
   await expect(applyEpisodeTaskPlan("crew", id, plan, 1)).rejects.toThrow();
-  expect((await applyEpisodeTaskPlan("crew", id, plan, 1)).replayed).toBe(true);
+  expect(await applyEpisodeTaskPlan("crew", id, plan, 1)).toMatchObject({ replayed: true });
   expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
 });
 it("blocks stale sessions and invalid scope before posting", async () => {
@@ -71,4 +71,43 @@ it("rejects duplicate task keys, unknown dependencies and malformed receipts", a
   ).toThrow();
   vi.mocked(api.post).mockResolvedValue({ taskIds: [id, id], replayed: false });
   await expect(applyEpisodeTaskPlan("crew", id, plan, 1)).rejects.toThrow();
+});
+
+it("retains per-task fields in the pinned command through retry", async () => {
+  const reviewed = {
+    ...plan,
+    taskFields: [{ templateKey: "script", values: [{ fieldId: id, value: "Brief" }] }],
+  };
+  vi.mocked(api.post)
+    .mockRejectedValueOnce(new Error("offline"))
+    .mockResolvedValueOnce({ taskIds: [id], replayed: true });
+  await expect(applyEpisodeTaskPlan("crew", id, reviewed, 1)).rejects.toThrow("offline");
+  await applyEpisodeTaskPlan("crew", id, reviewed, 1);
+  expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
+  expect(vi.mocked(api.post).mock.calls[1][1]?.data).toEqual({
+    templateId: id,
+    templateVersion: 3,
+    episodeVersion: 8,
+    taskFields: reviewed.taskFields,
+  });
+});
+it("rejects foreign task keys and repeated fields before submitting", async () => {
+  for (const taskFields of [
+    [{ templateKey: "foreign", values: [] }],
+    [
+      { templateKey: "script", values: [] },
+      { templateKey: "script", values: [] },
+    ],
+    [
+      {
+        templateKey: "script",
+        values: [
+          { fieldId: id, value: "A" },
+          { fieldId: id, value: "B" },
+        ],
+      },
+    ],
+  ])
+    await expect(applyEpisodeTaskPlan("crew", id, { ...plan, taskFields }, 1)).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
 });

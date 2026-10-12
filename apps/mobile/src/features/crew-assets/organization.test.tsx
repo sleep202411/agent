@@ -130,7 +130,7 @@ beforeEach(() => {
   h.node.mockResolvedValue(node);
   h.location.mockResolvedValue({ node, path: [] });
   h.folders.mockResolvedValue([folder]);
-  h.context.mockResolvedValue({ capabilities: { upload: true } });
+  h.context.mockResolvedValue({ capabilities: { view: true, upload: true } });
   h.create.mockResolvedValue(node);
   h.update.mockResolvedValue(node);
   h.favorite.mockResolvedValue(true);
@@ -196,7 +196,7 @@ it("removes a favorite explicitly", async () => {
   expect(h.favorite.mock.calls[0]?.[4]).toBe(false);
 });
 it("blocks root creation without upload permission", async () => {
-  h.context.mockResolvedValue({ capabilities: { upload: false } });
+  h.context.mockResolvedValue({ capabilities: { view: true, upload: false } });
   await render();
   await click("assetOrganization.create");
   await type(0, "New");
@@ -398,4 +398,75 @@ it("does not navigate with a previous account response", async () => {
   h.generation = 2;
   await act(async () => finish({ node, path: [] }));
   expect(h.listing.mock.lastCall?.[2].parentId).toBeUndefined();
+});
+
+it("opens the requested asset through the existing authorized node lookup", async () => {
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId={node.id}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.node).toHaveBeenCalledWith("crew", "1", 1, node.id, expect.any(AbortSignal));
+  expect(host.querySelector("input")?.value).toBe("Art");
+  h.node.mockRejectedValue(new Error("Asset access revoked"));
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId={id(3)}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).toContain("Asset access revoked");
+  expect(host.querySelector("input")).toBeNull();
+});
+
+it("does not treat an invalid external asset ID as the new-folder action", async () => {
+  h.node.mockRejectedValue(new Error("Invalid asset ID"));
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId="new"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.node).toHaveBeenCalledWith("crew", "1", 1, "new", expect.any(AbortSignal));
+  expect(host.textContent).toContain("Invalid asset ID");
+  expect(h.create).not.toHaveBeenCalled();
+});
+
+it("does not expose earlier asset details when the final context check denies view", async () => {
+  h.context.mockResolvedValue({ capabilities: { view: false, upload: true } });
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId={node.id}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.querySelectorAll("input")).toHaveLength(0);
+  expect(host.textContent).not.toContain(node.name);
+  expect(host.textContent).toContain("studioMedia.accessDenied");
+  expect(button("assetOrganization.favorite")).toBeUndefined();
+  h.context.mockResolvedValue({ capabilities: { view: true, upload: true } });
+  await click("thread.refresh");
+  expect(host.querySelector("input")?.value).toBe(node.name);
+  expect(h.update).not.toHaveBeenCalled();
 });

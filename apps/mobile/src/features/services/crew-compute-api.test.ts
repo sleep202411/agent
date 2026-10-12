@@ -9,7 +9,8 @@ const id = "11111111-1111-4111-8111-111111111111",
 const row = {
   id,
   crewId: "crew",
-  userId: "creator",
+  userId: "user",
+  kind: "top_up",
   requestedByUserId: "user",
   remainingWorkload: "1.5",
   workloadUnit: "hours",
@@ -27,10 +28,12 @@ const row = {
 const page = {
   isOwner: true,
   workspaceLinked: true,
+  projectBudget: null,
+  taskUsage: [],
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
   tasks: [
-    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "creator" }] },
+    { id, title: "Scene", number: 1, topUpRequested: false, assignees: [{ userId: "user" }] },
   ],
   items: [row],
   nextCursor: null,
@@ -38,7 +41,7 @@ const page = {
 
 const input = {
   taskId: id,
-  beneficiaryUserId: "creator",
+  beneficiaryUserId: "user",
   points: 20,
   remainingWorkload: 1.5,
   workloadUnit: "hours" as const,
@@ -99,7 +102,7 @@ it("submits normalized request key and permits already decided retry receipt", a
     data: { ...input, reason: "Render" },
   });
 });
-it.each([0, 1.5, 501, 2000000001])("rejects invalid points %s", async (points) => {
+it.each([0, 1.5, 3001, 2000000001])("rejects invalid points %s", async (points) => {
   await expect(createCompute("crew", "user", { ...input, points }, 1)).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
@@ -135,5 +138,17 @@ it.each([
   { remainingWorkload: 101, workloadUnit: "percent" as const },
 ])("rejects invalid workload %j before posting", async (change) => {
   await expect(createCompute("crew", "user", { ...input, ...change }, 1)).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it("accepts 3000 points and rejects requests for another creator", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...row, points: 3000 });
+  await expect(createCompute("crew", "user", { ...input, points: 3000 }, 1)).resolves.toMatchObject(
+    { points: 3000 }
+  );
+  vi.mocked(api.post).mockClear();
+  await expect(
+    createCompute("crew", "user", { ...input, beneficiaryUserId: "other" }, 1)
+  ).rejects.toThrow("themselves");
   expect(api.post).not.toHaveBeenCalled();
 });

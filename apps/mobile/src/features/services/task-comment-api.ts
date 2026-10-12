@@ -14,6 +14,8 @@ export async function fetchTaskCommentAccess(crewId: string, userId: string, sig
   return {
     allowed: membership.permissions.includes("tasks.comment"),
     canManage: membership.permissions.includes("tasks.manage"),
+    canSubmit: membership.permissions.includes("tasks.view"),
+    canInvite: membership.permissions.includes("members.invite"),
   };
 }
 export const taskCommentInput = z

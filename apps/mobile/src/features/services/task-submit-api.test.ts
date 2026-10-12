@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import {
+  ensureTaskDeliveryFolder,
   fetchTaskSubmitPermission,
   fetchDeliveryFolders,
   submitTask,
@@ -8,7 +9,8 @@ import {
 } from "./task-submit-api";
 import type { TaskDetail } from "./task-detail-api";
 import type { DeliveryTemplate } from "./task-delivery-api";
-vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
 const id = "11111111-1111-4111-8111-111111111111";
 const file = "22222222-2222-4222-8222-222222222222";
 const task: TaskDetail = {
@@ -56,7 +58,7 @@ const input = {
   },
 };
 beforeEach(() => vi.resetAllMocks());
-it("requires explicit submit permission plus assignment or management", async () => {
+it("requires explicit submit permission and assignment even for managers", async () => {
   const signal = new AbortController().signal;
   vi.mocked(api.get).mockResolvedValue({ userId: "1", permissions: ["tasks.manage"] });
   expect(await fetchTaskSubmitPermission(task, "1", signal)).toBe(false);
@@ -71,7 +73,7 @@ it("requires explicit submit permission plus assignment or management", async ()
     userId: "1",
     permissions: ["tasks.submit_assigned", "tasks.manage"],
   });
-  expect(await fetchTaskSubmitPermission({ ...task, assignees: [] }, "1", signal)).toBe(true);
+  expect(await fetchTaskSubmitPermission({ ...task, assignees: [] }, "1", signal)).toBe(false);
 });
 it("requires current template revision and all mandatory answers", () => {
   expect(validateTaskSubmission(input, template).professionalDelivery?.answers.description).toBe(
@@ -202,4 +204,40 @@ it("requires the returned professional delivery revision and answers to match", 
       "acknowledgement mismatch"
     );
   }
+});
+
+it("resolves the task folder before uploads and validates task identity", async () => {
+  const signal = new AbortController().signal;
+  vi.mocked(api.put).mockResolvedValue({
+    id,
+    crewId: "crew",
+    deliveryFolder: { id: file, name: "Deliveries" },
+  });
+  expect(await ensureTaskDeliveryFolder(id, "crew", 1, signal)).toEqual({
+    id: file,
+    name: "Deliveries",
+  });
+  expect(api.put).toHaveBeenCalledWith(`/crew-tasks/${id}/delivery-folder`, {
+    service: "aurora",
+    data: { deliveryFolderId: null },
+    retry: false,
+    signal,
+  });
+  vi.mocked(api.put).mockResolvedValue({
+    id,
+    crewId: "other",
+    deliveryFolder: { id: file, name: "Deliveries" },
+  });
+  await expect(ensureTaskDeliveryFolder(id, "crew", 1, signal)).rejects.toThrow("scope mismatch");
+});
+it("rejects cancelled and stale folder resolution", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expect(ensureTaskDeliveryFolder(id, "crew", 1, controller.signal)).rejects.toThrow(
+    "session expired"
+  );
+  await expect(
+    ensureTaskDeliveryFolder(id, "crew", 2, new AbortController().signal)
+  ).rejects.toThrow("session expired");
+  expect(api.put).not.toHaveBeenCalled();
 });

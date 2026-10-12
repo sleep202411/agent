@@ -52,13 +52,14 @@ type ShareCardProps = {
    * snapshot never has a blank poster.
    */
   onPosterReady?: () => void;
+  onPosterError?: () => void;
 };
 
 /**
  * Postcard view. Expose the `ViewShot` ref to the caller for `captureRef`.
  */
 export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareCard(
-  { ip, creatorName, creatorAvatar, shareUrl, onPosterReady },
+  { ip, creatorName, creatorAvatar, shareUrl, onPosterReady, onPosterError },
   ref
 ) {
   const poster = ip.coverUrl ?? ip.backdropUrl;
@@ -80,6 +81,7 @@ export const ShareCard = forwardRef<ViewShotRef, ShareCardProps>(function ShareC
               style={StyleSheet.absoluteFill}
               contentFit="cover"
               onLoad={() => onPosterReady?.()}
+              onError={() => onPosterError?.()}
             />
           ) : (
             <View style={[StyleSheet.absoluteFill, styles.posterFallback]}>

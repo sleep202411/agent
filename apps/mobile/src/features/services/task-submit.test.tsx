@@ -1,15 +1,19 @@
-import { act, type ReactNode } from "react";
+import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { TaskSubmit } from "./task-submit";
+import { TaskSubmit, TaskSubmissionUpload } from "./task-submit";
+import { useTaskSubmitSession } from "./use-task-submit-session";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({
   permission: vi.fn(),
   submit: vi.fn(),
   template: vi.fn(),
   folders: vi.fn(),
+  ensureFolder: vi.fn(),
   refresh: vi.fn(),
   generation: 1,
+  uploadProps: vi.fn(),
+  uploadUnmount: vi.fn(),
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-submit-api", async (original) => ({
@@ -17,6 +21,7 @@ vi.mock("./task-submit-api", async (original) => ({
   fetchTaskSubmitPermission: h.permission,
   submitTask: h.submit,
   fetchDeliveryFolders: h.folders,
+  ensureTaskDeliveryFolder: h.ensureFolder,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
@@ -69,6 +74,25 @@ vi.mock("@/features/crew-assets/asset-picker", () => ({
     </button>
   ),
 }));
+vi.mock("@/features/crew-assets/file-upload", () => ({
+  AssetFileUpload: (props: {
+    onAttached: (asset: { id: string; name: string }) => void;
+    onClose: () => void;
+  }) => {
+    useEffect(() => () => h.uploadUnmount(), []);
+    h.uploadProps(props);
+    return (
+      <button
+        onClick={() => {
+          props.onAttached({ id: "22222222-2222-4222-8222-222222222222", name: "Uploaded.mp4" });
+          props.onClose();
+        }}
+      >
+        finish upload
+      </button>
+    );
+  },
+}));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const id = "11111111-1111-4111-8111-111111111111";
@@ -77,6 +101,8 @@ const task: TaskDetail = {
   crewId: "crew",
   number: 1,
   title: "Shot",
+  canvasHref: "/fizzstudio/projects/project",
+  deliveryFolder: { id, name: "Deliveries" },
   description: "",
   version: 1,
   status: "open",
@@ -112,6 +138,10 @@ beforeEach(() => {
   h.permission.mockResolvedValue(true);
   h.template.mockResolvedValue(null);
   h.folders.mockResolvedValue([]);
+  h.ensureFolder.mockResolvedValue({
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Automatic delivery",
+  });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -172,23 +202,14 @@ it("submits once, freezes an uncertain result and requires refresh", async () =>
   await act(async () => button("thread.refresh")!.click());
   expect(h.refresh).toHaveBeenCalledOnce();
 });
-it("includes a chosen delivery folder and refreshes after success", async () => {
+it("shows the assigned folder without changing it during submission", async () => {
   h.folders.mockResolvedValue([
     { id, parentId: null, name: "Deliveries", effectivePermission: "upload" },
   ]);
   h.submit.mockResolvedValue({});
   await render();
-  await act(async () =>
-    button("taskSubmit.deliveryFolder: taskSubmit.automaticDeliveryFolder")!.click()
-  );
-  await act(async () => button("Deliveries")!.click());
   await act(async () => button("taskSubmit.submitAction")!.click());
-  expect(h.submit).toHaveBeenCalledExactlyOnceWith(
-    task,
-    "1",
-    { note: "", assetNodeIds: [], deliveryFolderId: id },
-    null
-  );
+  expect(h.submit).toHaveBeenCalledExactlyOnceWith(task, "1", { note: "", assetNodeIds: [] }, null);
   expect(h.refresh).toHaveBeenCalledOnce();
 });
 it("aborts prerequisite reads and ignores late account results", async () => {
@@ -247,3 +268,356 @@ it("shows unresolved blockers and prevents submission until refreshed dependenci
   });
   expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
 });
+
+it("uploads into the selected folder and assigns only the originating delivery field", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 2,
+    definition: {
+      name: "Delivery",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+        { key: "source", label: "Source", type: "attachment", required: false, instructions: "" },
+      ],
+    },
+  });
+  h.folders.mockResolvedValue([
+    { id, parentId: null, name: "Deliveries", effectivePermission: "upload" },
+  ]);
+  await render();
+  await act(async () => button("thread.uploadFile")!.click());
+  expect(h.uploadProps.mock.lastCall?.[0]).toMatchObject({
+    crewId: "crew",
+    userId: "1",
+    generation: 1,
+    parentId: id,
+  });
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("finish upload")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(button("● Uploaded.mp4")).toBeDefined();
+  expect(button("○ Uploaded.mp4")).toBeDefined();
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.calls[0]?.[2]).toMatchObject({
+    assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+    professionalDelivery: { answers: { video: ["22222222-2222-4222-8222-222222222222"] } },
+  });
+  expect(h.submit.mock.calls[0]?.[2].professionalDelivery.answers.source).toBeUndefined();
+});
+it("ignores a delivery upload callback after the account changes", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 2,
+    definition: {
+      name: "Delivery",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+      ],
+    },
+  });
+  await render();
+  await act(async () => button("thread.uploadFile")!.click());
+  h.generation = 2;
+  await act(async () => button("finish upload")!.click());
+  expect(host.textContent).not.toContain("Uploaded.mp4");
+  expect(h.submit).not.toHaveBeenCalled();
+});
+
+function Journey({ hosted = false }: { hosted?: boolean }) {
+  const [hidden, setHidden] = useState(false);
+  const [snapshot, setSnapshot] = useState(task);
+  const [revision, setRevision] = useState(0);
+  const refresh = () => {
+    setSnapshot({ ...task });
+    setRevision((n) => n + 1);
+  };
+  const session = useTaskSubmitSession(task.id, 1, refresh);
+  return (
+    <>
+      <button onClick={refresh}>Reload details</button>
+      <button onClick={() => setHidden((value) => !value)}>Toggle details</button>
+      {hosted && (
+        <TaskSubmissionUpload session={session} crewId={task.crewId} userId="1" generation={1} />
+      )}
+      {!hidden && (
+        <TaskSubmit
+          uploadHosted={hosted}
+          key={revision}
+          task={snapshot}
+          userId="1"
+          generation={1}
+          onRefresh={refresh}
+          session={session}
+        />
+      )}
+    </>
+  );
+}
+const template = {
+  categoryId: id,
+  version: 2,
+  definition: {
+    name: "Delivery",
+    description: "",
+    prices: [],
+    fields: [{ key: "brief", label: "Brief", type: "text", required: true, instructions: "" }],
+  },
+};
+it("retains delivery inputs through an uncertain submission and detail reload", async () => {
+  h.template.mockResolvedValue(template);
+  h.folders.mockResolvedValue([
+    { id, parentId: null, name: "Deliveries", effectivePermission: "upload" },
+  ]);
+  h.submit.mockRejectedValue(new Error("Response interrupted"));
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Delivery note"));
+  await act(async () => type(1, "Completed storyboard"));
+  await act(async () => button("crewAssets.choose · 0/100")!.click());
+  await act(async () => button("pick file")!.click());
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Delivery note");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Completed storyboard");
+  expect(button("Final.mp4 ×")).toBeDefined();
+  expect(host.textContent).toContain("taskSubmit.deliveryFolder: Deliveries");
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).toHaveBeenCalledTimes(1);
+});
+it("does not rebind delivery answers to a different template version", async () => {
+  h.template.mockResolvedValue(template);
+  await act(async () => root.render(<Journey />));
+  await act(async () => type(0, "Keep my note"));
+  await act(async () => type(1, "Original requirements"));
+  h.template.mockResolvedValue({ ...template, version: 3 });
+  await act(async () => button("Reload details")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Keep my note");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("");
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  h.template.mockResolvedValue(template);
+  await act(async () => button("Reload details")!.click());
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Original requirements");
+});
+it("keeps pending submissions locked through reload and requires a new read after failure", async () => {
+  let fail!: (error: Error) => void;
+  h.submit.mockImplementation(
+    () =>
+      new Promise<void>((_, reject) => {
+        fail = reject;
+      })
+  );
+  await act(async () => root.render(<Journey />));
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  await act(async () => button("Reload details")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => fail(new Error("Response lost")));
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("thread.refresh")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).toHaveBeenCalledTimes(1);
+});
+it("ignores an upload callback from a retired form after refreshing details", async () => {
+  h.template.mockResolvedValue({
+    ...template,
+    definition: {
+      ...template.definition,
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+      ],
+    },
+  });
+  await act(async () => root.render(<Journey />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const old = h.uploadProps.mock.lastCall![0];
+  await act(async () => button("Reload details")!.click());
+  await act(async () => old.onAttached({ id, name: "Retired.mp4" }));
+  expect(host.textContent).not.toContain("Retired.mp4");
+});
+it("retires the submission draft when the account changes", async () => {
+  await render();
+  await act(async () => type(0, "Private delivery"));
+  h.generation = 2;
+  await act(async () =>
+    root.render(<TaskSubmit task={task} userId="2" generation={2} onRefresh={h.refresh} />)
+  );
+  expect(host.querySelector("input")!.value).toBe("");
+});
+
+const attachmentTemplate = {
+  ...template,
+  definition: {
+    ...template.definition,
+    fields: [
+      { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+    ],
+  },
+};
+it("keeps a hosted upload alive while foreground refresh temporarily removes task details", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => type(0, "Keep delivery note"));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  await act(async () => button("Toggle details")!.click());
+  expect(h.uploadUnmount).not.toHaveBeenCalled();
+  await act(async () => {
+    upload.onAttached({ id, name: "Returned picker.mp4" });
+    upload.onClose();
+  });
+  expect(h.submit).not.toHaveBeenCalled();
+  await act(async () => button("Toggle details")!.click());
+  expect(host.querySelector("input")!.value).toBe("Keep delivery note");
+  expect(button("Returned picker.mp4 ×")).toBeDefined();
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.lastCall![2].professionalDelivery.answers.video).toEqual([id]);
+});
+it("does not rebind a returning upload to a replacement template", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  h.template.mockResolvedValue({ ...attachmentTemplate, version: 3 });
+  await act(async () => button("Reload details")!.click());
+  expect(h.uploadUnmount).not.toHaveBeenCalled();
+  await act(async () => {
+    upload.onAttached({ id, name: "Original template.mp4" });
+    upload.onClose();
+  });
+  expect(button("Original template.mp4 ×")).toBeDefined();
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => button("Reload details")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(h.submit).not.toHaveBeenCalled();
+});
+it("ignores hosted upload completion after leaving the task", async () => {
+  h.template.mockResolvedValue(attachmentTemplate);
+  await act(async () => root.render(<Journey hosted />));
+  await act(async () => button("thread.uploadFile")!.click());
+  const upload = h.uploadProps.mock.lastCall![0];
+  await act(async () => root.render(<div>Another task</div>));
+  expect(h.uploadUnmount).toHaveBeenCalledOnce();
+  await act(async () => upload.onAttached({ id, name: "Old.mp4" }));
+  await act(async () => root.render(<Journey hosted />));
+  expect(host.textContent).not.toContain("Old.mp4");
+  expect(h.submit).not.toHaveBeenCalled();
+});
+
+it("retries automatic-folder resolution before allowing any file upload", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 1,
+    definition: {
+      name: "Files",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+      ],
+    },
+  });
+  h.ensureFolder.mockRejectedValueOnce(new Error("Folder response lost"));
+  await render({ ...task, deliveryFolder: null });
+  await act(async () => button("thread.uploadFile")!.click());
+  expect(h.uploadProps).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Folder response lost");
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("common.retry")!.click());
+  expect(h.ensureFolder).toHaveBeenCalledTimes(2);
+  expect(h.uploadProps.mock.lastCall?.[0]).toMatchObject({
+    parentId: "33333333-3333-4333-8333-333333333333",
+    destination: "Automatic delivery",
+  });
+});
+
+it("ignores a late automatic-folder response after closing the upload", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 1,
+    definition: {
+      name: "Files",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: false, instructions: "" },
+      ],
+    },
+  });
+  let resolve!: (folder: { id: string; name: string }) => void;
+  h.ensureFolder.mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    })
+  );
+  await render({ ...task, deliveryFolder: null });
+  await act(async () => button("thread.uploadFile")!.click());
+  await act(async () => button("myServices.cancel")!.click());
+  await act(async () => resolve({ id, name: "Late folder" }));
+  expect(h.uploadProps).not.toHaveBeenCalled();
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+});
+
+it("requires a delivery link, files or a linked canvas; rejects malformed links even with files", async () => {
+  await render({ ...task, canvasHref: null });
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("crewAssets.choose · 0/100")!.click());
+  await act(async () => button("pick file")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  await act(async () => type(1, "javascript:alert(1)"));
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => type(1, "https://example.com/final"));
+  await act(async () => type(0, "Reviewed final cut"));
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.calls[0]![2]).toMatchObject({
+    note: "https://example.com/final\n\nReviewed final cut",
+    assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+  });
+});
+it("permits generic upload without a professional template", async () => {
+  await render({ ...task, canvasHref: null });
+  await act(async () => button("thread.uploadFile")!.click());
+  expect(h.uploadProps.mock.lastCall?.[0].parentId).toBe(id);
+  await act(async () => button("finish upload")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.calls[0]![2]).toEqual({
+    note: "",
+    assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+  });
+});
+it("limits the combined delivery link and note to 5000 characters", async () => {
+  await render({ ...task, canvasHref: null });
+  await act(async () => type(1, "https://example.com/work"));
+  await act(async () => type(0, "x".repeat(5000)));
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+});
+
+it.each(["script", "art", "music", "storyboard", "edit"] as const)(
+  "shows all standard delivery slots for %s tasks",
+  async (taskKind) => {
+    await render({ ...task, taskKind });
+    for (const slot of ["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"])
+      expect(host.textContent).toContain(`taskSubmit.${slot}`);
+  }
+);
+it.each([0, 1, 2, 3])(
+  "uploads through standard slot %s and submits without a link",
+  async (index) => {
+    await render({ ...task, canvasHref: null });
+    const uploads = Array.from(host.querySelectorAll("button")).filter(
+      (b) => b.textContent === "thread.uploadFile"
+    );
+    await act(async () => uploads[index]!.click());
+    await act(async () => button("finish upload")!.click());
+    h.submit.mockResolvedValue({});
+    await act(async () => button("taskSubmit.submitAction")!.click());
+    expect(h.submit).toHaveBeenCalled();
+    expect(h.submit.mock.calls[0][2]).toMatchObject({
+      assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+    });
+  }
+);

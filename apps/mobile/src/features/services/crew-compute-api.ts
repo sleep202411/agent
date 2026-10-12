@@ -6,6 +6,7 @@ export const computeRequest = z.object({
   id: z.string().uuid(),
   crewId: identifier,
   userId: z.string().min(1),
+  kind: z.enum(["top_up", "initial_allowance", "legacy_allowance"]),
   requestedByUserId: z.string().nullable(),
   remainingWorkload: z.string().nullable(),
   workloadUnit: z.string().nullable(),
@@ -20,8 +21,38 @@ export const computeRequest = z.object({
   decisionNote: z.string().nullable(),
 });
 const pageSchema = z.object({
+  crewName: z.string().optional(),
   isOwner: z.boolean(),
   workspaceLinked: z.boolean(),
+  projectBudget: z
+    .object({
+      pointsPerMinute: z.number().int().positive(),
+      totalPoints: z.string().regex(/^\d+$/),
+      releasedPoints: z.string().regex(/^\d+$/),
+      closed: z.boolean(),
+      producerSettlement: z
+        .object({
+          grossMinor: z.string().regex(/^\d+$/),
+          deductionMinor: z.string().regex(/^\d+$/),
+          currency: z.enum(["USD", "CNY"]),
+          note: z.string(),
+        })
+        .nullable()
+        .optional(),
+    })
+    .nullable(),
+  taskUsage: z.array(
+    z.object({
+      taskId: z.string().uuid(),
+      taskTitle: z.string(),
+      userId: z.string(),
+      approvedPoints: z.string().regex(/^\d+$/),
+      creditedPoints: z.string().regex(/^\d+$/),
+      pendingPoints: z.string().regex(/^\d+$/),
+      consumedPoints: z.string().regex(/^\d+$/),
+      committedPoints: z.string().regex(/^-?\d+$/),
+    })
+  ),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({
     pending: z.number().int().nonnegative().optional(),
@@ -46,7 +77,7 @@ export const computeInput = z
   .object({
     taskId: z.string().uuid(),
     beneficiaryUserId: z.string().trim().min(1).max(64),
-    points: z.number().int().positive().max(500),
+    points: z.number().int().positive().max(3000),
     remainingWorkload: z.number().positive().max(999_999_999_999).multipleOf(0.01),
     workloadUnit: z.enum(workloadUnits),
     reason: z.string().trim().min(1).max(2000),
@@ -72,6 +103,9 @@ export async function fetchCompute(
     })
   );
   if (
+    page.taskUsage.some((row) => !page.isOwner && row.userId !== userId) ||
+    new Set(page.taskUsage.map((row) => `${row.taskId}:${row.userId}`)).size !==
+      page.taskUsage.length ||
     page.items.some((row) => row.crewId !== crewId || (!page.isOwner && row.userId !== userId)) ||
     new Set(page.items.map((r) => r.id)).size !== page.items.length ||
     new Set(page.tasks.map((r) => r.id)).size !== page.tasks.length ||
@@ -88,6 +122,8 @@ export async function createCompute(
 ) {
   identifier.parse(crewId);
   const data = computeInput.parse(input);
+  if (data.beneficiaryUserId !== userId)
+    throw new Error("Creators can only request points for themselves");
   if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
   const receipt = computeRequest
     .extend({ requestKey: z.string().uuid() })

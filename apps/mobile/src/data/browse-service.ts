@@ -7,7 +7,7 @@ import type { AppLocale } from "@/config";
 
 import { fetchCrewById, fetchCrewFeed, fetchCrewFeedPage, fetchCrewsByUser } from "./crew-api";
 import { fetchCreatorServiceById, fetchCreatorServices } from "./creator-service-api";
-import { fetchCreatorById, fetchCreators, type CreatorsPage } from "./creator-api";
+import { fetchCreatorById, fetchCreators, searchCreators, type CreatorsPage } from "./creator-api";
 import { fetchCreatorIps, fetchIpCatalogPage, fetchIpDetail, fetchIpDiscovery } from "./ip-api";
 import {
   fetchNewsFeed,
@@ -33,7 +33,13 @@ export type { NewsFeedPage } from "./news-api";
 export { NEWS_PAGE_SIZE } from "./news-api";
 
 export type { IpDiscovery } from "./types";
-export { blockIpContent, IP_REPORT_REASONS, reportIpContent, type IpReportReason } from "./ip-api";
+export {
+  blockIpContent,
+  IP_REPORT_REASONS,
+  reportIpContent,
+  type IpReportReason,
+  type IpContentReport,
+} from "./ip-api";
 export { likeIp, recordIpView, unlikeIp } from "./ip-api";
 export {
   fetchCommunityPointBalance,
@@ -43,7 +49,8 @@ export {
   purchaseIpContent,
   type PurchaseResult,
 } from "./ip-api";
-export { applyToCrewPosition, blockCrew, reportCrew } from "./crew-api";
+export { blockCrew, reportCrew } from "./crew-api";
+export { applyToCrewPosition } from "./crew-application-api";
 
 export async function getIpDiscovery(): Promise<IpDiscovery> {
   return fetchIpDiscovery();
@@ -75,8 +82,12 @@ export async function getCrewFeedPage(params?: {
   return fetchCrewFeedPage(params);
 }
 
-export async function getCreators(limit?: number, offset?: number): Promise<CreatorsPage> {
-  return fetchCreators(limit, offset);
+export async function getCreators(
+  limit?: number,
+  offset?: number,
+  query?: string
+): Promise<CreatorsPage> {
+  return query?.trim() ? searchCreators(query, limit, offset) : fetchCreators(limit, offset);
 }
 
 export async function getCreatorById(id: string): Promise<CreatorSummary | undefined> {
@@ -94,8 +105,11 @@ export async function getCreatorServiceById(id: string): Promise<CreatorServiceD
   return fetchCreatorServiceById(id);
 }
 
-export async function getCrewById(id: string): Promise<CrewDetail | undefined> {
-  return fetchCrewById(id);
+export async function getCrewById(
+  id: string,
+  signal?: AbortSignal
+): Promise<CrewDetail | undefined> {
+  return fetchCrewById(id, signal);
 }
 
 export async function getCrewsByUser(userId: string): Promise<CrewSummary[]> {
@@ -103,8 +117,12 @@ export async function getCrewsByUser(userId: string): Promise<CrewSummary[]> {
 }
 
 /** A creator's published IPs (Nest `/ip-commerce/creators/:id/ips`, @Public). */
-export async function getCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
-  return fetchCreatorIps(creatorId, limit);
+export async function getCreatorIps(
+  creatorId: string,
+  limit = 12,
+  signal?: AbortSignal
+): Promise<IpSummary[]> {
+  return fetchCreatorIps(creatorId, limit, signal);
 }
 
 export async function getNewsFeed(

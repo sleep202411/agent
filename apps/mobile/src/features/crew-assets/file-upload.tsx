@@ -1,3 +1,6 @@
+import { uploadConfirmation, type UploadConfirmation } from "./upload-confirmation";
+import { isExpiredCrewUpload } from "./upload-expiry";
+import { uploadReceipt } from "./upload-receipt";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
 import { getAuthGeneration, subscribeAuth } from "@/auth/auth-store";
@@ -6,7 +9,11 @@ import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { pickAndUploadCrewFile, discardCrewUpload, type CrewUpload } from "./upload";
-import { attachOrganizationFile, validateAssetDestination } from "./organization-api";
+import {
+  attachOrganizationFile,
+  validateAssetDestination,
+  type OrganizationNode,
+} from "./organization-api";
 type Props = {
   crewId: string;
   userId: string;
@@ -14,6 +21,7 @@ type Props = {
   parentId: string | null;
   destination: string;
   onClose: () => void;
+  onAttached?: (asset: OrganizationNode) => void;
 };
 export function AssetFileUpload(props: Props) {
   return props.generation === getAuthGeneration() ? (
@@ -26,9 +34,31 @@ export function AssetFileUpload(props: Props) {
 function Form(props: Props) {
   const t = useTranslations(),
     op = useAuthFormOperation(`${props.crewId}:${props.parentId}`, true);
-  const [file, setFile] = useState<CrewUpload>();
-  const [attempted, setAttempted] = useState(false),
-    [error, setError] = useState<string>();
+  const [receipt] = useState(() =>
+    uploadReceipt(props.crewId, props.userId, props.generation, props.parentId)
+  );
+  const [confirmation] = useState(() =>
+    uploadConfirmation(props.crewId, props.userId, props.generation, props.parentId)
+  );
+  const [initial] = useState(() => {
+    try {
+      return { saved: receipt.read(), pending: confirmation.read(), error: undefined };
+    } catch (cause) {
+      return {
+        saved: null,
+        pending: null,
+        error: cause instanceof Error ? cause.message : String(cause),
+      };
+    }
+  });
+  const [file, setFile] = useState<CrewUpload | undefined>(
+    initial.pending ? undefined : initial.saved?.file
+  );
+  const [pending, setPending] = useState<UploadConfirmation | null>(initial.pending);
+  const restored = initial.error === undefined;
+  const [expiredKey, setExpiredKey] = useState<string>();
+  const [attempted, setAttempted] = useState(initial.saved?.attempted ?? false),
+    [error, setError] = useState<string | undefined>(initial.error);
   const controller = useRef<AbortController | undefined>(undefined);
   useEffect(() => {
     const unsubscribe = subscribeAuth(() => {
@@ -40,8 +70,77 @@ function Form(props: Props) {
     };
   }, [props.generation]);
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  const reportExpiry = (e: unknown, storageKey: string) => {
+    report(e);
+    if (isExpiredCrewUpload(e)) {
+      try {
+        if (confirmation.read()?.request.storageKey === storageKey && !receipt.read())
+          setExpiredKey(storageKey);
+      } catch {
+        // Invalid local state must not grant permission to discard a checkpoint.
+      }
+    }
+  };
+  const restart = () => {
+    if (op.busy || !expiredKey || props.generation !== getAuthGeneration()) return;
+    try {
+      if (receipt.read())
+        throw new Error("A confirmed upload is pending. Reopen this folder before continuing.");
+      confirmation.clear(expiredKey);
+      setPending(null);
+      setExpiredKey(undefined);
+      setError(undefined);
+    } catch (cause) {
+      report(cause);
+    }
+  };
   const pick = () => {
-    if (op.busy || file || props.generation !== getAuthGeneration()) return;
+    if (!restored || op.busy || file || pending || props.generation !== getAuthGeneration()) return;
+    void op.run(
+      async () => {
+        setError(undefined);
+        if (receipt.read() || confirmation.read())
+          throw new Error("Another upload is pending. Reopen this folder before continuing.");
+        const c = new AbortController();
+        controller.current = c;
+        await validateAssetDestination(
+          props.crewId,
+          props.userId,
+          props.generation,
+          props.parentId
+        );
+        c.signal.throwIfAborted();
+        let confirmationKey: string | undefined;
+        const result = await pickAndUploadCrewFile(props.crewId, c.signal, (request, name) => {
+          confirmation.save({ request, name });
+          confirmationKey = request.storageKey;
+          setPending(confirmation.read());
+        });
+        if (props.generation !== getAuthGeneration()) throw new Error("Upload session expired.");
+        if (result) finishConfirmation(result, confirmationKey);
+        return result;
+      },
+      (result) => {
+        if (result) setFile(result);
+      },
+      report
+    );
+  };
+  // Keep the confirmation until its media receipt is durable. A crash between
+  // those two writes recovers the same media and preserves any attachment attempt.
+  const finishConfirmation = (result: CrewUpload, storageKey?: string) => {
+    const saved = confirmation.read();
+    if (saved && saved.request.storageKey !== storageKey)
+      throw new Error("Another upload confirmation is pending.");
+    const existing = receipt.read();
+    const attempted = existing?.attempted ?? false;
+    receipt.save({ file: result, attempted });
+    if (saved) confirmation.clear(saved.request.storageKey);
+    setPending(null);
+    setAttempted(attempted);
+  };
+  const recover = () => {
+    if (!restored || op.busy || !pending || props.generation !== getAuthGeneration()) return;
     void op.run(
       async () => {
         setError(undefined);
@@ -54,14 +153,12 @@ function Form(props: Props) {
           props.parentId
         );
         c.signal.throwIfAborted();
-        const result = await pickAndUploadCrewFile(props.crewId, c.signal);
-        if (props.generation !== getAuthGeneration()) throw new Error("Upload session expired.");
+        const result = await confirmation.recover(c.signal, pending.request.storageKey);
+        finishConfirmation(result, pending.request.storageKey);
         return result;
       },
-      (result) => {
-        if (result) setFile(result);
-      },
-      report
+      setFile,
+      (cause) => reportExpiry(cause, pending.request.storageKey)
     );
   };
   const attach = () => {
@@ -69,6 +166,7 @@ function Form(props: Props) {
     void op.run(
       async () => {
         setError(undefined);
+        receipt.save({ file, attempted: true });
         setAttempted(true);
         return attachOrganizationFile(props.crewId, props.userId, props.generation, {
           mediaAssetId: file.mediaAssetId,
@@ -76,7 +174,11 @@ function Form(props: Props) {
           parentId: props.parentId,
         });
       },
-      props.onClose,
+      (asset) => {
+        props.onAttached?.(asset);
+        receipt.clear(file.mediaAssetId);
+        props.onClose();
+      },
       report
     );
   };
@@ -84,9 +186,16 @@ function Form(props: Props) {
     if (op.busy || !file || attempted || props.generation !== getAuthGeneration()) return;
     void op.run(
       async () => {
+        if (receipt.read()?.attempted)
+          throw new Error(
+            "This file may already be attached. Reopen the folder before continuing."
+          );
         await discardCrewUpload(props.crewId, file.mediaAssetId);
       },
-      props.onClose,
+      () => {
+        receipt.clear(file.mediaAssetId);
+        props.onClose();
+      },
       report
     );
   };
@@ -97,7 +206,17 @@ function Form(props: Props) {
         {t("assetOrganization.destination")}: {props.destination}
       </ThemedText>
       <ThemedText>{t("assetUpload.help")}</ThemedText>
-      {!file && <Button label={t("thread.uploadFile")} disabled={op.busy} onPress={pick} />}
+      {!file && !pending && (
+        <Button label={t("thread.uploadFile")} disabled={!restored || op.busy} onPress={pick} />
+      )}
+      {pending && <ThemedText>{pending.name}</ThemedText>}
+      {pending && <ThemedText>{t("assetUpload.confirmRecovery")}</ThemedText>}
+      {pending && (
+        <Button label={t("inbox.retry")} disabled={!restored || op.busy} onPress={recover} />
+      )}
+      {pending && expiredKey && (
+        <Button label={t("assetUpload.restart")} disabled={op.busy} onPress={restart} />
+      )}
       {file && <ThemedText>{file.name}</ThemedText>}
       {file && (
         <Button

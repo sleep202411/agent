@@ -1,71 +1,192 @@
+import { CertificationGuide } from "@/features/certificates/certification-guide";
 import { Image } from "expo-image";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { InvalidCreatorIpPageError } from "@/data/ip-api";
+import { useAuth } from "@/auth";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { IpGrid } from "@/components/ip-grid";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
-import {
-  getCreatorById,
-  getCreatorIps,
-  getCreatorServices,
-  getCrewsByUser,
-} from "@/data/browse-service";
-import type {
-  CreatorServiceSummary,
-  CreatorSummary,
-  CrewStatus,
-  CrewSummary,
-  IpSummary,
-} from "@/data/types";
+import { getCreatorById, getCreatorIps } from "@/data/browse-service";
+import type { CreatorServiceSummary, CreatorSummary, IpSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
-import { type MessageKey, useLocale, useTranslations } from "@/i18n";
+import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 
+import {
+  fetchCreatorServicesPage,
+  InvalidCreatorServicesPageError,
+} from "@/data/creator-service-api";
+import { PublicStudioProfile } from "@/features/studios/public-studio-profile";
 import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works";
 import { CreatorExperience } from "@/features/profile/creator-experience";
+import { CreatorCertificates } from "@/features/certificates/creator-certificates";
 import { CreatorEducation } from "@/features/profile/creator-education";
+import { CreatorReviews } from "@/features/profile/creator-reviews";
 
 export default function CreatorDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, section } = useLocalSearchParams<{ id: string; section?: string | string[] }>();
+  const servicesRequested = section === "services";
+  const auth = useAuth();
+  const locale = useLocale();
+  const active = useScreenActive();
+  if (!active || auth.status === "hydrating") return null;
+  return (
+    <CreatorDetailContent
+      key={JSON.stringify([id, servicesRequested, auth.generation, locale])}
+      id={id}
+      servicesRequested={servicesRequested}
+    />
+  );
+}
+
+function CreatorDetailContent({
+  id,
+  servicesRequested,
+}: {
+  id: string;
+  servicesRequested: boolean;
+}) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
   const locale = useLocale();
+  const scroll = useRef<ScrollView>(null);
+  const anchor = useRef({
+    following: servicesRequested,
+    body: null as number | null,
+    services: null as number | null,
+  });
+  const scrollToServices = () => {
+    const target = anchor.current;
+    if (target.following && target.body !== null && target.services !== null) {
+      scroll.current?.scrollTo({
+        y: Math.max(0, target.body + target.services - insets.top - 56),
+        animated: false,
+      });
+    }
+  };
+  const stopFollowing = () => {
+    anchor.current.following = false;
+  };
+  const requestError = (cause: unknown) =>
+    cause instanceof InvalidCreatorServicesPageError || cause instanceof InvalidCreatorIpPageError
+      ? t("contentGpsDiscovery.responseMismatch")
+      : cause instanceof Error
+        ? cause.message
+        : String(cause);
   const [creator, setCreator] = useState<CreatorSummary>();
   const [services, setServices] = useState<CreatorServiceSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState<string>();
+  const moreRequest = useRef<AbortController | null>(null);
+  const seenCursors = useRef(new Set<string>());
+  async function loadMore() {
+    if (!nextCursor || moreRequest.current) return;
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    setMoreBusy(true);
+    setMoreError(undefined);
+    try {
+      const page = await fetchCreatorServicesPage(id, nextCursor, controller.signal);
+      if (controller.signal.aborted) return;
+      if (page.nextCursor && seenCursors.current.has(page.nextCursor))
+        throw Error(t("contentGpsDiscovery.responseMismatch"));
+      seenCursors.current.add(nextCursor);
+      setServices((current) => [
+        ...current,
+        ...page.items.filter((item) => !current.some((existing) => existing.id === item.id)),
+      ]);
+      setNextCursor(page.nextCursor);
+    } catch (cause) {
+      if (!controller.signal.aborted) setMoreError(requestError(cause));
+    } finally {
+      if (moreRequest.current === controller) {
+        moreRequest.current = null;
+        setMoreBusy(false);
+      }
+    }
+  }
   const [works, setWorks] = useState<IpSummary[]>([]);
-  const [crews, setCrews] = useState<CrewSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sectionLoading, setSectionLoading] = useState({
+    services: true,
+    works: true,
+  });
+  const [revision, setRevision] = useState(0);
+  const [errors, setErrors] = useState<Partial<Record<"profile" | "services" | "works", string>>>(
+    {}
+  );
 
   useEffect(() => {
     let alive = true;
-    async function load() {
-      setLoading(true);
-      const [creatorResult, servicesResult, worksResult, crewsResult] = await Promise.allSettled([
-        getCreatorById(id),
-        getCreatorServices(12, { creatorId: id }),
-        getCreatorIps(id),
-        getCrewsByUser(id),
-      ]);
-      if (!alive) return;
-      setCreator(creatorResult.status === "fulfilled" ? creatorResult.value : undefined);
-      setServices(servicesResult.status === "fulfilled" ? servicesResult.value : []);
-      setWorks(worksResult.status === "fulfilled" ? worksResult.value : []);
-      setCrews(crewsResult.status === "fulfilled" ? crewsResult.value : []);
-      setLoading(false);
+    const controller = new AbortController();
+    moreRequest.current?.abort();
+    moreRequest.current = null;
+    setNextCursor(null);
+    setMoreBusy(false);
+    setMoreError(undefined);
+    seenCursors.current.clear();
+    setLoading(true);
+    setErrors({});
+    setSectionLoading({ services: true, works: true });
+    setServices([]);
+    setWorks([]);
+    async function load<T>(
+      key: "profile" | "services" | "works",
+      request: () => Promise<T>,
+      receive: (value: T) => void
+    ) {
+      try {
+        const value = await request();
+        if (alive) receive(value);
+      } catch (cause) {
+        if (alive) {
+          if (key === "profile") setCreator(undefined);
+          setErrors((current) => ({
+            ...current,
+            [key]:
+              cause instanceof InvalidCreatorServicesPageError ||
+              cause instanceof InvalidCreatorIpPageError
+                ? t("contentGpsDiscovery.responseMismatch")
+                : cause instanceof Error
+                  ? cause.message
+                  : String(cause),
+          }));
+        }
+      } finally {
+        if (alive) {
+          if (key === "profile") setLoading(false);
+          else setSectionLoading((current) => ({ ...current, [key]: false }));
+        }
+      }
     }
-    void load();
+    void load("profile", () => getCreatorById(id), setCreator);
+    void load(
+      "services",
+      () => fetchCreatorServicesPage(id, undefined, controller.signal),
+      (page) => {
+        setServices(page.items);
+        setNextCursor(page.nextCursor);
+      }
+    );
+    void load("works", () => getCreatorIps(id, 12, controller.signal), setWorks);
     return () => {
       alive = false;
+      controller.abort();
+      moreRequest.current?.abort();
+      moreRequest.current = null;
     };
-  }, [id]);
+  }, [id, revision, t]);
 
   if (loading) {
     return (
@@ -78,11 +199,20 @@ export default function CreatorDetailScreen() {
   if (!creator) {
     return (
       <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
-        <EmptyState
-          title={t("creatorDetail.notFoundTitle")}
-          detail={t("creatorDetail.notFoundDetail")}
-          symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
-        />
+        {errors.profile ? (
+          <>
+            <ThemedText accessibilityRole="alert">{errors.profile}</ThemedText>
+            <Pressable accessibilityRole="button" onPress={() => setRevision((n) => n + 1)}>
+              <ThemedText>{t("common.retry")}</ThemedText>
+            </Pressable>
+          </>
+        ) : (
+          <EmptyState
+            title={t("creatorDetail.notFoundTitle")}
+            detail={t("creatorDetail.notFoundDetail")}
+            symbol={{ ios: "person.crop.circle", android: "person", web: "person" }}
+          />
+        )}
       </ThemedView>
     );
   }
@@ -101,6 +231,10 @@ export default function CreatorDetailScreen() {
         }}
       />
       <ScrollView
+        ref={scroll}
+        onScrollBeginDrag={stopFollowing}
+        onTouchStart={stopFollowing}
+        onContentSizeChange={scrollToServices}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.seven }}
@@ -144,7 +278,27 @@ export default function CreatorDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.body}>
+        <View
+          style={styles.body}
+          onLayout={(event) => {
+            anchor.current.body = event.nativeEvent.layout.y;
+            scrollToServices();
+          }}
+        >
+          {errors.works && (
+            <View style={styles.section}>
+              {([["works", "creatorDetail.worksTitle"]] as const).map(([key, label]) =>
+                errors[key] ? (
+                  <ThemedText key={key} accessibilityRole="alert">
+                    {t(label)}: {errors[key]}
+                  </ThemedText>
+                ) : null
+              )}
+              <Pressable accessibilityRole="button" onPress={() => setRevision((n) => n + 1)}>
+                <ThemedText>{t("common.retry")}</ThemedText>
+              </Pressable>
+            </View>
+          )}
           <View style={styles.section}>
             <SectionHeader title={t("creatorDetail.aboutTitle")} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.paragraph}>
@@ -153,6 +307,7 @@ export default function CreatorDetailScreen() {
           </View>
 
           <CreatorEducation study={creator.study} />
+          <CreatorCertificates creatorId={creator.id} />
           <CreatorExperience creatorId={creator.id} />
           <CreatorPersonalWorks creatorId={creator.id} />
 
@@ -160,6 +315,7 @@ export default function CreatorDetailScreen() {
             <View style={styles.section}>
               <SectionHeader title={t("creatorDetail.credentialsTitle")} />
               <View style={styles.levelWrap}>
+                <CertificationGuide />
                 {creator.levels.map((level) => (
                   <Tag key={level.id} label={level.name} tone="warning" />
                 ))}
@@ -167,50 +323,94 @@ export default function CreatorDetailScreen() {
             </View>
           ) : null}
 
-          {works.length ? (
+          {sectionLoading.works ? (
+            <View style={styles.section}>
+              <SectionHeader title={t("creatorDetail.worksTitle")} />
+              <ActivityIndicator
+                accessibilityLabel={t("creatorDetail.worksTitle")}
+                color={theme.textSecondary}
+              />
+            </View>
+          ) : works.length ? (
             <View style={styles.section}>
               <SectionHeader title={t("creatorDetail.worksTitle")} trailing={`${works.length}`} />
               <IpGrid ips={works} />
             </View>
           ) : null}
 
-          {crews.length ? (
-            <View style={styles.section}>
-              <SectionHeader title={t("creatorDetail.crewsTitle")} trailing={`${crews.length}`} />
-              <View style={styles.serviceList}>
-                {crews.map((crew) => (
-                  <CreatorCrewRow
-                    key={crew.id}
-                    crew={crew}
-                    onPress={() => router.push(toHref(`/crew/${crew.id}`))}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <View style={styles.section}>
-            <SectionHeader
-              title={t("creatorDetail.servicesTitle")}
-              trailing={`${services.length}`}
-            />
-            {services.length ? (
-              <View style={styles.serviceList}>
-                {services.map((service) => (
-                  <CreatorServiceRow
-                    key={service.id}
-                    service={service}
-                    locale={locale}
-                    onPress={() => router.push(toHref(`/service/${service.id}`))}
-                  />
-                ))}
-              </View>
-            ) : (
-              <ThemedText type="small" themeColor="textSecondary">
-                {t("creatorDetail.servicesEmpty")}
-              </ThemedText>
-            )}
+          <View
+            style={styles.section}
+            onLayout={(event) => {
+              anchor.current.services = event.nativeEvent.layout.y;
+              scrollToServices();
+            }}
+          >
+            <PublicStudioProfile
+              creatorId={creator.id}
+              header={
+                <SectionHeader
+                  title={t("creatorDetail.servicesTitle")}
+                  trailing={
+                    sectionLoading.services || errors.services ? undefined : `${services.length}`
+                  }
+                />
+              }
+            >
+              {errors.services && (
+                <View style={{ gap: Spacing.two }}>
+                  <ThemedText accessibilityRole="alert">{errors.services}</ThemedText>
+                  <Pressable
+                    accessibilityRole="button"
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                    onPress={() => {
+                      // Retrying remounts the scroll view; return to the failed section.
+                      anchor.current = { following: true, body: null, services: null };
+                      setRevision((n) => n + 1);
+                    }}
+                  >
+                    <ThemedText>{t("common.retry")}</ThemedText>
+                  </Pressable>
+                </View>
+              )}
+              {sectionLoading.services ? (
+                <ActivityIndicator
+                  accessibilityLabel={t("creatorDetail.servicesTitle")}
+                  color={theme.textSecondary}
+                />
+              ) : services.length ? (
+                <View style={styles.serviceList}>
+                  {services.map((service) => (
+                    <CreatorServiceRow
+                      key={service.id}
+                      service={service}
+                      locale={locale}
+                      onPress={() => router.push(toHref(`/service/${service.id}`))}
+                    />
+                  ))}
+                </View>
+              ) : !errors.services ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {t("creatorDetail.servicesEmpty")}
+                </ThemedText>
+              ) : null}
+              {moreError && <ThemedText accessibilityRole="alert">{moreError}</ThemedText>}
+              {nextCursor && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={moreBusy}
+                  onPress={() => void loadMore()}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  {moreBusy ? (
+                    <ActivityIndicator />
+                  ) : (
+                    <ThemedText>{t(moreError ? "common.retry" : "myServices.loadMore")}</ThemedText>
+                  )}
+                </Pressable>
+              )}
+            </PublicStudioProfile>
           </View>
+          <CreatorReviews creatorId={creator.id} />
         </View>
       </ScrollView>
     </ThemedView>
@@ -252,50 +452,6 @@ function CreatorServiceRow({
           <ThemedText type="code" style={{ color: theme.brand }}>
             {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
           </ThemedText>
-        </View>
-        <SymbolView
-          name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}
-          size={14}
-          tintColor={theme.textSecondary}
-        />
-      </View>
-    </Pressable>
-  );
-}
-
-function crewTag(status: CrewStatus): {
-  labelKey: MessageKey;
-  tone: "success" | "info" | "neutral";
-} {
-  if (status === "recruiting") return { labelKey: "crews.statusRecruiting", tone: "success" };
-  if (status === "in-production") return { labelKey: "crews.statusInProduction", tone: "info" };
-  return { labelKey: "crews.statusClosed", tone: "neutral" };
-}
-
-function CreatorCrewRow({ crew, onPress }: { crew: CrewSummary; onPress: () => void }) {
-  const t = useTranslations();
-  const theme = useTheme();
-  const tag = crewTag(crew.status);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => pressed && styles.pressed}
-    >
-      <View style={[styles.serviceRow, { borderBottomColor: theme.border }]}>
-        <PosterImage uri={crew.coverUrl} label={crew.name} radius={8} style={styles.serviceThumb} />
-        <View style={styles.serviceCopy}>
-          <View style={styles.metaRow}>
-            <Tag label={t(tag.labelKey)} tone={tag.tone} />
-          </View>
-          <ThemedText type="smallBold" numberOfLines={1}>
-            {crew.name}
-          </ThemedText>
-          {crew.memberCount ? (
-            <ThemedText type="code" themeColor="textSecondary">
-              {crew.memberCount} {t("crews.members")}
-            </ThemedText>
-          ) : null}
         </View>
         <SymbolView
           name={{ ios: "chevron.right", android: "chevron_right", web: "chevron_right" }}

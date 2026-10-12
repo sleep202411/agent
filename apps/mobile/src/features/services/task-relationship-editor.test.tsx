@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { useTaskRelationshipSession } from "./use-task-relationship-session";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import type { TaskDetail } from "./task-detail-api";
 const h = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), refresh: vi.fn(), generation: 1 }));
@@ -68,12 +69,20 @@ const task: TaskDetail = {
   submissions: [],
 };
 let host: HTMLDivElement, root: Root;
-const render = (value = task) =>
-  act(async () =>
-    root.render(
-      <TaskRelationshipEditor task={value} userId="1" generation={1} onRefresh={h.refresh} />
-    )
+function TaskPage({ value }: { value: TaskDetail }) {
+  const session = useTaskRelationshipSession(value.id, 1, h.refresh);
+  return (
+    <TaskRelationshipEditor
+      key={value.version}
+      session={session}
+      task={value}
+      userId="1"
+      generation={1}
+      onRefresh={h.refresh}
+    />
   );
+}
+const render = (value = task) => act(async () => root.render(<TaskPage value={value} />));
 const button = (text: string) =>
   Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text);
 beforeEach(() => {
@@ -198,4 +207,45 @@ it("ignores completion after account changes", async () => {
   h.generation = 2;
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
+});
+
+it("retains selected relationships across panel reloads and requires latest-version review", async () => {
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskRelationships.edit")!.click());
+  await act(async () => button("taskRelationships.addBlocker")!.click());
+  await act(async () => button("pick task")!.click());
+  await render({ ...task, version: 5 });
+  expect(button("TASK-2 · Dependency ×")).toBeDefined();
+  expect(button("taskRelationships.save")!.disabled).toBe(true);
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  await act(async () => button("taskRelationships.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.objectContaining({ version: 5 }), {
+    expectedVersion: 5,
+    parentId: null,
+    blockedByTaskIds: ["other"],
+  });
+});
+it("retains a pending write lock and failed selection across refresh", async () => {
+  let reject!: (error: Error) => void;
+  h.update.mockReturnValue(
+    new Promise((_, fail) => {
+      reject = fail;
+    })
+  );
+  await render();
+  await act(async () => button("taskRelationships.edit")!.click());
+  await act(async () => button("taskRelationships.chooseParent")!.click());
+  await act(async () => button("pick task")!.click());
+  await act(async () => button("taskRelationships.save")!.click());
+  await render({ ...task, version: 5 });
+  expect(button("taskRelationships.save")!.disabled).toBe(true);
+  expect(button("myServices.cancel")!.disabled).toBe(true);
+  expect(button("taskBrief.reviewLatest")).toBeUndefined();
+  await act(async () => reject(new Error("Conflict")));
+  expect(host.textContent).toContain("TASK-2 · Dependency");
+  expect(host.textContent).toContain("Conflict");
+  await act(async () => button("taskBrief.reviewLatest")!.click());
+  expect(button("taskRelationships.save")!.disabled).toBe(false);
+  expect(h.update).toHaveBeenCalledOnce();
 });

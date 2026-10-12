@@ -9,6 +9,8 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
+import { useGatedScreenActive } from "@/hooks/use-app-active";
+import { usePausableTimeout } from "../hooks/use-pausable-timeout";
 import {
   boundsOfExperienceProjectedGeometry,
   createExperiencePressHoldState,
@@ -99,6 +101,9 @@ export function ExperienceSpatialLayer({
   onEvents,
   onRuntimeError,
   onTimelineHoldGateChange,
+  onGestureTapGuardChange,
+  onSettledGestureIdsChange,
+  initialSettledGestureIds,
 }: {
   manifest: ExperienceRuntimeManifest;
   scene: ExperienceScene;
@@ -111,11 +116,17 @@ export function ExperienceSpatialLayer({
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
   onTimelineHoldGateChange?: (gating: boolean) => void;
+  onGestureTapGuardChange?: (guard: ((x: number, y: number) => boolean) | null) => void;
+  onSettledGestureIdsChange?: (ids: string[]) => void;
+  initialSettledGestureIds?: readonly string[];
 }) {
   const [viewportSize, setViewportSize] = useState<ExperienceSize | null>(null);
   const layerOriginRef = useRef({ x: 0, y: 0 });
+  const presenting = useGatedScreenActive();
   const layerRef = useRef<View>(null);
-  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(
+    () => new Set(initialSettledGestureIds)
+  );
   const settledRef = useRef(settledGestureIds);
   const [gateStates, setGateStates] = useState<ReadonlyMap<string, boolean>>(() => new Map());
 
@@ -146,14 +157,18 @@ export function ExperienceSpatialLayer({
     return () => onTimelineHoldGateChange?.(false);
   }, [onTimelineHoldGateChange]);
 
-  const markGestureSettled = useCallback((gestureId: string) => {
-    if (settledRef.current.has(gestureId)) return false;
-    const next = new Set(settledRef.current);
-    next.add(gestureId);
-    settledRef.current = next;
-    setSettledGestureIds(next);
-    return true;
-  }, []);
+  const markGestureSettled = useCallback(
+    (gestureId: string) => {
+      if (settledRef.current.has(gestureId)) return false;
+      const next = new Set(settledRef.current);
+      next.add(gestureId);
+      settledRef.current = next;
+      setSettledGestureIds(next);
+      onSettledGestureIdsChange?.([...next]);
+      return true;
+    },
+    [onSettledGestureIdsChange]
+  );
 
   const sceneHandlesGestureEvent = useCallback(
     (gestureId: string, eventType: "gesture.cancelled" | "gesture.timed-out") =>
@@ -275,6 +290,34 @@ export function ExperienceSpatialLayer({
   ]);
 
   useEffect(() => {
+    // Use the same projected boxes as the visible native controls, with the
+    // official Web player's 24px grace margin for a finger grazing an edge.
+    const bounds = [...presentations, ...tapPresentations, ...swipePresentations]
+      .filter((item) => item.available)
+      .map((item) => hotspotBounds(item.geometry, item.transform));
+    onGestureTapGuardChange?.((pageX, pageY) => {
+      if (!viewportSize) return scene.gestures.length > 0;
+      const x = pageX - layerOriginRef.current.x;
+      const y = pageY - layerOriginRef.current.y;
+      return bounds.some(
+        (box) =>
+          x >= box.x - 24 &&
+          x <= box.x + box.width + 24 &&
+          y >= box.y - 24 &&
+          y <= box.y + box.height + 24
+      );
+    });
+    return () => onGestureTapGuardChange?.(null);
+  }, [
+    onGestureTapGuardChange,
+    presentations,
+    tapPresentations,
+    swipePresentations,
+    viewportSize,
+    scene.gestures,
+  ]);
+
+  useEffect(() => {
     const timedOutEvents = scene.gestures.flatMap((gesture): ExperienceRuntimeEvent[] => {
       if (
         gesture.holdFrame ||
@@ -308,7 +351,14 @@ export function ExperienceSpatialLayer({
   }, [handleGateStateChange, scene.gestures, sceneTimeMs, settledGestureIds]);
 
   return (
-    <View ref={layerRef} pointerEvents="box-none" style={styles.layer} onLayout={handleLayout}>
+    <View
+      ref={layerRef}
+      pointerEvents={presenting ? "box-none" : "none"}
+      accessibilityElementsHidden={!presenting}
+      importantForAccessibility={presenting ? "auto" : "no-hide-descendants"}
+      style={styles.layer}
+      onLayout={handleLayout}
+    >
       {presentations.map((presentation) => (
         <PressHoldControl
           key={presentation.gesture.gestureId}
@@ -386,7 +436,11 @@ function SwipeControl({
   locale: string;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
 }) {
+  const presenting = useGatedScreenActive();
   const pointerRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
+  useEffect(() => {
+    if (!presenting) pointerRef.current = null;
+  }, [presenting]);
   const bounds = hotspotBounds(presentation.geometry, presentation.transform);
 
   const emit = useCallback(
@@ -480,6 +534,7 @@ function PressHoldControl({
   onRuntimeError: (message: string) => void;
   onGateStateChange?: (gating: boolean) => void;
 }) {
+  const presenting = useGatedScreenActive();
   const { gesture, geometry, transform } = presentation;
   const timelineControl = gesture.timelineControl === true;
   const [state, setState] = useState<ExperiencePressHoldState>(() =>
@@ -533,9 +588,11 @@ function PressHoldControl({
     timelineCompleted,
   ]);
 
-  useEffect(() => {
-    if (!timelineGate) return;
-    const timer = setTimeout(() => {
+  usePausableTimeout({
+    enabled: timelineGate,
+    running: presenting,
+    durationMs: TIMELINE_CONTROL_IDLE_TIMEOUT_MS,
+    onTimeout: () => {
       timelinePressedRef.current = false;
       setTimelinePressed(false);
       setTimelineResolved(true);
@@ -546,9 +603,8 @@ function PressHoldControl({
           payload: { sceneTimeMs, idleTimeout: true },
         },
       ]);
-    }, TIMELINE_CONTROL_IDLE_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [gesture.gestureId, onEvents, sceneTimeMs, timelineGate]);
+    },
+  });
 
   const startTimelinePress = () => {
     if (!presentation.available || timelineResolved) return;
@@ -667,7 +723,30 @@ function PressHoldControl({
     []
   );
 
+  useEffect(() => {
+    if (presenting) return;
+    if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
+    animationFrameRef.current = null;
+    previousFrameTimeRef.current = null;
+    pressedRef.current = false;
+    pointerInsideRef.current = true;
+    timelinePressedRef.current = false;
+    // An interrupted gesture has no verdict. Keep completed gestures settled.
+    if (stateRef.current.status !== "completed") {
+      stateRef.current = createExperiencePressHoldState();
+    }
+  }, [presenting]);
+  const [lastPresenting, setLastPresenting] = useState(presenting);
+  if (lastPresenting !== presenting) {
+    setLastPresenting(presenting);
+    if (!presenting) {
+      setTimelinePressed(false);
+      if (state.status !== "completed") setState(createExperiencePressHoldState());
+    }
+  }
+
   const startPress = () => {
+    if (!presenting) return;
     if (timelineControl) {
       startTimelinePress();
       return;

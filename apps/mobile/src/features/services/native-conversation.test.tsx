@@ -5,7 +5,11 @@ import { NativeConversation } from "./native-conversation";
 import type { NativeConversation as Detail, NativeMessage } from "./conversation-api";
 const h = vi.hoisted(() => ({
   generation: 1,
+  outboxRead: vi.fn(),
+  outboxClear: vi.fn(),
+  outboxSave: vi.fn(),
   active: true,
+  focused: true,
   send: vi.fn(),
   attach: vi.fn(),
   upload: vi.fn(),
@@ -17,7 +21,18 @@ const h = vi.hoisted(() => ({
   push: vi.fn(),
   detail: undefined as Detail | undefined,
   messages: [] as NativeMessage[],
+  viewCallbacks: [] as unknown[],
   view: undefined as undefined | ((args: unknown) => void),
+}));
+vi.mock("@/features/crew-assets/organization", () => ({
+  AssetOrganization: ({ crewId, initialNodeId }: { crewId: string; initialNodeId: string }) => (
+    <div>
+      asset-detail:{crewId}:{initialNodeId}
+    </div>
+  ),
+}));
+vi.mock("./conversation-outbox", () => ({
+  conversationOutbox: () => ({ read: h.outboxRead, save: h.outboxSave, clear: h.outboxClear }),
 }));
 vi.mock("@/features/crew-assets/asset-picker", () => ({
   CrewAssetPicker: ({ onSelect }: { onSelect: (assets: unknown[]) => void }) => (
@@ -63,7 +78,10 @@ vi.mock("./task-picker", () => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("expo-router", () => ({
+  useIsFocused: () => h.focused,
+  useRouter: () => ({ push: h.push }),
+}));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("./use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
 vi.mock("./user-displays", () => ({ useUserDisplays: () => new Map() }));
@@ -138,7 +156,18 @@ vi.mock("react-native", () => ({
     onViewableItemsChanged: typeof h.view;
     ListFooterComponent: ReactNode;
   }) => {
-    h.view = onViewableItemsChanged;
+    h.viewCallbacks.push(onViewableItemsChanged);
+    h.view = (args) => {
+      const value = args as {
+        viewableItems: { item: NativeMessage; index: number; isViewable: boolean }[];
+      };
+      onViewableItemsChanged?.({
+        viewableItems: value.viewableItems.map((token) => ({
+          ...token,
+          item: data.find((item) => item.id === token.item.id) ?? token.item,
+        })),
+      });
+    };
     return (
       <div>
         {data.map((item) => (
@@ -187,8 +216,11 @@ const type = (text: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  h.outboxRead.mockReturnValue(null);
   h.generation = 1;
   h.active = true;
+  h.focused = true;
+  h.viewCallbacks.length = 0;
   h.detail = detail;
   h.messages = [message];
   h.discard.mockResolvedValue(undefined);
@@ -486,4 +518,216 @@ it("removes the native community composer and history after access is revoked", 
   expect(host.querySelector("input")).toBeNull();
   expect(host.textContent).not.toContain("Hello buyer");
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it("restores a pending text request after remount and only sends on explicit retry", async () => {
+  h.outboxRead.mockReturnValue({
+    body: "Saved note",
+    clientKey: "original-key",
+    attachments: [],
+    mentions: [],
+    tasks: [],
+  });
+  h.send.mockResolvedValue(message);
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Saved note");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => click("inbox.retry"));
+  expect(h.outboxSave.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
+  expect(h.send).toHaveBeenCalledWith("chat", {
+    body: "Saved note",
+    clientKey: "original-key",
+    mentions: [],
+    tasks: [],
+  });
+  expect(h.outboxClear).toHaveBeenLastCalledWith("original-key");
+});
+it("does not send when the pending request cannot be saved", async () => {
+  h.outboxSave.mockImplementation(() => {
+    throw new Error("Storage full");
+  });
+  await render();
+  await act(async () => type("Keep me"));
+  await act(async () => click("thread.send"));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Storage full");
+  expect(host.querySelector("input")!.value).toBe("Keep me");
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  h.outboxSave.mockImplementation(() => undefined);
+  h.send.mockResolvedValue(message);
+  await act(async () => type("Edited before any send"));
+  await act(async () => click("thread.send"));
+  expect(h.send).toHaveBeenCalledWith("chat", {
+    body: "Edited before any send",
+    clientKey: "stable-key",
+  });
+});
+it("does not overwrite unreadable pending messages", async () => {
+  h.outboxRead.mockImplementation(() => {
+    throw new Error("Unreadable outbox");
+  });
+  await render();
+  expect(host.textContent).toContain("Unreadable outbox");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.outboxSave).not.toHaveBeenCalled();
+});
+it("restores attachment-only sends without uploading the same file again", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  const saved = {
+    body: "",
+    clientKey: "attachment-key",
+    attachments: [{ source: "upload", mediaAssetId: "media", name: "Shot.mp4" }],
+    mentions: [],
+    tasks: [],
+  };
+  h.outboxRead.mockReturnValue(saved);
+  h.attach.mockResolvedValue(message);
+  await render();
+  expect(host.textContent).toContain("thread.pendingAttachments");
+  await act(async () => click("inbox.retry"));
+  expect(h.attach).toHaveBeenCalledWith(h.detail, "buyer", saved);
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.outboxClear).toHaveBeenCalledWith("attachment-key");
+});
+
+it("clears an acknowledged durable request even when the composer has unmounted", async () => {
+  let finish!: (value: NativeMessage) => void;
+  h.send.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  await render();
+  await act(async () => type("Sent before leaving"));
+  await act(async () => click("thread.send"));
+  await act(async () => root.render(null));
+  await act(async () => finish(message));
+  expect(h.outboxClear).toHaveBeenCalledWith("stable-key");
+  expect(h.refresh).not.toHaveBeenCalled();
+});
+
+it("opens a crew attachment's exact asset and returns to the conversation", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.messages = [
+    {
+      ...message,
+      type: "file",
+      payload: {
+        kind: "attachments",
+        attachments: [
+          {
+            assetNodeId: "node",
+            mediaAssetId: "media",
+            name: "Shot.mp4",
+            mediaKind: "video",
+            contentType: "video/mp4",
+            sizeBytes: 1024,
+          },
+        ],
+      },
+    },
+  ];
+  await render();
+  await act(async () => click("thread.openInCrewAssets"));
+  expect(host.textContent).toContain("asset-detail:crew:node");
+  expect(host.textContent).not.toContain("file:Shot.mp4");
+  h.active = false;
+  await render();
+  expect(host.textContent).toContain("asset-detail:crew:node");
+  h.active = true;
+  await render();
+  await act(async () => click("thread.backToChat"));
+  expect(host.textContent).toContain("file:Shot.mp4");
+  h.detail = { ...detail, contextType: "order" };
+  await render();
+  expect(host.textContent).not.toContain("thread.openInCrewAssets");
+});
+
+it("requires a new visibility observation after return and keeps the unsent draft", async () => {
+  await render();
+  await act(async () => type("Keep my draft"));
+  expect(new Set(h.viewCallbacks).size).toBe(1);
+  const previousView = h.view!;
+  await act(async () =>
+    previousView({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(1);
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Keep my draft");
+  expect(h.read).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    previousView({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(1);
+  await act(async () =>
+    h.view!({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledTimes(2);
+});
+
+it("finishes file selection after a background handoff without uploading twice", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(false);
+  h.active = true;
+  await render();
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Selected.mp4" }));
+  expect(host.textContent).toContain("Selected.mp4");
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.attach).not.toHaveBeenCalled();
+});
+it("aborts file selection on route blur and ignores the late picker result", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  let finish!: (value: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  const signal = h.upload.mock.calls[0][1] as AbortSignal;
+  h.active = false;
+  h.focused = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Retired.mp4" }));
+  h.active = true;
+  h.focused = true;
+  await render();
+  expect(host.textContent).not.toContain("Retired.mp4");
+  expect(h.attach).not.toHaveBeenCalled();
+});
+
+it("shows the customer's revision instructions as plain text in the conversation", async () => {
+  const reason = "Revise shot 2.\n保留结尾 <b>literal markup</b>";
+  h.messages = [
+    {
+      ...message,
+      authorId: null,
+      type: "system",
+      body: "ignored system fallback",
+      payload: { kind: "system", system: { kind: "order.revision_requested", params: { reason } } },
+    },
+  ];
+  await render();
+  expect(host.textContent).toContain(reason);
+  expect(host.textContent).not.toContain("ignored system fallback");
+  expect(host.querySelector("b")).toBeNull();
 });

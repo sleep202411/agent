@@ -1,11 +1,25 @@
 import { Image } from "expo-image";
+import { useMemo } from "react";
+import { useAuth } from "@/auth";
+import { durableRecord } from "@/lib/durable-record";
+import { agentInputRequestKey, type AgentInputDraftStorage } from "../lib/agent-input-draft";
 import { SymbolView } from "expo-symbols";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useLocale, useTranslations } from "@/i18n";
 
+import { agentInputQuestionCopy, agentInputOptionLabel } from "../lib/agent-input-copy";
+import { fillMessageTemplate } from "../api/story-production-api";
 import { useAgentInputForm } from "../hooks/use-agent-input-form";
 import type { AgentOsPendingUserInput } from "../api/agent-os-api";
 import {
@@ -37,124 +51,165 @@ function StyleLabelScrim({ id }: { id: string }) {
 }
 
 type AgentUserInputCardProps = {
+  draftScope: { projectId: string; chapterId: string; workbenchMode: string };
   request: AgentOsPendingUserInput;
   busy: boolean;
+  disabled?: boolean;
   onSubmit: (answers: Record<string, string>) => void;
 };
 
 /** Multi-step user input gate — mirrors PC `AgentOsUserInputCard`. */
 export function AgentUserInputCard(props: AgentUserInputCardProps) {
-  return <AgentUserInputView key={JSON.stringify(props.request)} {...props} />;
+  const auth = useAuth();
+  const userId = auth.user?.id ?? auth.user?.userId;
+  const identity = JSON.stringify(props.draftScope);
+  const requestKey = agentInputRequestKey(props.request);
+  const storage = useMemo(
+    () =>
+      auth.status === "authenticated" && userId
+        ? { record: durableRecord("story-input-draft", String(userId), identity), requestKey }
+        : undefined,
+    [auth.status, userId, identity, requestKey]
+  );
+  return (
+    <AgentUserInputView
+      key={JSON.stringify([auth.generation, userId, identity, requestKey])}
+      {...props}
+      storage={storage}
+    />
+  );
 }
 
-function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps) {
+function AgentUserInputView({
+  request,
+  busy,
+  onSubmit,
+  storage,
+  disabled = false,
+}: AgentUserInputCardProps & { storage?: AgentInputDraftStorage }) {
   const t = useTranslations();
   const locale = useLocale();
+  const { height } = useWindowDimensions();
   const questions = request.questions;
-  const { step, question, isLast, selected, choose, back, submit } = useAgentInputForm(
+  const locked = busy || disabled;
+  const { step, question, isLast, selected, choose, back, submit, error } = useAgentInputForm(
     questions,
-    busy,
-    onSubmit
+    locked,
+    onSubmit,
+    storage
   );
 
   if (!question) return null;
+  const questionCopy = agentInputQuestionCopy(request.formId, question, t);
 
   const profileCopy = storyProfileQuestionCopy(question.id);
-  const header = profileCopy ? t(profileCopy.header) : question.header;
-  const body = profileCopy ? t(profileCopy.question) : question.question;
+  const header = profileCopy ? t(profileCopy.header) : questionCopy.header;
+  const body = profileCopy ? t(profileCopy.question) : questionCopy.question;
   const visualStyle =
     (isStoryCreativeProfileForm(request.formId) || profileCopy != null) &&
     question.id === "visual_direction";
-  const stepLabel = t("agent.userInputStep")
-    .replace("{current}", String(step + 1))
-    .replace("{total}", String(questions.length));
+  const stepLabel = fillMessageTemplate(t("agent.userInputStep"), {
+    current: step + 1,
+    total: questions.length,
+  });
 
   return (
     <View style={styles.card}>
-      <View style={styles.stepRow}>
-        <Text style={styles.stepLabel}>{stepLabel}</Text>
-        <View style={styles.progressTrack}>
-          {questions.map((item, index) => (
-            <View
-              key={item.id}
-              style={[
-                styles.progressSegment,
-                index <= step ? styles.progressActive : styles.progressIdle,
-              ]}
-            />
-          ))}
+      <ScrollView
+        key={question.id}
+        nestedScrollEnabled
+        keyboardShouldPersistTaps="handled"
+        style={{ maxHeight: Math.max(140, height * 0.42) }}
+        contentContainerStyle={styles.body}
+      >
+        {error ? (
+          <Text accessibilityRole="alert" style={{ color: theme.brand }}>
+            {error}
+          </Text>
+        ) : null}
+        <View style={styles.stepRow}>
+          <Text style={styles.stepLabel}>{stepLabel}</Text>
+          <View style={styles.progressTrack}>
+            {questions.map((item, index) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.progressSegment,
+                  index <= step ? styles.progressActive : styles.progressIdle,
+                ]}
+              />
+            ))}
+          </View>
         </View>
-      </View>
 
-      <View style={styles.questionHeader}>
-        <View style={styles.qBadge}>
-          <Text style={styles.qBadgeText}>Q{step + 1}</Text>
-        </View>
-        <View style={styles.questionTitle}>
+        <View style={styles.questionHeader}>
+          <View style={styles.qBadge}>
+            <Text style={styles.qBadgeText}>Q{step + 1}</Text>
+          </View>
           {header ? <Text style={styles.questionHeaderText}>{header}</Text> : null}
           <Text style={styles.requiredMark}>*</Text>
         </View>
-      </View>
-      <Text style={styles.questionBody}>{body}</Text>
+        <Text style={styles.questionBody}>{body}</Text>
 
-      <ScrollView
-        style={visualStyle ? styles.styleScroll : undefined}
-        contentContainerStyle={[styles.optionsGrid, visualStyle && styles.styleGrid]}
-        nestedScrollEnabled
-        removeClippedSubviews={false}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={visualStyle}
-      >
-        {question.options.map((option) => {
-          const checked = option.value === selected;
-          const labelKey = profileCopy
-            ? storyProfileOptionLabelKey(question.id, option.value)
-            : null;
-          const label =
-            question.id === "story_language" && profileCopy
-              ? storyLanguageLabel(option.value, locale, option.label)
-              : labelKey
-                ? t(labelKey)
-                : option.label;
-          const preview = visualStyle ? storyProfileStylePreview(option.value) : null;
-          return (
-            <Pressable
-              key={option.value}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: checked }}
-              disabled={busy}
-              onPress={() => choose(option.value)}
-              style={visualStyle ? styles.styleHit : styles.optionHit}
-            >
-              <View
-                style={[
-                  visualStyle ? styles.styleOption : styles.option,
-                  checked && styles.optionSelected,
-                ]}
+        <ScrollView
+          style={visualStyle ? styles.styleScroll : undefined}
+          contentContainerStyle={[styles.optionsGrid, visualStyle && styles.styleGrid]}
+          nestedScrollEnabled
+          removeClippedSubviews={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={visualStyle}
+        >
+          {question.options.map((option) => {
+            const checked = option.value === selected;
+            const labelKey = profileCopy
+              ? storyProfileOptionLabelKey(question.id, option.value)
+              : null;
+            const label =
+              question.id === "story_language" && profileCopy
+                ? storyLanguageLabel(option.value, locale, option.label)
+                : labelKey
+                  ? t(labelKey)
+                  : agentInputOptionLabel(request.formId, question.id, option, locale, t);
+            const preview = visualStyle ? storyProfileStylePreview(option.value) : null;
+            return (
+              <Pressable
+                key={option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ checked, disabled: locked }}
+                aria-checked={checked}
+                disabled={locked}
+                onPress={() => choose(option.value)}
+                style={visualStyle ? styles.styleHit : styles.optionHit}
               >
-                {preview != null ? (
-                  <Image source={preview} style={styles.styleImage} contentFit="cover" />
-                ) : (
-                  <FrameGlyph value={option.value} selected={checked} />
-                )}
-                {preview != null ? <StyleLabelScrim id={`style-scrim-${option.value}`} /> : null}
-                <Text style={[styles.optionLabel, preview != null && styles.styleLabel]}>
-                  {label}
-                </Text>
-                {!preview && option.description ? (
-                  <Text style={styles.optionDescription}>{option.description}</Text>
-                ) : null}
-              </View>
-            </Pressable>
-          );
-        })}
+                <View
+                  style={[
+                    visualStyle ? styles.styleOption : styles.option,
+                    checked && styles.optionSelected,
+                  ]}
+                >
+                  {preview != null ? (
+                    <Image source={preview} style={styles.styleImage} contentFit="cover" />
+                  ) : (
+                    <FrameGlyph value={option.value} selected={checked} />
+                  )}
+                  {preview != null ? <StyleLabelScrim id={`style-scrim-${option.value}`} /> : null}
+                  <Text style={[styles.optionLabel, preview != null && styles.styleLabel]}>
+                    {label}
+                  </Text>
+                  {!preview && option.description ? (
+                    <Text style={styles.optionDescription}>{option.description}</Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
       </ScrollView>
-
       <View style={styles.actions}>
         {step > 0 ? (
           <Pressable
             accessibilityRole="button"
-            disabled={busy}
+            disabled={locked}
             onPress={back}
             style={styles.actionHit}
           >
@@ -170,11 +225,11 @@ function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps
         ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={!selected || busy}
+          disabled={!selected || locked}
           onPress={submit}
           style={styles.actionHit}
         >
-          <View style={[styles.continueChrome, (!selected || busy) && styles.disabled]}>
+          <View style={[styles.continueChrome, (!selected || locked) && styles.disabled]}>
             {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
             <Text style={styles.continueText}>
               {busy
@@ -208,6 +263,7 @@ function FrameGlyph({ value, selected }: { value: string; selected: boolean }) {
 }
 
 const styles = StyleSheet.create({
+  body: { gap: Spacing.three },
   card: {
     backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 22,
@@ -308,6 +364,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
     width: "100%",
+  },
+  previewOption: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    overflow: "hidden",
+  },
+  preview: {
+    width: "100%",
+    aspectRatio: 2 / 3,
+  },
+  previewLabel: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
   },
   optionSelected: {
     backgroundColor: "rgba(229,34,39,0.095)",

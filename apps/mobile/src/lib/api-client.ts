@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { streamFetch } from "./stream-fetch";
 
 import { appEnv } from "@/config";
 import { getLocale } from "@/i18n/locale-store";
@@ -23,11 +24,18 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body" | "headers"> 
   headers?: Record<string, string | undefined>;
   params?: Record<string, string | number | boolean | undefined>;
   raw?: boolean;
+  responseType?: "json" | "binary";
   service?: ApiService;
   timeout?: number;
   /** Disable automatic GET retries for endpoints that perform an action. */
   retry?: boolean;
 }
+
+export type ApiBinaryResponse = {
+  bytes: ArrayBuffer;
+  contentType: string;
+  disposition: string | null;
+};
 
 export class ApiRequestError extends Error {
   code: number | string;
@@ -91,7 +99,9 @@ function appendQuery(url: string, params: ApiRequestConfig["params"]) {
 function shouldUseWebProxy(path: string) {
   return (
     Platform.OS === "web" &&
-    appEnv.appVariant !== "production" &&
+    // Only development exports include Expo API routes. Preview is static,
+    // just like production, and must use its configured regional services.
+    appEnv.appVariant === "development" &&
     !path.startsWith("http") &&
     !path.startsWith("//")
   );
@@ -128,14 +138,18 @@ function stringifyForm(form: NonNullable<ApiRequestConfig["form"]>) {
   return params.toString();
 }
 
-async function parseResponseBody(response: Response): Promise<{ body: unknown; rawBody: string }> {
+async function parseResponseBody(response: Response): Promise<{
+  body: unknown;
+  rawBody: string;
+  invalidJson: boolean;
+}> {
   const rawBody = await response.text();
-  if (!rawBody.trim()) return { body: null, rawBody };
+  if (!rawBody.trim()) return { body: null, rawBody, invalidJson: false };
 
   try {
-    return { body: JSON.parse(rawBody), rawBody };
+    return { body: JSON.parse(rawBody), rawBody, invalidJson: false };
   } catch {
-    return { body: rawBody, rawBody };
+    return { body: rawBody, rawBody, invalidJson: true };
   }
 }
 
@@ -146,6 +160,13 @@ function messageFromBody(body: unknown, fallback: string) {
 
   const record = body as Record<string, unknown>;
   const message = record.msg ?? record.message;
+  if (Array.isArray(message)) {
+    return (
+      message
+        .filter((item): item is string => typeof item === "string" && !!item.trim())
+        .join("; ") || fallback
+    );
+  }
   return typeof message === "string" && message.trim() ? message : fallback;
 }
 
@@ -155,10 +176,14 @@ function isAbortError(error: unknown) {
   );
 }
 
-function isSuccessEnvelope(body: Record<string, unknown>) {
+function isSuccessEnvelope(body: Record<string, unknown>, accepted = false) {
   return (
     (!("success" in body) || body.success === true) &&
-    (!("code" in body) || body.code === 200 || body.code === "200" || body.code === "SUCCESS")
+    (!("code" in body) ||
+      body.code === 200 ||
+      body.code === "200" ||
+      body.code === "SUCCESS" ||
+      (accepted && (body.code === 202 || body.code === "202")))
   );
 }
 
@@ -205,6 +230,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     headers: customHeaders,
     params,
     raw,
+    responseType = "json",
     service,
     timeout = 30_000,
     retry = true,
@@ -227,6 +253,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   // Read at request time — the user can switch language while the app runs,
   // and the backends localize responses off these headers.
   const activeLocale = getLocale();
+  const isAurora = resolveService(path, service ?? "auto") === "aurora";
   const headers: Record<string, string> = {
     "accept-language": activeLocale,
     lan: activeLocale,
@@ -234,6 +261,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     // (e.g. `satoken`), NOT from `Authorization: Bearer`. Browsers get away
     // with the cookie; on native we must send the named header explicitly.
     ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
+    // Nest's AuthGuard accepts bearer credentials independently of native cookies.
+    ...(token && isAurora ? { authorization: `Bearer ${token.value}` } : {}),
     ...(isForm
       ? { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" }
       : data !== undefined
@@ -276,8 +305,26 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
         fetch(url, { ...init, signal: controller.signal }),
         controller.signal
       );
+      if (
+        responseType === "binary" &&
+        response.ok &&
+        !/json/i.test(response.headers.get("content-type") ?? "")
+      ) {
+        const bytes = await withCancellation(response.arrayBuffer(), controller.signal);
+        return {
+          response,
+          body: {
+            bytes,
+            contentType: response.headers.get("content-type") ?? "",
+            disposition: response.headers.get("content-disposition"),
+          },
+          rawBody: "",
+          binary: true,
+          invalidJson: false,
+        };
+      }
       const parsed = await withCancellation(parseResponseBody(response), controller.signal);
-      return { response, ...parsed };
+      return { response, ...parsed, binary: false };
     } finally {
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", abort);
@@ -320,6 +367,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     )
       return;
     if (token && headers[token.name.toLowerCase()] !== token.value) return;
+    if (isAurora && headers.authorization !== (token ? `Bearer ${token.value}` : undefined)) return;
     notifyUnauthorized();
   };
 
@@ -333,14 +381,31 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     );
   }
 
+  if (result.binary) return body as T;
+  // A hosting fallback/login/error document can arrive with HTTP 200. Never
+  // let its text masquerade as an empty catalog or a successful mutation.
+  if (result.invalidJson)
+    throw new ApiRequestError(
+      "INVALID_RESPONSE",
+      "The server returned an invalid JSON response. Please retry.",
+      response.status
+    );
   if (!body || typeof body !== "object" || Array.isArray(body)) {
+    if (responseType === "binary")
+      throw new ApiRequestError("INVALID_DOWNLOAD", "Expected a file response", response.status);
     return body as T;
   }
 
   const envelope = body as Record<string, unknown>;
   const hasEnvelope = "success" in envelope || "code" in envelope;
 
-  if (hasEnvelope && !isSuccessEnvelope(envelope)) {
+  if (
+    hasEnvelope &&
+    !isSuccessEnvelope(
+      envelope,
+      resolveService(path, service ?? "auto") === "aurora" && response.status === 202
+    )
+  ) {
     const unauthorized = isUnauthorizedEnvelope(envelope);
     if (unauthorized) notifyCurrentUnauthorized();
 
@@ -352,12 +417,126 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     );
   }
 
+  if (responseType === "binary")
+    throw new ApiRequestError(
+      "INVALID_DOWNLOAD",
+      messageFromBody(envelope, "Expected a file response"),
+      response.status,
+      rawBody
+    );
   if (raw) return envelope as T;
   // An explicit null is a valid empty lookup, not permission to use another field.
   for (const key of ["data", "info", "path"] as const) {
     if (Object.prototype.hasOwnProperty.call(envelope, key)) return envelope[key] as T;
   }
   return envelope as T;
+}
+
+/** Authenticated streaming POST. Never retries; cancellation covers the entire body. */
+export async function postApiStream(
+  path: string,
+  config: {
+    data: unknown;
+    service: Exclude<ApiService, "auto">;
+    signal: AbortSignal;
+    timeout: number;
+  },
+  onChunk: (text: string) => void
+): Promise<void> {
+  if (!path.startsWith("/") || path.startsWith("//"))
+    throw new Error("Streaming requests require a relative API path.");
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  config.signal.addEventListener("abort", abort, { once: true });
+  if (config.signal.aborted) abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abort();
+  }, config.timeout);
+  const token = tokenProvider?.();
+  const current = () => {
+    if (controller.signal.aborted) throw abortError();
+    const latest = tokenProvider?.();
+    if (latest?.name !== token?.name || latest?.value !== token?.value)
+      throw new Error("Streaming request account changed.");
+  };
+  try {
+    current();
+    const locale = getLocale();
+    const isAurora = resolveService(path, config.service ?? "auto") === "aurora";
+    const response = await withCancellation(
+      streamFetch(buildApiUrl(path, { service: config.service }), {
+        method: "POST",
+        credentials: "include",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+          "accept-language": locale,
+          lan: locale,
+          ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
+          // Nest's AuthGuard accepts bearer credentials independently of native cookies.
+          ...(token && isAurora ? { authorization: `Bearer ${token.value}` } : {}),
+        },
+        body: JSON.stringify(config.data),
+      }),
+      controller.signal
+    );
+    current();
+    if (
+      !response.ok ||
+      !response.body ||
+      !/^text\/event-stream(?:;|$)/i.test(response.headers.get("content-type") ?? "")
+    ) {
+      const { body, rawBody } = await withCancellation(
+        parseResponseBody(response),
+        controller.signal
+      );
+      current();
+      const envelope =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>)
+          : null;
+      const unauthorized =
+        response.status === 401 || (envelope && isUnauthorizedEnvelope(envelope));
+      if (unauthorized) notifyUnauthorized();
+      throw new ApiRequestError(
+        (envelope?.code as number | string | undefined) ?? `HTTP_${response.status}`,
+        messageFromBody(body, "Expected an event stream"),
+        unauthorized ? 401 : response.status,
+        rawBody
+      );
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let completed = false;
+    try {
+      while (true) {
+        current();
+        const { value, done } = await withCancellation(reader.read(), controller.signal);
+        current();
+        if (done) {
+          const tail = decoder.decode();
+          if (tail) onChunk(tail);
+          completed = true;
+          break;
+        }
+        onChunk(decoder.decode(value, { stream: true }));
+      }
+    } finally {
+      if (!completed) void reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  } catch (error) {
+    if (config.signal.aborted) throw abortError();
+    if (timedOut) throw new ApiRequestError("NETWORK_ERROR", "Request timed out", 0);
+    throw error;
+  } finally {
+    controller.abort();
+    clearTimeout(timer);
+    config.signal.removeEventListener("abort", abort);
+  }
 }
 
 export const api = {

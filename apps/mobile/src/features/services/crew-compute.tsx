@@ -9,7 +9,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import {
   fetchCompute,
-  setupComputeWorkspace,
   workloadUnits,
   createCompute,
   computeInput,
@@ -17,7 +16,14 @@ import {
   type ComputeInput,
 } from "./crew-compute-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  requestFirst?: boolean;
+  initialTaskId?: string;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function CrewCompute(props: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
@@ -81,6 +87,7 @@ function Panel(props: Props & { onSaved: () => void }) {
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {page && (
         <>
+          {props.requestFirst && <RequestForm {...props} page={page} />}
           <ThemedText>
             {t(page.isOwner ? "crewComputeFinance.crewScope" : "crewComputeFinance.myScope")}
           </ThemedText>
@@ -100,7 +107,55 @@ function Panel(props: Props & { onSaved: () => void }) {
             )
           </ThemedText>
           <ThemedText>{t("crewComputeFinance.equivalent")}</ThemedText>
-          <RequestForm {...props} page={page} />
+          {page.projectBudget && (
+            <View style={{ gap: 8 }}>
+              <ThemedText>
+                {t("crewComputeFinance.projectBudgetSummary")
+                  .replace("{total}", page.projectBudget.totalPoints)
+                  .replace("{released}", page.projectBudget.releasedPoints)
+                  .replace("{rate}", String(page.projectBudget.pointsPerMinute))}
+              </ThemedText>
+              {page.projectBudget.closed && (
+                <ThemedText>{t("crewComputeFinance.projectBudgetClosed")}</ThemedText>
+              )}
+              {page.projectBudget.producerSettlement && (
+                <>
+                  <ThemedText>
+                    {t("crewComputeFinance.producerDeduction")
+                      .replace("{amount}", page.projectBudget.producerSettlement.deductionMinor)
+                      .replace("{currency}", page.projectBudget.producerSettlement.currency)}
+                  </ThemedText>
+                  <ThemedText>{page.projectBudget.producerSettlement.note}</ThemedText>
+                </>
+              )}
+            </View>
+          )}
+          <ThemedText>{t("crewComputeFinance.usageByTask")}</ThemedText>
+          {page.taskUsage
+            .filter((row) => !props.initialTaskId || row.taskId === props.initialTaskId)
+            .map((row) => (
+              <View key={`${row.taskId}:${row.userId}`} style={{ paddingVertical: 8, gap: 4 }}>
+                <ThemedText>
+                  {row.taskTitle} · {row.userId}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.approvedTotal")} · {row.approvedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("mobileProduction.credited")} · {row.creditedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.pending")} · {row.pendingPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.consumed")} · {row.consumedPoints}
+                </ThemedText>
+                <ThemedText>
+                  {t("crewComputeFinance.committed")} · {row.committedPoints}
+                </ThemedText>
+              </View>
+            ))}
+          {!props.requestFirst && <RequestForm {...props} page={page} />}
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
             <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>
@@ -127,6 +182,7 @@ function Panel(props: Props & { onSaved: () => void }) {
                     : row.workloadUnit}
                 </ThemedText>
               )}
+              <ThemedText>{t(`mobileProduction.${row.kind}`)}</ThemedText>
               <ThemedText>{row.reason}</ThemedText>
               <ThemedText>{new Date(row.createdAt).toLocaleString()}</ThemedText>
               {row.decidedByAdminId ? (
@@ -162,45 +218,26 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
-  const [taskId, setTaskId] = useState(""),
+  const [taskId, setTaskId] = useState(props.initialTaskId ?? ""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
-    [beneficiary, setBeneficiary] = useState(""),
     [workload, setWorkload] = useState(""),
     [unit, setUnit] = useState<(typeof workloadUnits)[number]>("minutes"),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
   const request = useRef<ComputeInput | null>(null);
-  const tasks = props.page.tasks;
+  const tasks = props.page.tasks.filter((task) =>
+    task.assignees.some((a) => a.userId === props.userId)
+  );
   const selected = tasks.find((task) => task.id === taskId);
   const assignees = selected?.assignees ?? [];
-  const recipient = assignees.length === 1 ? assignees[0]!.userId : beneficiary;
-  if (!props.page.isOwner) return <ThemedText>{t("crewComputeFinance.ownerOnly")}</ThemedText>;
-  if (!props.page.workspaceLinked)
-    return (
-      <View>
-        <ThemedText>{t("crewComputeFinance.workspaceRequired")}</ThemedText>
-        <Pressable
-          accessibilityRole="button"
-          disabled={op.busy}
-          onPress={() => {
-            if (props.generation !== getAuthGeneration()) return;
-            void op.run(
-              () => setupComputeWorkspace(props.crewId, props.generation),
-              props.onSaved,
-              (e) => setError(e instanceof Error ? e.message : String(e))
-            );
-          }}
-        >
-          <ThemedText>{t("crewComputeFinance.setupWorkspace")}</ThemedText>
-        </Pressable>
-        {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      </View>
-    );
+  const recipient = props.userId;
   if (!tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
   return (
     <View style={{ gap: 12 }}>
-      <ThemedText>{t("crewComputeFinance.task")}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.project")} *</ThemedText>
+      <ThemedText>{props.page.crewName ?? props.crewId}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.task")} *</ThemedText>
       {tasks.map((task) => (
         <Pressable
           key={task.id}
@@ -210,7 +247,6 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
           style={{ padding: 12 }}
           onPress={() => {
             setTaskId(task.id);
-            setBeneficiary("");
           }}
         >
           <ThemedText>
@@ -225,23 +261,9 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
       {selected && !assignees.length && (
         <ThemedText>{t("crewComputeFinance.assignFirst")}</ThemedText>
       )}
-      <ThemedText>{t("crewComputeFinance.creator")}</ThemedText>
-      {assignees.map((a) => (
-        <Pressable
-          key={a.userId}
-          accessibilityRole="radio"
-          accessibilityState={{ checked: recipient === a.userId }}
-          disabled={attempted || op.busy}
-          onPress={() => setBeneficiary(a.userId)}
-          style={{ padding: 12 }}
-        >
-          <ThemedText>
-            {recipient === a.userId ? "✓ " : ""}
-            {a.userId}
-          </ThemedText>
-        </Pressable>
-      ))}
-      <ThemedText>{t("crewComputeFinance.workloadUnit")}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.creator")} *</ThemedText>
+      <ThemedText>{recipient}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.workloadUnit")} *</ThemedText>
       {workloadUnits.map((value) => (
         <Pressable
           key={value}
@@ -278,7 +300,7 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
                   : "default"
             }
             multiline={field === "reason"}
-            maxLength={field === "points" ? 3 : field === "remainingWorkload" ? 15 : 2000}
+            maxLength={field === "points" ? 4 : field === "remainingWorkload" ? 15 : 2000}
             editable={!attempted && !op.busy}
             style={{
               color: theme.text,

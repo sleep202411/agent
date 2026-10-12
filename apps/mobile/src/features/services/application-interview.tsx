@@ -14,6 +14,7 @@ import {
   type InterviewUpdate,
 } from "./application-interview-api";
 export function ApplicationInterview(props: {
+  active?: boolean;
   applicationId: string;
   userId: string;
   applicantId?: string;
@@ -35,7 +36,15 @@ export function ApplicationInterview(props: {
     [message, setMessage] = useState("");
   const [retry, setRetry] = useState<InterviewUpdate>(),
     [denied, setDenied] = useState(false);
+  const readKey = `${props.active !== false}:${revision}`;
+  const [lastReadKey, setLastReadKey] = useState(readKey);
+  if (lastReadKey !== readKey) {
+    setLastReadKey(readKey);
+    setError(undefined);
+    setPage(undefined);
+  }
   useEffect(() => {
+    if (props.active === false) return;
     const c = new AbortController();
     void fetchApplicationInterview(props.applicationId, before, c.signal).then(
       (value) => {
@@ -47,7 +56,7 @@ export function ApplicationInterview(props: {
       }
     );
     return () => c.abort();
-  }, [props.applicationId, props.generation, before, revision]);
+  }, [props.applicationId, props.generation, before, revision, props.active]);
   const reload = () => {
     setPage(undefined);
     setError(undefined);
@@ -58,7 +67,9 @@ export function ApplicationInterview(props: {
     setDenied(false);
   };
   const write = (action: InterviewUpdate["action"]) => {
-    if (!page || props.generation !== getAuthGeneration()) return;
+    if (props.active === false || !page || props.generation !== getAuthGeneration()) return;
+    const requestedAction = retry?.action ?? action;
+    if (requestedAction === "message" ? !page.canMessage : !page.canUpdate) return;
     let scheduledAt: string | null = null;
     if (!retry && action === "schedule") {
       try {
@@ -123,6 +134,7 @@ export function ApplicationInterview(props: {
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
+  if (props.active === false) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewInterview.title")}</ThemedText>
@@ -137,7 +149,9 @@ export function ApplicationInterview(props: {
           {page.scheduledAt && (
             <ThemedText>{new Date(page.scheduledAt).toLocaleString(locale)}</ThemedText>
           )}
-          {!page.canUpdate && <ThemedText>{t("crewInterview.readOnly")}</ThemedText>}
+          {!page.canUpdate && !page.canMessage && (
+            <ThemedText>{t("crewInterview.readOnly")}</ThemedText>
+          )}
           {retry ? (
             <>
               {<ThemedText>{t("crewInterview.retryHelp")}</ThemedText>}
@@ -145,7 +159,7 @@ export function ApplicationInterview(props: {
             </>
           ) : (
             before === null &&
-            page.canUpdate &&
+            (page.canUpdate || page.canMessage) &&
             (applicant || props.reviewer) && (
               <>
                 <ThemedText>{t("crewInterview.messageLabel")}</ThemedText>
@@ -166,7 +180,7 @@ export function ApplicationInterview(props: {
                   }}
                 />
                 <ThemedText>{t("crewInterview.sharedNote")}</ThemedText>
-                {!applicant && props.reviewer && (
+                {page.canUpdate && !applicant && props.reviewer && (
                   <>
                     <ThemedText>
                       {t("crewInterview.timeLabel").replace(
@@ -193,12 +207,15 @@ export function ApplicationInterview(props: {
                       button(t("crewInterview.complete"), () => write("complete"), denied)}
                   </>
                 )}
-                {applicant &&
+                {page.canUpdate &&
+                  applicant &&
                   page.state === "proposed" &&
                   button(t("crewInterview.confirm"), () => write("confirm"), denied)}
-                {["proposed", "confirmed"].includes(page.state) &&
+                {page.canUpdate &&
+                  ["proposed", "confirmed"].includes(page.state) &&
                   button(t("crewInterview.cancel"), () => write("cancel"), denied)}
-                {button(t("crewInterview.message"), () => write("message"), denied)}
+                {page.canMessage &&
+                  button(t("crewInterview.message"), () => write("message"), denied)}
               </>
             )
           )}
@@ -241,6 +258,7 @@ export function ApplicationInterview(props: {
             )}
         </>
       )}
+      {!page && error && button(t("common.retry"), () => setRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {button(t("crewInterview.refresh"), reload, !!retry)}
       {button(t("nativeApplications.back"), props.onClose)}
