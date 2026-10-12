@@ -23,12 +23,31 @@ class ReleaseTests(unittest.TestCase):
     @patch.dict(r.os.environ, {}, clear=True)
     @patch.object(r.sys, 'argv', ['cn_release.py', 'release', 'web'])
     @patch.object(r.os, 'execv')
+    @patch.object(r, 'validate_checkout')
     @patch.object(r, 'run', side_effect=RuntimeError('SSH blocked'))
-    def test_ssh_failure_occurs_before_lock_or_checkout(self, run, execute):
+    def test_ssh_failure_occurs_before_lock_or_checkout(self, run, validate, execute):
         with self.assertRaisesRegex(RuntimeError, 'SSH blocked'):
             r.main()
         execute.assert_not_called()
         self.assertIn('--required', run.call_args.args)
+
+    def test_invalid_checkout_never_acquires_lock_or_changes_ssh(self):
+        for reason in ('Start the CN release from main', 'dirty checkout'):
+            with patch.dict(r.os.environ, {}, clear=True), \
+                 patch.object(r.sys, 'argv', ['cn_release.py', 'release', 'web']), \
+                 patch.object(r, 'validate_checkout', side_effect=RuntimeError(reason)), \
+                 patch.object(r, 'run') as run, patch.object(r.os, 'execv') as execute:
+                with self.assertRaisesRegex(RuntimeError, reason):
+                    r.main()
+                run.assert_not_called()
+                execute.assert_not_called()
+
+    def test_dirty_tracked_or_staged_checkout_has_actionable_error(self):
+        for results in (['main', r.subprocess.CalledProcessError(1, 'git diff')],
+                        ['main', '', r.subprocess.CalledProcessError(1, 'git diff --cached')]):
+            with patch.dict(r.os.environ, {}, clear=True), patch.object(r, 'run', side_effect=results):
+                with self.assertRaisesRegex(RuntimeError, 'commit or stash'):
+                    r.validate_checkout()
 
     def test_tooling_reload_preserves_shared_lock_and_resume_options(self):
         args = argparse.Namespace(action='release', allow_chart_update=True, backup_id='123')

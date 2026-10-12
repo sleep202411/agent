@@ -955,7 +955,6 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        {!onSave && <p className="px-6 text-sm text-muted-foreground">{t("approval.help")}</p>}
         <footer className="flex min-h-16 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
           {!onStage && !onSave ? (
             <button

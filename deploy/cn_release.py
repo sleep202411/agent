@@ -423,19 +423,29 @@ def run_cycles(state, args, persist):
     raise RuntimeError("Ten source updates interrupted this release; resume when commits settle")
 
 
-@contextlib.contextmanager
-def stable_checkout(tooling_revision=None):
-    """Freeze runtime tooling too; the operator's checkout may advance freely."""
-    global ROOT
-    original = ROOT
+def validate_checkout():
+    """Reject local preflight failures before acquiring the regional lock."""
     inherited = os.environ.get("CN_RELEASE_TOOLING_CHECKOUT")
     if inherited:
         if run("git", "rev-parse", "HEAD", capture=True) != inherited or revision(inherited) != inherited:
             raise RuntimeError("Invalid inherited CN tooling checkout")
     elif run("git", "branch", "--show-current", capture=True) != "main":
         raise RuntimeError("Start the CN release from main")
-    run("git", "diff", "--quiet")
-    run("git", "diff", "--cached", "--quiet")
+    try:
+        run("git", "diff", "--quiet")
+        run("git", "diff", "--cached", "--quiet")
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise
+        raise RuntimeError("CN release requires a clean tracked checkout; commit or stash local changes and retry") from error
+
+
+@contextlib.contextmanager
+def stable_checkout(tooling_revision=None):
+    """Freeze runtime tooling too; the operator's checkout may advance freely."""
+    global ROOT
+    original = ROOT
+    validate_checkout()
     tooling_sha = revision(tooling_revision) if tooling_revision else run("git", "rev-parse", "HEAD", capture=True)
     with tempfile.TemporaryDirectory(prefix="fizz-cn-tooling-") as directory:
         checkout = Path(directory) / "checkout"
@@ -489,6 +499,7 @@ def main():
         from release_lock import Lock
         owner = os.environ.get("FD_REGIONAL_LOCK_CN")
         if not owner:
+            validate_checkout()
             if args.action == "release" and not args.use_existing_images:
                 run(sys.executable, ROOT / "deploy/cn_ssh_access.py",
                     os.environ.get("CN_BUILD_ECS_ID", "i-bp11r90r4g91u39iimnx"), "--required")
