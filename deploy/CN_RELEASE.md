@@ -173,8 +173,13 @@ Recovery checks both the exact owner UUID and resource version; it will not
 clear a different operator's lock. After recovery, CN can use the normal
 `--resume` command with its saved image/backup/migration state. A process failure
 before the first acquisition cannot leave an active remote build, but an
-uncertain acquisition response still requires inspection. In-flight invocations
-keep their frozen tooling; pull and start a new invocation to use this protocol.
+uncertain acquisition response still requires inspection. Release checkpoints compare the running deployment tooling with the latest committed main.
+When tooling advances, the coordinator restarts itself from a clean detached checkout,
+retaining the shared lock and saved image/backup/migration receipt. The final
+pre-Helm checkpoint also checks tooling, so a deployment-only fix cannot be
+reported as accounted for while an older script performs rollout. Reloads are
+bounded to five per invocation. Processes started before this recovery support
+still require a fresh invocation after pulling.
 
 ## Private storyboard export storage
 

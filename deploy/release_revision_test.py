@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, Mock
-from release_revision import latest_source
+from release_revision import latest_source, ToolingUpdated
 import cn_release
 
 
@@ -54,6 +54,20 @@ class RevisionTests(unittest.TestCase):
     def test_deployment_only_update_reuses_images(self):
         self.commit('deploy/script.sh', 'updated tooling')
         self.assertEqual(latest_source(self.repo, self.source, cn=True), self.source)
+
+    def test_remote_tooling_update_requires_reload_before_rollout(self):
+        new = self.commit('deploy/deploy-cn-services.sh', 'disable unselected worker')
+        self.git('push', 'origin', 'main')
+        self.git('reset', '--hard', self.source)
+        with self.assertRaises(ToolingUpdated) as caught:
+            latest_source(self.repo, self.source, cn=True, require_current_tooling=True)
+        self.assertEqual(caught.exception.revision, new)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), self.source)
+
+    def test_current_tooling_can_reuse_old_application_images(self):
+        self.commit('deploy/deploy-cn-services.sh', 'disable unselected worker')
+        self.assertEqual(latest_source(self.repo, self.source, cn=True,
+                                       require_current_tooling=True), self.source)
 
     def test_build_helper_only_fix_advances_pinned_archive(self):
         old = self.commit('deploy/cn-remote-build-services.sh',

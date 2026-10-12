@@ -30,6 +30,27 @@ class ReleaseTests(unittest.TestCase):
         execute.assert_not_called()
         self.assertIn('--required', run.call_args.args)
 
+    def test_tooling_reload_preserves_shared_lock_and_resume_options(self):
+        args = argparse.Namespace(action='release', allow_chart_update=True, backup_id='123')
+        with patch.dict(r.os.environ, {'FD_REGIONAL_LOCK_CN': 'owner'}, clear=True), \
+             patch.object(r, 'stable_checkout', return_value=contextlib.nullcontext()) as checkout, \
+             patch.object(r, 'run') as run:
+            r.resume_with_updated_tooling(args, TAG)
+            checkout.assert_called_once_with(TAG)
+            self.assertIn('--resume', run.call_args.args)
+            self.assertIn('--allow-chart-update', run.call_args.args)
+            self.assertIn('123', run.call_args.args)
+            env = run.call_args.kwargs['env']
+            self.assertEqual(env['FD_REGIONAL_LOCK_CN'], 'owner')
+            self.assertEqual(env['CN_RELEASE_TOOLING_CHECKOUT'], TAG)
+            self.assertEqual(env['CN_RELEASE_TOOLING_RESTARTS'], '1')
+
+    def test_tooling_reload_is_bounded(self):
+        with patch.dict(r.os.environ, {'CN_RELEASE_TOOLING_RESTARTS': '5'}), patch.object(r, 'run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'five times'):
+                r.resume_with_updated_tooling(argparse.Namespace(action='release'), TAG)
+            run.assert_not_called()
+
     def test_backup_job_id_is_resolved_to_backup_id(self):
         state = {}
         with patch.object(r, 'rds', side_effect=[{'BackupJobId': 456}, {'Items': {'BackupJob': [

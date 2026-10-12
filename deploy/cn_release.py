@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from cn_registry import verify, safe_code, transient_code
-from release_revision import latest_source
+from release_revision import latest_source, ToolingUpdated
 from release_images import find as find_image
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -339,7 +339,7 @@ def run_cycles(state, args, persist):
         tag = revision(state["tag"])
         services = state["services"]
         def checkpoint():
-            candidate = latest_source(ROOT, tag, cn=True)
+            candidate = latest_source(ROOT, tag, cn=True, require_current_tooling=True)
             if candidate == tag:
                 return False
             if state.get("backupRequested") and not state.get("backupJobId") and not state.get("backupId"):
@@ -424,15 +424,19 @@ def run_cycles(state, args, persist):
 
 
 @contextlib.contextmanager
-def stable_checkout():
+def stable_checkout(tooling_revision=None):
     """Freeze runtime tooling too; the operator's checkout may advance freely."""
     global ROOT
     original = ROOT
-    if run("git", "branch", "--show-current", capture=True) != "main":
+    inherited = os.environ.get("CN_RELEASE_TOOLING_CHECKOUT")
+    if inherited:
+        if run("git", "rev-parse", "HEAD", capture=True) != inherited or revision(inherited) != inherited:
+            raise RuntimeError("Invalid inherited CN tooling checkout")
+    elif run("git", "branch", "--show-current", capture=True) != "main":
         raise RuntimeError("Start the CN release from main")
     run("git", "diff", "--quiet")
     run("git", "diff", "--cached", "--quiet")
-    tooling_sha = run("git", "rev-parse", "HEAD", capture=True)
+    tooling_sha = revision(tooling_revision) if tooling_revision else run("git", "rev-parse", "HEAD", capture=True)
     with tempfile.TemporaryDirectory(prefix="fizz-cn-tooling-") as directory:
         checkout = Path(directory) / "checkout"
         run("git", "worktree", "add", "--detach", checkout, tooling_sha)
@@ -444,6 +448,23 @@ def stable_checkout():
         finally:
             ROOT = original
             run("git", "worktree", "remove", "--force", checkout)
+
+
+def resume_with_updated_tooling(args, tooling_revision):
+    if args.action != "release":
+        raise RuntimeError("Resume the release to load updated deployment tooling")
+    depth = int(os.environ.get("CN_RELEASE_TOOLING_RESTARTS", "0"))
+    if depth >= 5:
+        raise RuntimeError("Deployment tooling changed five times; resume when commits settle")
+    print(f"==> reloading CN deployment tooling at {tooling_revision}; saved images and migration receipt retained", flush=True)
+    with stable_checkout(tooling_revision):
+        command = [sys.executable, ROOT / "deploy/cn_release.py", "release", "--resume"]
+        if args.allow_chart_update:
+            command.append("--allow-chart-update")
+        if args.backup_id:
+            command += ["--backup-id", args.backup_id]
+        run(*command, env={**os.environ, "CN_RELEASE_TOOLING_CHECKOUT": tooling_revision,
+                          "CN_RELEASE_TOOLING_RESTARTS": str(depth + 1)})
 
 
 def main():
@@ -474,11 +495,16 @@ def main():
             os.execv(sys.executable, [sys.executable, str(ROOT / "deploy/release_lock.py"),
                                      "cn", "--", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
         Lock("cn").check(owner)
-    with stable_checkout():
-        if args.action == "release":
-            release(args)
-        else:
-            migration(revision(args.tag), os.environ.get("CN_RDS_BACKUP_ID"), render_only=args.render_only)
+    try:
+        with stable_checkout():
+            if args.action == "release":
+                release(args)
+            else:
+                migration(revision(args.tag), os.environ.get("CN_RDS_BACKUP_ID"), render_only=args.render_only)
+    except ToolingUpdated as update:
+        # The local receipt lock and old tooling worktree have been released.
+        # Keep the shared regional lock, and load all Python modules afresh.
+        resume_with_updated_tooling(args, update.revision)
 
 if __name__ == "__main__":
     try:

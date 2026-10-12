@@ -12,6 +12,12 @@ def git(root, *args, check=True):
 
 
 
+class ToolingUpdated(RuntimeError):
+    def __init__(self, revision):
+        self.revision = revision
+        super().__init__(f'CN deployment tooling advanced to {revision}; resume with the updated coordinator before rollout')
+
+
 def cn_chart_changed(root, source, candidate):
     base = 'deploy/helm/fizzdragon/values.yaml'
     other = git(root, 'diff', '--quiet', source, candidate, '--',
@@ -50,7 +56,7 @@ def cn_chart_changed(root, source, candidate):
     return normalized_values(source) != normalized_values(candidate)
 
 
-def latest_source(root, source, branch='main', cn=False):
+def latest_source(root, source, branch='main', cn=False, require_current_tooling=False):
     if not cn:
         raise RuntimeError('The legacy .com release has retired; use deploy/deploy-com.sh instead')
     remote = f'refs/remotes/origin/{branch}'
@@ -71,6 +77,13 @@ def latest_source(root, source, branch='main', cn=False):
         raise RuntimeError('Local and remote release branches diverged; reconcile before rollout')
     if not ancestor(source, candidate):
         raise RuntimeError('Pinned source is no longer in release history')
+    if require_current_tooling:
+        tooling = git(root, 'rev-parse', 'HEAD').stdout.strip()
+        difference = git(root, 'diff', '--quiet', tooling, candidate, '--', 'deploy', check=False)
+        if difference.returncode not in (0, 1):
+            raise RuntimeError('Could not compare running CN deployment tooling')
+        if difference.returncode:
+            raise ToolingUpdated(candidate)
     result = git(root, 'diff', '--quiet', source, candidate, '--', '.', ':(exclude)deploy/**', check=False)
     if result.returncode not in (0, 1):
         raise RuntimeError('Could not compare release inputs')
@@ -92,7 +105,10 @@ def latest_source(root, source, branch='main', cn=False):
 
 if __name__ == '__main__':
     try:
-        print(latest_source(Path(sys.argv[1]), sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else 'main', cn='--cn' in sys.argv))
+        print(latest_source(Path(sys.argv[1]), sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else 'main', cn='--cn' in sys.argv, require_current_tooling='--require-current-tooling' in sys.argv))
+    except ToolingUpdated as error:
+        print(f'==> {error}', file=sys.stderr)
+        sys.exit(75)
     except (RuntimeError, subprocess.CalledProcessError) as error:
         print(f'FATAL: {error}', file=sys.stderr)
         sys.exit(1)

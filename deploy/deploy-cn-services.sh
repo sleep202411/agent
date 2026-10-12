@@ -352,7 +352,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
 
   assert_checkout_unchanged
   if [ "${CN_RELEASE_COORDINATED:-0}" = 1 ]; then
-    candidate="$(python3 "$TOOLS_ROOT/deploy/release_revision.py" "$ROOT" "$TAG" main --cn)"
+    candidate="$(python3 "$TOOLS_ROOT/deploy/release_revision.py" "$ROOT" "$TAG" main --cn --require-current-tooling)"
     [ "$candidate" = "$TAG" ] || exit 75
   fi
   if [ "$diff_status" = 0 ]; then
