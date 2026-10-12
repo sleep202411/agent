@@ -26,7 +26,13 @@ it.each(["failed", "analyzing", "completed"])(
           />
         )
       );
-      expect(host.querySelector("dl")).toBeNull();
+      expect(host.querySelectorAll("dt")).toHaveLength(4);
+      expect(Array.from(host.querySelectorAll("dd")).map((e) => e.textContent)).toEqual([
+        "0",
+        "0",
+        "0",
+        "0",
+      ]);
       expect(host.querySelector("button")?.textContent).toContain(`analysis_${status}`);
       act(() => host.querySelector("button")!.click());
       expect(open).toHaveBeenCalledOnce();

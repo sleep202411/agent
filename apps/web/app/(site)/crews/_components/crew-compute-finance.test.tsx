@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewComputeFinance } from "./crew-compute-finance";
 const h = vi.hoisted(() => ({
   owner: false,
+  workspaceLinked: true,
   consumed: "123",
   badData: undefined as unknown,
   failed: false,
@@ -39,7 +40,7 @@ vi.mock("../_hooks/use-compute-requests", () => ({
     refetch: h.refetch,
     data: h.badData ?? {
       isOwner: h.owner,
-      workspaceLinked: true,
+      workspaceLinked: h.workspaceLinked,
       tasks: h.tasks,
       totals: { pending: 50, approved: 100 },
       consumedPoints: h.consumed,
@@ -71,6 +72,7 @@ let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   h.owner = false;
+  h.workspaceLinked = true;
   h.consumed = "123";
   h.badData = undefined;
   h.failed = false;
@@ -286,4 +288,15 @@ it("requires assignment and blocks a second application independently of request
   expect(host.textContent).toContain("topUpAlreadyApplied");
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
   expect(host.querySelector<HTMLInputElement>('input[step="1"]')!.max).toBe("3000");
+});
+
+it("opens a points application without requiring manual accounting setup", async () => {
+  h.workspaceLinked = false;
+  h.tasks = [{ id: "task", title: "Shot one", number: 1, assignees: [{ userId: "creator" }] }];
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "chooseTask")!.click()
+  );
+  expect(host.querySelector("form")).not.toBeNull();
+  expect(host.textContent).not.toContain("setupWorkspace");
 });

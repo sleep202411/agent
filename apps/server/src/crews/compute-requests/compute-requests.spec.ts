@@ -108,8 +108,14 @@ function fixture(owner = true) {
   };
   const collaboration = {
     ensureCrewSpace: jest.fn().mockResolvedValue({ workspaceId: 'workspace' }),
+    ensureCrewSpaceTx: jest
+      .fn()
+      .mockResolvedValue({ workspaceId: 'workspace' }),
   };
-  const walletLedger = { postEntryTx: jest.fn().mockResolvedValue({}) };
+  const walletLedger = {
+    ensureDefaultAccounts: jest.fn().mockResolvedValue([]),
+    postEntryTx: jest.fn().mockResolvedValue({}),
+  };
   const service = new CrewComputeRequestsService(
     prisma as never,
     authorization as never,
@@ -217,7 +223,13 @@ describe('Crew compute requests', () => {
         requestedByUserId: 'creator',
       }),
     });
-    expect(f.tx.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(
+      f.tx.$executeRaw.mock.calls.map((call: unknown[]) => call[1]),
+    ).toEqual([
+      'crew:collaboration:crew',
+      'crew:task-writes:crew',
+      'wallet:account:wallet',
+    ]);
   });
   it('requires an active privileged Admin, not a Crew role', async () => {
     const f = fixture(false);
@@ -544,5 +556,59 @@ describe('top-up financial boundaries', () => {
       CreateComputeRequestSchema.safeParse({ ...value, remainingWorkload: 101 })
         .success,
     ).toBe(false);
+  });
+});
+
+describe('Points requests provision accounting without a separate setup step', () => {
+  it('provisions for an assigned creator inside the request transaction without issuing points', async () => {
+    const f = fixture(false);
+    f.tx.crewTask.findFirst.mockResolvedValueOnce({
+      id: 'task',
+      title: 'Shot',
+      canvasProjectId: 'project',
+      crew: { workspaceId: null },
+    } as never);
+    await expect(
+      f.service.create('crew', 'creator', f.request),
+    ).resolves.toMatchObject({ status: 'pending', workspaceId: 'workspace' });
+    expect(f.collaboration.ensureCrewSpaceTx).toHaveBeenCalledWith(
+      'crew',
+      f.tx,
+    );
+    expect(f.walletLedger.ensureDefaultAccounts).toHaveBeenCalledWith(
+      'workspace',
+      'workspace',
+      f.tx,
+    );
+    expect(f.walletLedger.postEntryTx).not.toHaveBeenCalled();
+    expect(f.collaboration.ensureCrewSpace).not.toHaveBeenCalled();
+  });
+  it('reuses existing accounting without provisioning another workspace', async () => {
+    const f = fixture(false);
+    await f.service.create('crew', 'creator', f.request);
+    expect(f.collaboration.ensureCrewSpaceTx).not.toHaveBeenCalled();
+  });
+  it('does not provision for an unassigned creator', async () => {
+    const f = fixture(false);
+    f.tx.crewTask.findFirst.mockResolvedValue(null as never);
+    await expect(
+      f.service.create('crew', 'creator', f.request),
+    ).rejects.toThrow('currently assigned');
+    expect(f.collaboration.ensureCrewSpaceTx).not.toHaveBeenCalled();
+    expect(f.walletLedger.ensureDefaultAccounts).not.toHaveBeenCalled();
+  });
+  it('does not provision for a duplicate top-up', async () => {
+    const f = fixture(false);
+    f.tx.crewTask.findFirst.mockResolvedValueOnce({
+      id: 'task',
+      title: 'Shot',
+      canvasProjectId: 'project',
+      crew: { workspaceId: null },
+    } as never);
+    f.tx.crewComputeRequest.findFirst.mockResolvedValue(f.request);
+    await expect(
+      f.service.create('crew', 'creator', f.request),
+    ).rejects.toThrow('Only one top-up');
+    expect(f.collaboration.ensureCrewSpaceTx).not.toHaveBeenCalled();
   });
 });
