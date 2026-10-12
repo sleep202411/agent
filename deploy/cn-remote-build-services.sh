@@ -24,14 +24,31 @@ cd /root/src || { echo "FATAL: no source"; exit 1; }
 # from previous services are already verified in ACR before the next build.
 prepare_build_storage() {
   if docker --version 2>/dev/null | grep -qi podman; then
-    # Podman 4.9 has no system-prune --build flag. Use its supported cleanup,
-    # then reclaim images pinned by abandoned Buildah containers when supported.
-    # This runs between builds on the dedicated builder, never with --volumes.
-    docker system prune --all --force >/dev/null
-    local image_prune_help
-    image_prune_help=$(docker image prune --help)
-    if [[ "$image_prune_help" == *"--external"* ]]; then
-      docker image prune --all --force --external >/dev/null
+    # Do not use image-prune --external: it targets images still referenced by
+    # Buildah containers. Keep those references intact, even after interruption.
+    # Podman 4.9 can also report this conflict during ordinary system pruning.
+    # Only that exact benign conflict may proceed to the disk/inode gate below;
+    # permission, storage corruption and every other cleanup failure stay fatal.
+    local prune_errors prune_status
+    prune_errors=$(mktemp)
+    if docker system prune --all --force >/dev/null 2>"$prune_errors"; then
+      rm -f "$prune_errors"
+    else
+      prune_status=$?
+      if [ "$prune_status" -eq 125 ] && awk '
+        /^Error: image used by [0-9a-f]+: image is in use by a container: consider listing external containers and force-removing image$/ { conflicts++; next }
+        /^Emulate Docker CLI using podman\. Create \/etc\/containers\/nodocker to quiet msg\.$/ { next }
+        /^[[:space:]]*$/ { next }
+        { unexpected=1 }
+        END { exit !(conflicts > 0 && !unexpected) }
+      ' "$prune_errors"; then
+        echo "==> preserving container-referenced images; checking remaining build storage"
+        rm -f "$prune_errors"
+      else
+        cat "$prune_errors" >&2
+        rm -f "$prune_errors"
+        return "$prune_status"
+      fi
     fi
   else
     docker image prune -af >/dev/null
