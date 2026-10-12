@@ -64,7 +64,6 @@ export interface AgentOsPendingUserInputQuestion {
 /** Snapshot while status=waiting_for_input (UserInputRequired payload). */
 export interface AgentOsPendingUserInput {
   requestId: string;
-  formId?: string;
   questions: AgentOsPendingUserInputQuestion[];
   turnId?: string;
 }
@@ -225,7 +224,6 @@ export function normalizePendingUserInput(
   return {
     requestId,
     questions,
-    formId: typeof raw.formId === "string" ? raw.formId : undefined,
     turnId: typeof raw.turnId === "string" ? raw.turnId : undefined,
   };
 }

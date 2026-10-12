@@ -5,14 +5,10 @@ import { PaywallScreen } from "./paywall-screen";
 
 const state = vi.hoisted(() => ({
   channel: "apple_iap",
-  category: "community_points",
-  compute: vi.fn(),
   generation: 1,
   buy: vi.fn(),
-  restore: vi.fn(),
   push: vi.fn(),
   packs: vi.fn(),
-  plans: vi.fn(),
   returnPath: "/ip/example",
   alert: vi.fn(),
   balance: vi.fn(),
@@ -32,7 +28,7 @@ vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useRouter: () => ({ push: state.push }),
-  useLocalSearchParams: () => ({ category: state.category, returnPath: state.returnPath }),
+  useLocalSearchParams: () => ({ category: "community_points", returnPath: state.returnPath }),
 }));
 vi.mock("react-native", () => {
   const Box = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -61,10 +57,7 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
-vi.mock("@/auth", () => ({
-  useAuth: () => ({ status: "authenticated", user: null, generation: state.generation }),
-}));
+vi.mock("@/auth", () => ({ useAuth: () => ({ user: null, generation: state.generation }) }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => state.generation }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
@@ -83,15 +76,15 @@ vi.mock("@/i18n", () => ({
 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: state.balance }));
-vi.mock("../lib/compute-wallet", () => ({ fetchComputeWalletBalance: state.compute }));
+vi.mock("../lib/compute-wallet", () => ({ fetchComputeWalletBalance: async () => "0" }));
 vi.mock("../lib/checkout-channel", () => ({ currentCheckoutChannel: () => state.channel }));
 vi.mock("../lib/paywall-store", () => ({
-  resolvePaywallCategory: () => state.category,
-  PAYWALL_CATEGORIES: ["community_points", "compute_points"],
+  resolvePaywallCategory: () => "community_points",
+  PAYWALL_CATEGORIES: ["community_points"],
 }));
 vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
-  listMembershipPrices: state.plans,
+  listMembershipPrices: async () => [],
   paywallBillingCurrency: () => "CNY",
   getBillingOrder: (...args: unknown[]) => state.getOrder(...args),
   isOrderDead: () => false,
@@ -99,7 +92,7 @@ vi.mock("../lib/billing-api", () => ({
 }));
 vi.mock("../lib/purchase", () => ({
   purchaseProduct: state.buy,
-  restorePurchases: state.restore,
+  restorePurchases: vi.fn(),
   isPurchaseCancelled: () => false,
 }));
 vi.mock("../lib/revenuecat-sync", () => ({
@@ -137,8 +130,6 @@ let host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.channel = "apple_iap";
-  state.category = "community_points";
-  state.compute.mockResolvedValue("0");
   state.generation = 1;
   state.orderFulfilled = false;
   state.balance.mockResolvedValue("0");
@@ -148,7 +139,6 @@ beforeEach(() => {
   state.follow.mockResolvedValue("timeout");
   // Nest catalog is the only source for community packs (no hardcoded SKUs).
   state.packs.mockResolvedValue([FIXTURE_PACK]);
-  state.plans.mockResolvedValue([]);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -160,11 +150,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const render = () => act(async () => root.render(<PaywallScreen />));
-const PAY_LABELS = new Set([
-  "paywall.buyNow",
-  "paywall.confirming",
-  "paywall.membership.subscribe",
-]);
+const PAY_LABELS = new Set(["paywall.buyNow", "paywall.confirming"]);
 const payButton = () =>
   [...host.querySelectorAll("button")].find((item) =>
     PAY_LABELS.has(item.textContent?.replace(/\s+/g, "") ?? "")
@@ -228,7 +214,6 @@ it.each([false, true])(
       else resolve({ mocked: false, productId: "old-product" });
     });
     expect(state.alert).not.toHaveBeenCalled();
-    expect(state.sync).not.toHaveBeenCalled();
   }
 );
 
@@ -424,147 +409,3 @@ vi.mock("@tabler/icons-react-native/IconCheck", () => ({ default: () => null }))
 vi.mock("@tabler/icons-react-native/IconCoins", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconCrown", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconSparkles", () => ({ default: () => null }));
-
-it("recovers a failed compute balance read without starting a purchase", async () => {
-  state.category = "compute_points";
-  state.compute.mockRejectedValueOnce(Error("Wallet unavailable")).mockResolvedValueOnce("42");
-  await render();
-  expect(host.textContent).toContain("Wallet unavailable");
-  const retry = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "common.retry"
-  )!;
-  expect(retry).toBeDefined();
-  await act(async () => retry.click());
-  expect(host.textContent).not.toContain("Wallet unavailable");
-  expect(host.textContent).toContain("42");
-  expect(state.buy).not.toHaveBeenCalled();
-});
-
-it("recovers a failed community balance read without starting a purchase", async () => {
-  state.balance.mockRejectedValueOnce(Error("Community unavailable")).mockResolvedValueOnce("43");
-  await render();
-  expect(host.textContent).toContain("Community unavailable");
-  const retry = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "common.retry"
-  )!;
-  await act(async () => retry.click());
-  expect(host.textContent).not.toContain("Community unavailable");
-  expect(host.textContent).toContain("43");
-  expect(state.buy).not.toHaveBeenCalled();
-});
-
-it("does not overwrite a post-purchase balance with a late initial read", async () => {
-  state.buy.mockResolvedValueOnce({ mocked: false, productId: "points-sku" });
-  let finishInitial!: (value: string) => void;
-  state.balance
-    .mockImplementationOnce(
-      () =>
-        new Promise<string>((resolve) => {
-          finishInitial = resolve;
-        })
-    )
-    .mockResolvedValue("44");
-  await render();
-  await act(async () => payButton().click());
-  expect(host.textContent).toContain("44");
-  await act(async () => finishInitial("11"));
-  expect(host.textContent).toContain("44");
-});
-
-it.each(["community_points", "community_membership"])(
-  "retries a failed %s catalog without purchasing",
-  async (category) => {
-    state.category = category;
-    const request = category === "community_points" ? state.packs : state.plans;
-    request
-      .mockRejectedValueOnce(Error("Catalog temporarily unavailable"))
-      .mockResolvedValueOnce([{ ...FIXTURE_PACK, category }]);
-    await render();
-    expect(host.textContent).toContain("Catalog temporarily unavailable");
-    expect(payButton().disabled).toBe(true);
-    const retry = [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === "common.retry"
-    )!;
-    await act(async () => retry.click());
-    expect(host.textContent).not.toContain("Catalog temporarily unavailable");
-    expect(host.textContent).toContain("$50.00");
-    expect(payButton().disabled).toBe(false);
-    expect(state.buy).not.toHaveBeenCalled();
-  }
-);
-
-it("aborts a replaced account catalog and ignores its late result", async () => {
-  let resolve!: (value: unknown[]) => void;
-  state.packs.mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      })
-  );
-  await render();
-  const signal = state.packs.mock.calls[0][1] as AbortSignal;
-  state.generation++;
-  await render();
-  expect(signal.aborted).toBe(true);
-  await act(async () => resolve([{ ...FIXTURE_PACK, name: "Old account price", id: "old" }]));
-  expect(host.textContent).not.toContain("Old account price");
-  expect(host.textContent).toContain("5000");
-});
-
-it("does not follow the previous account's open WeChat order during account replacement", async () => {
-  state.channel = "wechat";
-  state.buy.mockResolvedValueOnce({
-    mocked: false,
-    wechatScan: { orderId: "previous-account-order", codeUrl: "weixin://pay" },
-  });
-  await render();
-  await act(async () => payButton().click());
-  expect(host.textContent).toContain("previous-account-order");
-  state.generation = 2;
-  await render();
-  expect(state.follow).not.toHaveBeenCalled();
-  expect(state.alert).not.toHaveBeenCalled();
-  expect(host.textContent).not.toContain("previous-account-order");
-});
-
-it("refreshes displayed balances after restoring purchases without buying again", async () => {
-  state.category = "community_membership";
-  state.restore.mockResolvedValueOnce({ mocked: false });
-  state.balance.mockResolvedValueOnce("10").mockResolvedValueOnce("55");
-  await render();
-  const restore = [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === "paywall.restore"
-  )!;
-  await act(async () => restore.click());
-  expect(state.balance).toHaveBeenCalledTimes(2);
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((b) => b.textContent?.includes("paywall.category.communityPoints"))!
-      .click()
-  );
-  expect(host.textContent).toContain("55");
-  expect(state.restore).toHaveBeenCalledTimes(1);
-  expect(state.buy).not.toHaveBeenCalled();
-  expect(state.alert).toHaveBeenCalledWith("paywall.restoreOkTitle", "paywall.restoreOkLive");
-});
-it("does not refresh or announce a restore completed for a retired account", async () => {
-  state.category = "community_membership";
-  let finish!: (value: { mocked: boolean }) => void;
-  state.restore.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-  );
-  await render();
-  const restore = [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === "paywall.restore"
-  )!;
-  await act(async () => restore.click());
-  state.generation++;
-  await render();
-  const reads = state.balance.mock.calls.length;
-  await act(async () => finish({ mocked: false }));
-  expect(state.balance).toHaveBeenCalledTimes(reads);
-  expect(state.alert).not.toHaveBeenCalled();
-});

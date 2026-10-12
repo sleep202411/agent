@@ -8,7 +8,6 @@ import { assetGroups, fetchAssetTaskProgress } from "./asset-task-progress-api";
 export function AssetTaskProgress(props: {
   crewId: string;
   generation: number;
-  pending?: Partial<Record<(typeof assetGroups)[number], number>>;
   onClose: () => void;
 }) {
   const active = useScreenActive();
@@ -19,11 +18,9 @@ function ProgressSession({
   crewId,
   generation,
   onClose,
-  pending,
 }: {
   crewId: string;
   generation: number;
-  pending?: Partial<Record<(typeof assetGroups)[number], number>>;
   onClose: () => void;
 }) {
   const t = useTranslations();
@@ -63,14 +60,7 @@ function ProgressSession({
             style={{ flexDirection: "row", justifyContent: "space-between", gap: 12 }}
           >
             <ThemedText>{t(`assetTaskProgress.${key}`)}</ThemedText>
-            <View style={{ alignItems: "flex-end", gap: 4 }}>
-              <ThemedText>{`${visible.data![key].approved}/${visible.data![key].total}`}</ThemedText>
-              {!!pending?.[key] && (
-                <ThemedText type="small">
-                  {t("assetTaskProgress.pending").replace("{count}", String(pending[key]))}
-                </ThemedText>
-              )}
-            </View>
+            <ThemedText>{`${visible.data![key].approved}/${visible.data![key].total}`}</ThemedText>
           </View>
         ))}
       <Pressable

@@ -49,7 +49,7 @@ it.each(["template", "reference", "ip", "session"])(
     if (change === "ip") input.ipId = "other";
     if (change === "session") h.generation += 1;
     render();
-    expect(latest).toMatchObject({ costPreview: null, previewLoading: true, previewError: false });
+    expect(latest).toEqual({ costPreview: null, previewLoading: true, previewError: false });
     await act(async () => finish(cost(90)));
     expect(latest.costPreview?.computePoints).toBe(90);
   }
@@ -84,7 +84,7 @@ it("drops the quote and makes no request when a required reference is removed", 
   });
   input.referenceId = null;
   render();
-  expect(latest).toMatchObject({ costPreview: null, previewLoading: false, previewError: false });
+  expect(latest).toEqual({ costPreview: null, previewLoading: false, previewError: false });
   expect(h.post).toHaveBeenCalledTimes(1);
 });
 
@@ -107,17 +107,5 @@ it("settles failed previews without retaining an earlier cost", async () => {
   await act(async () => {
     render();
   });
-  expect(latest).toMatchObject({ costPreview: null, previewLoading: false, previewError: true });
-});
-
-it("retries a failed quote without another selection and exposes the server reason", async () => {
-  h.post.mockRejectedValueOnce(new Error("Pricing unavailable")).mockResolvedValueOnce(cost(25));
-  await act(async () => {
-    render();
-  });
-  expect(latest.previewErrorMessage).toBe("Pricing unavailable");
-  await act(async () => latest.retryPreview());
-  expect(latest.costPreview?.computePoints).toBe(25);
-  expect(latest.previewError).toBe(false);
-  expect(h.post).toHaveBeenCalledTimes(2);
+  expect(latest).toEqual({ costPreview: null, previewLoading: false, previewError: true });
 });

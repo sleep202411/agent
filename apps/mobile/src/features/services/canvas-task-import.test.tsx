@@ -2,7 +2,6 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CanvasTaskImport } from "./canvas-task-import";
-vi.mock("./crew-film-picker", () => ({ CrewFilmPicker: () => null }));
 const h = vi.hoisted(() => ({ generation: 1, fetch: vi.fn(), stage: vi.fn(), close: vi.fn() }));
 vi.mock("./canvas-task-import-api", async (original) => ({
   ...(await original<typeof import("./canvas-task-import-api")>()),
@@ -116,34 +115,4 @@ it("does not allow staging an empty canvas", async () => {
   await change(`https://studio.fizzdragon.com/story-studio/projects/${id}/canvas`);
   await act(async () => button("canvasImport.preview").click());
   expect(button("canvasImport.stage").disabled).toBe(true);
-});
-it("retries a failed preview for the same project without creating tasks", async () => {
-  h.fetch.mockRejectedValueOnce(new Error("Canvas lookup unavailable"));
-  await render();
-  await change(`https://studio.fizzdragon.com/story-studio/projects/${id}/canvas`);
-  await act(async () => button("canvasImport.preview").click());
-  expect(host.textContent).toContain("Canvas lookup unavailable");
-  expect(button("canvasImport.stage")).toBeUndefined();
-  await act(async () => button("canvasImport.preview").click());
-  expect(host.textContent).not.toContain("Canvas lookup unavailable");
-  expect(host.textContent).toContain("Opening");
-  expect(h.fetch).toHaveBeenLastCalledWith("crew", id, 1, expect.any(AbortSignal));
-  expect(h.stage).not.toHaveBeenCalled();
-});
-it("aborts a pending preview when leaving and ignores a late response", async () => {
-  let finish!: (value: unknown) => void;
-  h.fetch.mockReturnValue(
-    new Promise((resolve) => {
-      finish = resolve;
-    })
-  );
-  await render();
-  await change(`https://studio.fizzdragon.com/story-studio/projects/${id}/canvas`);
-  await act(async () => button("canvasImport.preview").click());
-  const signal = h.fetch.mock.calls[0][3] as AbortSignal;
-  await act(async () => root.render(null));
-  expect(signal.aborted).toBe(true);
-  await act(async () => finish(preview));
-  expect(host.textContent).toBe("");
-  expect(h.stage).not.toHaveBeenCalled();
 });

@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
@@ -9,11 +9,9 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 export default function CrewApplicationsScreen() {
   const auth = useAuth();
-  const params = useLocalSearchParams<{ application?: string }>();
-  const requested = typeof params.application === "string" ? params.application : undefined;
-  return <Session key={`${auth.generation}:${requested ?? ""}`} requested={requested} />;
+  return <Session key={auth.generation} />;
 }
-function Session({ requested }: { requested?: string }) {
+function Session() {
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -26,14 +24,7 @@ function Session({ requested }: { requested?: string }) {
         <Pressable accessibilityRole="button" style={{ padding: 16 }} onPress={() => setWeb(false)}>
           <ThemedText>{t("nativeApplications.back")}</ThemedText>
         </Pressable>
-        <AuthedWebView
-          path={
-            requested
-              ? `/messages?tab=recruitment&application=${encodeURIComponent(requested)}`
-              : "/messages?tab=recruitment"
-          }
-          title={t("crewTerms.myApplications")}
-        />
+        <AuthedWebView path="/crews/applications" title={t("crewTerms.myApplications")} />
       </View>
     );
   return (
@@ -57,12 +48,7 @@ function Session({ requested }: { requested?: string }) {
           <ThemedText>{t("crewTerms.signIn")}</ThemedText>
         </Pressable>
       ) : userId ? (
-        <CrewApplications
-          initialApplicationId={requested}
-          userId={userId}
-          generation={auth.generation}
-          onWeb={() => setWeb(true)}
-        />
+        <CrewApplications userId={userId} generation={auth.generation} onWeb={() => setWeb(true)} />
       ) : null}
     </View>
   );

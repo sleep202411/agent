@@ -6,7 +6,6 @@ export const computeRequest = z.object({
   id: z.string().uuid(),
   crewId: identifier,
   userId: z.string().min(1),
-  kind: z.enum(["top_up", "initial_allowance", "legacy_allowance"]),
   requestedByUserId: z.string().nullable(),
   remainingWorkload: z.string().nullable(),
   workloadUnit: z.string().nullable(),
@@ -23,35 +22,6 @@ export const computeRequest = z.object({
 const pageSchema = z.object({
   isOwner: z.boolean(),
   workspaceLinked: z.boolean(),
-  projectBudget: z
-    .object({
-      pointsPerMinute: z.number().int().positive(),
-      totalPoints: z.string().regex(/^\d+$/),
-      releasedPoints: z.string().regex(/^\d+$/),
-      closed: z.boolean(),
-      producerSettlement: z
-        .object({
-          grossMinor: z.string().regex(/^\d+$/),
-          deductionMinor: z.string().regex(/^\d+$/),
-          currency: z.enum(["USD", "CNY"]),
-          note: z.string(),
-        })
-        .nullable()
-        .optional(),
-    })
-    .nullable(),
-  taskUsage: z.array(
-    z.object({
-      taskId: z.string().uuid(),
-      taskTitle: z.string(),
-      userId: z.string(),
-      approvedPoints: z.string().regex(/^\d+$/),
-      creditedPoints: z.string().regex(/^\d+$/),
-      pendingPoints: z.string().regex(/^\d+$/),
-      consumedPoints: z.string().regex(/^\d+$/),
-      committedPoints: z.string().regex(/^-?\d+$/),
-    })
-  ),
   consumedPoints: z.string().regex(/^\d+$/),
   totals: z.object({
     pending: z.number().int().nonnegative().optional(),
@@ -102,9 +72,6 @@ export async function fetchCompute(
     })
   );
   if (
-    page.taskUsage.some((row) => !page.isOwner && row.userId !== userId) ||
-    new Set(page.taskUsage.map((row) => `${row.taskId}:${row.userId}`)).size !==
-      page.taskUsage.length ||
     page.items.some((row) => row.crewId !== crewId || (!page.isOwner && row.userId !== userId)) ||
     new Set(page.items.map((r) => r.id)).size !== page.items.length ||
     new Set(page.tasks.map((r) => r.id)).size !== page.tasks.length ||

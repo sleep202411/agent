@@ -15,7 +15,6 @@ function Probe({ owner, role }: { owner?: string; role: OrderRole }) {
         <span key={i.id}>{i.serviceTitle}</span>
       ))}
       {state.error}
-      {state.loading && <em>Loading</em>}
       <button onClick={state.loadMore}>more</button>
       <button onClick={state.retry}>retry</button>
     </div>
@@ -92,48 +91,3 @@ it("stops repeated cursors instead of looping forever", async () => {
   await click(0);
   expect(h.load).toHaveBeenCalledTimes(2);
 });
-
-it("revalidates return visits without showing the previous visit's rows", async () => {
-  let finish!: (value: unknown) => void;
-  h.load.mockResolvedValueOnce({ items: [item], nextCursor: null }).mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-  );
-  await render("1");
-  expect(host.textContent).toContain("First");
-  await render();
-  await render("1");
-  expect(host.textContent).not.toContain("First");
-  expect(host.textContent).toContain("Loading");
-  await act(async () => finish({ items: [], nextCursor: null }));
-  expect(host.textContent).not.toContain("Loading");
-  expect(h.load).toHaveBeenCalledTimes(2);
-});
-
-it.each([401, 403])(
-  "clears private order summaries on %s and restarts after explicit retry",
-  async (status) => {
-    h.load
-      .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
-      .mockRejectedValueOnce(Object.assign(new Error("Access denied"), { status }))
-      .mockResolvedValueOnce({
-        items: [{ ...item, serviceTitle: "Revalidated" }],
-        nextCursor: "next",
-      })
-      .mockResolvedValueOnce({ items: [], nextCursor: null });
-    await render("1");
-    await click(0);
-    expect(host.textContent).not.toContain("First");
-    expect(host.textContent).toContain("Access denied");
-    await click(0);
-    expect(h.load).toHaveBeenCalledTimes(2);
-    await click(1);
-    expect(h.load.mock.calls[2][2]).toBeNull();
-    expect(host.textContent).toContain("Revalidated");
-    expect(host.textContent).not.toContain("Access denied");
-    await click(0);
-    expect(h.load.mock.calls[3][2]).toBe("next");
-  }
-);

@@ -1,5 +1,4 @@
 import { ServiceCreate } from "@/features/services/service-create";
-import { CreatorLocationEditor } from "@/features/services/creator-location-editor";
 import { useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
@@ -8,8 +7,7 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
-import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
-import { useLocale, useTranslations } from "@/i18n";
+import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
 import { useOwnedServices } from "@/features/services/use-owned-services";
 import type { ServiceFilter } from "@/features/services/owner-service-api";
@@ -18,7 +16,6 @@ export default function MyServicesScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
     active = useScreenActive();
-  const locale = useLocale();
   const t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
@@ -69,23 +66,17 @@ export default function MyServicesScreen() {
           <FlatList
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
-              <View>
-                <CreatorLocationEditor
-                  key={`location:${auth.generation}`}
-                  scope={{ userId: creatorId, generation: auth.generation }}
-                />
-                <ServiceCreate
-                  key={auth.generation}
-                  onCreated={(id) => {
-                    list.refresh();
-                    router.push(toHref(`/service/${encodeURIComponent(id)}`));
-                  }}
-                />
-              </View>
+              <ServiceCreate
+                key={auth.generation}
+                onCreated={(id) => {
+                  list.refresh();
+                  router.push(toHref(`/service/${encodeURIComponent(id)}`));
+                }}
+              />
             }
             data={list.items}
             keyExtractor={(item) => item.id}
-            onEndReached={list.items.length ? list.loadMore : undefined}
+            onEndReached={list.loadMore}
             onRefresh={list.refresh}
             refreshing={list.loading}
             renderItem={({ item }) => (
@@ -99,52 +90,16 @@ export default function MyServicesScreen() {
                   backgroundColor: theme.backgroundElement,
                 }}
               >
-                <ThemedText type="small" themeColor="textSecondary">
-                  {serviceCategoryLabel(item.category, t)}
-                </ThemedText>
                 <ThemedText type="smallBold">{item.title}</ThemedText>
-                <ThemedText type="small" numberOfLines={2}>
-                  {item.summary}
-                </ThemedText>
-                {item.packageCount > 0 && (
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
-                    <ThemedText type="smallBold">
-                      {t("creatorService.fromPrice")} {formatServicePrice(item, locale)}
-                    </ThemedText>
-                    {item.startingDeliveryDays > 0 && (
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {t("myServices.deliveryFrom").replace(
-                          "{days}",
-                          String(item.startingDeliveryDays)
-                        )}
-                      </ThemedText>
-                    )}
-                    {item.packageCount > 1 && (
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {t("myServices.packageCount").replace("{count}", String(item.packageCount))}
-                      </ThemedText>
-                    )}
-                  </View>
-                )}
+                <ThemedText numberOfLines={2}>{item.summary}</ThemedText>
               </Pressable>
             )}
             ListEmptyComponent={
-              !list.loading && !list.error && !list.hasMore ? (
-                <ThemedText>{t("myServices.empty")}</ThemedText>
-              ) : null
+              !list.loading && !list.error ? <ThemedText>{t("myServices.empty")}</ThemedText> : null
             }
             ListFooterComponent={
               <View>
                 {list.loading && <ActivityIndicator />}
-                {list.hasMore && !list.loading && !list.error && (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={list.loadMore}
-                    style={{ paddingVertical: 12 }}
-                  >
-                    <ThemedText>{t("myServices.loadMore")}</ThemedText>
-                  </Pressable>
-                )}
                 {list.error && (
                   <>
                     <ThemedText accessibilityRole="alert">{list.error}</ThemedText>

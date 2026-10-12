@@ -2,7 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CreatorPersonalWorks } from "./creator-personal-works";
-const h = vi.hoisted(() => ({ load: vi.fn(), push: vi.fn(), t: (key: string) => key }));
+const h = vi.hoisted(() => ({ load: vi.fn(), push: vi.fn() }));
 vi.mock("./personal-work-api", () => ({ getCreatorPersonalWorks: h.load }));
 vi.mock("expo-router", () => ({ router: { push: h.push } }));
 vi.mock("react-native", () => ({
@@ -22,7 +22,7 @@ vi.mock("@/components/ui", () => ({
   PosterImage: () => null,
 }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
-vi.mock("@/i18n", () => ({ useTranslations: () => h.t }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
 const row = { id: "film/id", title: "Film" };
@@ -65,7 +65,6 @@ it("retries the same failed page, preserves previous works and deduplicates resu
   expect(h.load).toHaveBeenCalledTimes(2);
   expect(h.load.mock.calls[1][1]).toBe(2);
   expect(host.textContent).toContain("Film");
-  expect(host.textContent).toContain("offline");
   await act(async () => button("profileEdit.retry").click());
   expect(h.load.mock.calls[2][1]).toBe(2);
   expect(host.textContent?.match(/Film/g)).toHaveLength(1);

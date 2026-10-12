@@ -132,28 +132,3 @@ it("clears old private rows when access is revoked, then retries from detail", a
   expect(h.detail).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Conversation not found");
 });
-
-it("does not expose a previous foreground snapshot to consumers while access is revalidated", async () => {
-  const observed: string[][] = [];
-  function Observed({ active }: { active: boolean }) {
-    const state = useConversationHistory("chat", "viewer", 1, active);
-    observed.push(state.messages.map((m) => m.id));
-    return <div>{state.messages.map((m) => m.body).join(",")}</div>;
-  }
-  h.messages.mockResolvedValue({ items: [msg("private")], nextCursor: null });
-  await act(async () => root.render(<Observed active />));
-  await act(async () => root.render(<Observed active={false} />));
-  let finish!: (value: unknown) => void;
-  h.detail.mockImplementationOnce(
-    () =>
-      new Promise((r) => {
-        finish = r;
-      })
-  );
-  observed.length = 0;
-  await act(async () => root.render(<Observed active />));
-  expect(observed.every((items) => items.length === 0)).toBe(true);
-  h.messages.mockResolvedValue({ items: [msg("fresh")], nextCursor: null });
-  await act(async () => finish({ id: "chat" }));
-  expect(host.textContent).toBe("fresh");
-});

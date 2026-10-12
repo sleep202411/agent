@@ -2,8 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CreatorExperience } from "./creator-experience";
-const h = vi.hoisted(() => ({ load: vi.fn(), focused: true }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
+const h = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("./experience-api", () => ({ getCreatorExperience: h.load }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -34,7 +33,6 @@ const row = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
-  h.focused = true;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -80,54 +78,4 @@ it("aborts and ignores an old creator's delayed response", async () => {
   await act(async () => finish([row]));
   expect(host.textContent).toContain("Bob's role");
   expect(host.textContent).not.toContain("Director");
-});
-
-it("refreshes retained creator experience after returning from editing", async () => {
-  h.load.mockResolvedValueOnce([row]).mockResolvedValueOnce([{ ...row, title: "Producer" }]);
-  await render();
-  h.focused = false;
-  await render();
-  expect(h.load).toHaveBeenCalledTimes(1);
-  h.focused = true;
-  await render();
-  expect(host.textContent).toContain("Producer");
-  expect(host.textContent).not.toContain("Director");
-});
-it("exposes refresh errors after an empty history and recovers on return", async () => {
-  h.load
-    .mockResolvedValueOnce([])
-    .mockRejectedValueOnce(new Error("History offline"))
-    .mockResolvedValueOnce([row]);
-  await render();
-  h.focused = false;
-  await render();
-  h.focused = true;
-  await render();
-  expect(host.textContent).toContain("History offline");
-  expect(host.querySelector("button")).not.toBeNull();
-  h.focused = false;
-  await render();
-  h.focused = true;
-  await render();
-  expect(host.textContent).toContain("Director");
-  expect(host.textContent).not.toContain("History offline");
-});
-it("ignores a blurred request that finishes after the return refresh", async () => {
-  let finish!: (rows: (typeof row)[]) => void;
-  h.load
-    .mockReturnValueOnce(
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-    )
-    .mockResolvedValueOnce([]);
-  await render();
-  const signal = h.load.mock.calls[0][1] as AbortSignal;
-  h.focused = false;
-  await render();
-  expect(signal.aborted).toBe(true);
-  h.focused = true;
-  await render();
-  await act(async () => finish([row]));
-  expect(host.textContent).toBe("");
 });

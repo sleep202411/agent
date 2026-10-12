@@ -1,11 +1,10 @@
 import { useUserDisplays } from "@/features/services/user-displays";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useIsFocused, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
 import { ORDER_STATUSES } from "@repo/shared/order";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -15,7 +14,7 @@ import type { OrderRole, OrderFilter } from "@/features/services/order-list-api"
 export default function OrdersScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
-    focused = useScreenActive();
+    focused = useIsFocused();
   const theme = useTheme(),
     t = useTranslations(),
     locale = useLocale(),
@@ -102,11 +101,7 @@ export default function OrdersScreen() {
               >
                 <ThemedText type="smallBold">{item.serviceTitle}</ThemedText>
                 <ThemedText>{t(`orders.status.${item.status}`)}</ThemedText>
-                <ThemedText type="small">
-                  {t(`orders.role.${item.counterpartyRole === "creator" ? "buyer" : "creator"}`)}
-                  {" · "}
-                  {t(`servicePackages.tier.${item.packageTier}`)}
-                  {" · "}
+                <ThemedText>
                   {displays?.get(item.counterpartyId)?.nickname?.trim() ||
                     `${t("inbox.person")} ${item.counterpartyId}`}
                 </ThemedText>

@@ -59,17 +59,9 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === name)!;
-const render = (refreshKey = 0) =>
+const render = () =>
   act(async () =>
-    root.render(
-      <PayoutCreate
-        refreshKey={refreshKey}
-        crewId="crew"
-        userId="manager"
-        generation={1}
-        onSaved={h.saved}
-      />
-    )
+    root.render(<PayoutCreate crewId="crew" userId="manager" generation={1} onSaved={h.saved} />)
   );
 const click = (name: string) => act(async () => button(name).click());
 async function enter(label: string, value: string) {
@@ -234,18 +226,4 @@ it("shows insufficient available earnings and does not call success", async () =
   await click("payoutCreate.confirm");
   expect(host.textContent).toContain("Only USD 0.50");
   expect(h.saved).not.toHaveBeenCalled();
-});
-
-it("retains the open draft when refreshed create access is denied", async () => {
-  await render();
-  await click("payoutCreate.add");
-  await enter("payoutCreate.amount", "12");
-  h.access.mockResolvedValue(false);
-  await render(1);
-  expect(button("payoutCreate.add")).toBeUndefined();
-  expect(
-    host.querySelector<HTMLInputElement>('input[aria-label="payoutCreate.amount"]')!.value
-  ).toBe("12");
-  expect(h.access).toHaveBeenCalledTimes(2);
-  expect(h.decide).not.toHaveBeenCalled();
 });

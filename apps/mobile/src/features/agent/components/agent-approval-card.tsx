@@ -28,17 +28,11 @@ const PREVIEW_LIMIT = 6;
 type AgentApprovalCardProps = {
   approval: AgentOsPendingApproval;
   busy: boolean;
-  disabled?: boolean;
   onResolve: (decision: "approve" | "reject") => void;
 };
 
 /** HITL approval gate — mirrors PC `AgentOsApprovalComposer` in the composer slot. */
-export function AgentApprovalCard({
-  approval,
-  busy,
-  disabled = false,
-  onResolve,
-}: AgentApprovalCardProps) {
+export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCardProps) {
   const t = useTranslations();
   const [showDetails, setShowDetails] = useState(false);
 
@@ -164,10 +158,10 @@ export function AgentApprovalCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("agent.approve")}
-            disabled={busy || disabled}
+            disabled={busy}
             onPress={() => onResolve("approve")}
           >
-            <View style={[styles.approveChrome, (busy || disabled) && styles.disabled]}>
+            <View style={[styles.approveChrome, busy && styles.disabled]}>
               {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
               <Text style={styles.approveText}>{t("agent.approve")}</Text>
             </View>
@@ -177,10 +171,10 @@ export function AgentApprovalCard({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("agent.reject")}
-            disabled={busy || disabled}
+            disabled={busy}
             onPress={() => onResolve("reject")}
           >
-            <View style={[styles.rejectChrome, (busy || disabled) && styles.disabled]}>
+            <View style={[styles.rejectChrome, busy && styles.disabled]}>
               <Text style={styles.rejectText}>{t("agent.reject")}</Text>
             </View>
           </Pressable>

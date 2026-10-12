@@ -7,11 +7,6 @@ const card = z.object({
   creatorId: z.string().min(1),
   title: z.string(),
   summary: z.string(),
-  category: z.string().min(1),
-  startingPrice: z.number().finite().nonnegative(),
-  currency: z.string().regex(/^[A-Z]{3}$/),
-  startingDeliveryDays: z.number().int().nonnegative(),
-  packageCount: z.number().int().nonnegative(),
 });
 const page = z.object({ items: z.array(card), nextCursor: z.string().min(1).nullable() });
 export type OwnedService = z.infer<typeof card>;

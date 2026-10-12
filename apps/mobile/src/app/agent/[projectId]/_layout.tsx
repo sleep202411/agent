@@ -1,15 +1,9 @@
 import { IconLayoutGrid, IconMessageCircle, IconScript } from "@tabler/icons-react-native";
 import { Tabs, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
-import { useAuth, useAuthGate } from "@/auth";
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
+import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import {
-  StoryChapterProvider,
-  useStoryChapterContext,
-} from "@/features/agent/context/story-chapter-context";
+import { StoryChapterProvider } from "@/features/agent/context/story-chapter-context";
 import { StoryProjectHeaderActions } from "@/features/agent/components/story-project-header-actions";
 import { StoryProjectHeaderBack } from "@/features/agent/components/story-project-header-back";
 import { STORY_TAB_BAR_CONTENT_HEIGHT } from "@/features/agent/lib/story-tab-bar";
@@ -21,19 +15,12 @@ const NAV_BG = "#0A0A0A";
 const NAV_BORDER = "rgba(255,255,255,0.08)";
 const NAV_INACTIVE = "rgba(255,255,255,0.44)";
 
-function StoryProjectTabs({
-  projectId,
-  chapterId = "",
-}: {
-  projectId: string;
-  chapterId?: string;
-}) {
+function StoryProjectTabs({ projectId }: { projectId: string }) {
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = STORY_TAB_BAR_CONTENT_HEIGHT + insets.bottom;
   const showProjectActions = isAgentOsId(projectId);
-  const chapterParams = { projectId, ...(chapterId ? { chapterId } : {}) };
 
   return (
     <Tabs
@@ -78,7 +65,6 @@ function StoryProjectTabs({
       <Tabs.Screen
         name="index"
         options={{
-          href: { pathname: "/agent/[projectId]", params: chapterParams },
           tabBarLabel: t("agent.tabs.chat"),
           tabBarIcon: ({ color }) => (
             <IconMessageCircle size={20} strokeWidth={1.6} color={color} />
@@ -88,7 +74,6 @@ function StoryProjectTabs({
       <Tabs.Screen
         name="script"
         options={{
-          href: { pathname: "/agent/[projectId]/script", params: chapterParams },
           tabBarLabel: t("agent.tabs.script"),
           tabBarIcon: ({ color }) => <IconScript size={20} strokeWidth={1.6} color={color} />,
         }}
@@ -96,7 +81,6 @@ function StoryProjectTabs({
       <Tabs.Screen
         name="assets"
         options={{
-          href: { pathname: "/agent/[projectId]/assets", params: chapterParams },
           tabBarLabel: t("agent.tabs.assets"),
           tabBarIcon: ({ color }) => <IconLayoutGrid size={20} strokeWidth={1.6} color={color} />,
         }}
@@ -105,46 +89,18 @@ function StoryProjectTabs({
   );
 }
 
-function SelectedChapterTabs({ projectId }: { projectId: string }) {
-  const { chapterId, requestedChapterId } = useStoryChapterContext();
-  return <StoryProjectTabs projectId={projectId} chapterId={chapterId || requestedChapterId} />;
-}
-
 /** Story project workspace — native tab bar + shared chapter context. */
 export default function StoryProjectLayout() {
   const { projectId: projectIdParam } = useLocalSearchParams<{ projectId: string }>();
   const projectId = projectIdParam?.trim() ?? "";
-  const auth = useAuth();
-  const { requireAuth } = useAuthGate();
-  const t = useTranslations();
-
-  if (auth.status !== "authenticated") {
-    return (
-      <ThemedView style={{ flex: 1 }}>
-        <View style={{ padding: 16 }}>
-          {auth.status === "hydrating" ? (
-            <ActivityIndicator />
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              style={{ padding: 12 }}
-              onPress={() => requireAuth()}
-            >
-              <ThemedText>{t("login.signIn")}</ThemedText>
-            </Pressable>
-          )}
-        </View>
-      </ThemedView>
-    );
-  }
 
   if (!isAgentOsId(projectId)) {
     return <StoryProjectTabs projectId={projectId} />;
   }
 
   return (
-    <StoryChapterProvider key={`${projectId}:${auth.generation}`} projectId={projectId}>
-      <SelectedChapterTabs projectId={projectId} />
+    <StoryChapterProvider key={projectId} projectId={projectId}>
+      <StoryProjectTabs projectId={projectId} />
     </StoryChapterProvider>
   );
 }

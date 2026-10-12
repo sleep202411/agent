@@ -28,10 +28,6 @@ vi.mock("@/data/interactive-film-api", () => ({
   listPublishedInteractiveFilms: () => Promise.resolve([]),
 }));
 vi.mock("@/features/experience-player", () => ({ navigateToPlay: vi.fn() }));
-// Checkout recovery has its own lifecycle tests; these tests exercise feed requests.
-vi.mock("@/features/experience-player/hooks/use-story-top-up-recovery", () => ({
-  useStoryTopUpRecovery: () => null,
-}));
 vi.mock("@/hooks/use-agent-header-action", () => ({ useAgentHeaderAction: () => null }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/auth", () => ({ useAuthGate: () => ({ isAuthenticated: true, openLogin: vi.fn() }) }));
@@ -93,18 +89,7 @@ vi.mock("@/components/ui", () => ({
   ChipRail: ({ onChange }: { onChange: (index: number) => void }) => (
     <button onClick={() => onChange(1)}>tag</button>
   ),
-  EmptyState: ({
-    detail,
-    action,
-  }: {
-    detail?: string;
-    action?: { label: string; onPress: () => void };
-  }) => (
-    <div>
-      {detail}
-      {action ? <button onClick={action.onPress}>{action.label}</button> : null}
-    </div>
-  ),
+  EmptyState: () => null,
   ListFooter: () => <span>paging</span>,
   PosterImage: () => null,
   ScreenHeader: () => null,
@@ -124,12 +109,10 @@ const page = (...ids: string[]) => ({
 });
 function deferred() {
   let resolve!: (value: ReturnType<typeof page>) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<ReturnType<typeof page>>((r, fail) => {
+  const promise = new Promise<ReturnType<typeof page>>((r) => {
     resolve = r;
-    reject = fail;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 const click = (label: string) =>
   host.querySelectorAll("button").forEach((b) => {
@@ -194,11 +177,8 @@ it("keeps failed pagination retryable and deduplicates incoming rows", async () 
   h.feed.mockRejectedValueOnce(new Error("offline"));
   await act(async () => list.onEndReached());
   expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
-  expect(host.textContent).toContain("offline");
-  await act(async () => list.onEndReached());
-  expect(h.feed).toHaveBeenCalledTimes(2);
   h.feed.mockResolvedValueOnce(page("c", "c"));
-  await act(async () => click("common.retry"));
+  await act(async () => list.onEndReached());
   expect(h.feed.mock.calls[1]).toEqual(h.feed.mock.calls[2]);
   expect(list.data.map((x) => x.id)).toEqual(["a", "b", "c"]);
 });
@@ -210,35 +190,9 @@ it("does not page a retained grid under a failed replacement genre", async () =>
   await act(async () => list.onEndReached());
   expect(h.feed).toHaveBeenCalledTimes(2);
   expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
-  expect(host.textContent).toContain("offline");
   h.feed.mockResolvedValueOnce(page("genre"));
-  await act(async () => click("common.retry"));
-  expect(host.textContent).not.toContain("offline");
+  await act(async () => click("refresh"));
   h.feed.mockResolvedValueOnce(page("next"));
   await act(async () => list.onEndReached());
   expect(list.data.map((x) => x.id)).toEqual(["genre", "next"]);
-});
-
-it("shows a failed refresh without hiding loaded results and retries the selected catalog", async () => {
-  await render();
-  h.feed.mockRejectedValueOnce(new Error("refresh unavailable"));
-  await act(async () => click("refresh"));
-  expect(host.textContent).toContain("refresh unavailable");
-  expect(list.data.map((x) => x.id)).toEqual(["a", "b"]);
-  h.feed.mockResolvedValueOnce(page("fresh"));
-  await act(async () => click("common.retry"));
-  expect(host.textContent).not.toContain("refresh unavailable");
-  expect(list.data.map((x) => x.id)).toEqual(["fresh"]);
-});
-
-it("ignores a failed old refresh after a successful genre selection", async () => {
-  await render();
-  const old = deferred();
-  h.feed.mockReturnValueOnce(old.promise);
-  await act(async () => click("refresh"));
-  h.feed.mockResolvedValueOnce(page("genre"));
-  await act(async () => click("tag"));
-  await act(async () => old.reject(new Error("obsolete failure")));
-  expect(host.textContent).not.toContain("obsolete failure");
-  expect(list.data.map((x) => x.id)).toEqual(["genre"]);
 });

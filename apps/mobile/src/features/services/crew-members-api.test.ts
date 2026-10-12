@@ -29,7 +29,6 @@ it("loads member-scoped pages", async () => {
   expect(await read()).toEqual({
     ...page,
     canManageMembers: false,
-    canInvite: false,
     canManagePermissions: false,
     canTransferOwnership: false,
   });

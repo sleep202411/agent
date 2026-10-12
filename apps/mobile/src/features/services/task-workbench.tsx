@@ -1,20 +1,14 @@
-import { PdfTaskImport } from "./pdf-task-import";
-import { TaskBatch } from "./task-batch";
-import { TaskDeadline } from "./task-deadline";
-import { TaskDraftAssignees } from "./task-draft-assignees";
-import { TaskCompensationSummary } from "./task-compensation-summary";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
-import { useLocale, useTranslations } from "@/i18n";
+import { useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { TaskCreate } from "./task-create";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { getTaskDraftSession } from "./task-draft-session";
 import { AssetOrganization } from "../crew-assets/organization";
-import { pendingAssetTasks } from "./asset-task-progress-api";
 import { AssetTaskProgress } from "./asset-task-progress";
 import { EpisodeTaskTemplate } from "./episode-task-template";
 import { CanvasTaskImport } from "./canvas-task-import";
@@ -29,23 +23,14 @@ type Props = {
   onCreated: (id: string) => void;
 };
 export function TaskWorkbench(props: Props) {
-  return props.generation === getAuthGeneration() ? (
+  const active = useScreenActive();
+  return active && props.generation === getAuthGeneration() ? (
     <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session(props: Props) {
-  const active = useScreenActive();
   const t = useTranslations(),
-    locale = useLocale(),
     theme = useTheme();
-  const date = (value: string) =>
-    new Date(value).toLocaleString(locale, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   const [session] = useState(() =>
     getTaskDraftSession(props.crewId, props.userId, props.generation)
   );
@@ -54,55 +39,38 @@ function Session(props: Props) {
     session.getSnapshot,
     session.getSnapshot
   );
-  const [editing, setEditing] = useState<boolean | number>(false),
+  const [editing, setEditing] = useState(false),
+    [allowed, setAllowed] = useState<boolean>(),
+    [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
-  const [accessRevision, setAccessRevision] = useState(0);
-  const accessScope = useMemo(() => ({ active, accessRevision }), [active, accessRevision]);
-  const [accessResult, setAccessResult] = useState<{
-    scope: typeof accessScope;
-    allowed?: boolean;
-    error?: string;
-  }>();
-  const allowed = accessResult?.scope === accessScope ? accessResult.allowed : undefined;
-  const error = accessResult?.scope === accessScope ? accessResult.error : undefined;
   const [section, setSection] = useState<
-    "assets" | "progress" | "episodes" | "template" | "canvas" | "pdf" | "assign" | "recruit"
+    "assets" | "progress" | "episodes" | "template" | "canvas"
   >();
   const alive = useRef(false);
-  const foreground = useRef(0);
   useEffect(() => {
-    foreground.current += 1;
-    alive.current = active;
-    if (!active) return;
+    alive.current = true;
     const c = new AbortController();
     void fetchTaskCommentAccess(props.crewId, props.userId, c.signal).then(
       (access) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setAccessResult({ scope: accessScope, allowed: access.canManage });
+          setAllowed(access.canManage);
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setAccessResult({
-            scope: accessScope,
-            error: cause instanceof Error ? cause.message : String(cause),
-          });
+          setError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => {
       alive.current = false;
       c.abort();
     };
-  }, [props.crewId, props.userId, props.generation, active, accessScope]);
+  }, [props.crewId, props.userId, props.generation]);
   // Keep the draft session mounted while inspecting source assets or episodes.
   // Each destination checks its own read/write permissions independently.
   if (section) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
-    if (section === "pdf") return <PdfTaskImport {...childProps} />;
-    if (section === "assign" || section === "recruit")
-      return <TaskBatch {...childProps} mode={section} />;
     if (section === "assets") return <AssetOrganization {...childProps} />;
-    if (section === "progress")
-      return <AssetTaskProgress {...childProps} pending={pendingAssetTasks(snapshot.drafts)} />;
+    if (section === "progress") return <AssetTaskProgress {...childProps} />;
     if (section === "canvas")
       return (
         <CanvasTaskImport
@@ -126,48 +94,18 @@ function Session(props: Props) {
       );
     return <EpisodeManagement {...childProps} />;
   }
-  const editingDraft =
-    typeof editing === "number"
-      ? snapshot.drafts.find((row) => row.id === editing && row.kind === "task")
-      : undefined;
-  // Retain unstaged editor state while foreground permissions are refreshed.
-  // Only a fresh authorization may expose its controls; revocation retires it.
-  if (editing && allowed !== false)
+  if (editing && allowed)
     return (
-      <View style={{ flex: 1 }}>
-        <View style={{ flex: 1, display: allowed ? "flex" : "none" }}>
-          <TaskCreate
-            {...props}
-            suspended={!allowed}
-            initialDraft={editingDraft?.kind === "task" ? editingDraft : undefined}
-            closeLabel={t("taskWorkbench.title")}
-            onClose={() => setEditing(false)}
-            onStage={(input, review) => {
-              if (typeof editing === "number") session.edit(editing, input, review);
-              else session.stage(input, review);
-              setEditing(false);
-            }}
-          />
-        </View>
-        {active && !allowed && (
-          <View style={{ padding: 16, gap: 12 }}>
-            {error ? (
-              <>
-                <ThemedText accessibilityRole="alert">{error}</ThemedText>
-                <Button
-                  label={t("inbox.retry")}
-                  onPress={() => setAccessRevision((value) => value + 1)}
-                />
-              </>
-            ) : (
-              <ActivityIndicator />
-            )}
-            <Button label={t("taskWorkbench.title")} onPress={() => setEditing(false)} />
-          </View>
-        )}
-      </View>
+      <TaskCreate
+        {...props}
+        closeLabel={t("taskWorkbench.title")}
+        onClose={() => setEditing(false)}
+        onStage={(input, review) => {
+          session.stage(input, review);
+          setEditing(false);
+        }}
+      />
     );
-  if (!active) return null;
   const staged = snapshot.drafts
     .filter((row) => row.state === "staged")
     .reduce(
@@ -185,37 +123,23 @@ function Session(props: Props) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskWorkbench.title")}</ThemedText>
       <ThemedText>{t("taskWorkbench.help")}</ThemedText>
-      {snapshot.storageError && (
-        <View style={{ gap: 8 }}>
-          <ThemedText accessibilityRole="alert">
-            {t("taskWorkbench.storageError")}: {snapshot.storageError}
-          </ThemedText>
-          <Button
-            label={t("inbox.retry")}
-            disabled={snapshot.busy}
-            onPress={() => {
-              session.save();
-            }}
-          />
-        </View>
-      )}
       <View
         style={{ padding: 12, gap: 8, borderRadius: 8, backgroundColor: theme.backgroundElement }}
       >
         <ThemedText type="smallBold">{t("taskWorkbench.assetLibrary")}</ThemedText>
         <Button
           label={t("assetOrganization.title")}
-          disabled={snapshot.busy || !!snapshot.storageError}
+          disabled={snapshot.busy}
           onPress={() => setSection("assets")}
         />
         <Button
           label={t("assetTaskProgress.title")}
-          disabled={snapshot.busy || !!snapshot.storageError}
+          disabled={snapshot.busy}
           onPress={() => setSection("progress")}
         />
         <Button
           label={t("episodeManagement.title")}
-          disabled={snapshot.busy || !!snapshot.storageError}
+          disabled={snapshot.busy}
           onPress={() => setSection("episodes")}
         />
       </View>
@@ -223,40 +147,22 @@ function Session(props: Props) {
       {(error || allowed === false) && (
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
       )}
-      {error && (
-        <Button label={t("inbox.retry")} onPress={() => setAccessRevision((value) => value + 1)} />
-      )}
       {allowed && (
         <>
           <Button
             label={t("taskCreate.title")}
-            disabled={snapshot.busy || !!snapshot.storageError}
+            disabled={snapshot.busy}
             onPress={() => setEditing(true)}
           />
           <Button
             label={t("episodeTaskTemplate.title")}
-            disabled={snapshot.busy || !!snapshot.storageError}
+            disabled={snapshot.busy}
             onPress={() => setSection("template")}
           />
           <Button
             label={t("canvasImport.title")}
-            disabled={snapshot.busy || !!snapshot.storageError}
+            disabled={snapshot.busy}
             onPress={() => setSection("canvas")}
-          />
-          <Button
-            label={t("mobileProduction.pdfTitle")}
-            disabled={snapshot.busy}
-            onPress={() => setSection("pdf")}
-          />
-          <Button
-            label={t("mobileProduction.batchAssign")}
-            disabled={snapshot.busy}
-            onPress={() => setSection("assign")}
-          />
-          <Button
-            label={t("mobileProduction.batchRecruit")}
-            disabled={snapshot.busy}
-            onPress={() => setSection("recruit")}
           />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>
           {snapshot.drafts.map((row) => (
@@ -283,18 +189,14 @@ function Session(props: Props) {
                   </ThemedText>
                   {row.input.startAt && (
                     <ThemedText>
-                      {t("thread.taskStart")}: {date(row.input.startAt)}
+                      {t("thread.taskStart")}: {row.input.startAt}
                     </ThemedText>
                   )}
                   {row.input.dueAt && (
                     <ThemedText>
-                      {t("thread.taskDue")}: {date(row.input.dueAt)}
-                      {row.state === "staged" && (
-                        <TaskDeadline dueAt={row.input.dueAt} status="draft" />
-                      )}
+                      {t("thread.taskDue")}: {row.input.dueAt}
                     </ThemedText>
                   )}
-                  <TaskCompensationSummary {...row.input} />
                   {row.input.estimatePoints != null && (
                     <ThemedText>
                       {t("taskPlanning.estimate")}: {row.input.estimatePoints}
@@ -308,11 +210,10 @@ function Session(props: Props) {
                   {row.review.context.map((value, i) => (
                     <ThemedText key={`context:${i}`}>{value}</ThemedText>
                   ))}
-                  <TaskDraftAssignees
-                    owner={String(props.generation)}
-                    userIds={row.input.assignees.map((assignee) => assignee.userId)}
-                    labels={row.review.assignees}
-                  />
+                  <ThemedText>
+                    {t("taskCreate.assignees")}:{" "}
+                    {row.review.assignees.join(", ") || t("thread.taskUnset")}
+                  </ThemedText>
                   {row.review.customFields.map((value, i) => (
                     <ThemedText key={`field:${i}`}>{value}</ThemedText>
                   ))}
@@ -329,12 +230,7 @@ function Session(props: Props) {
                   <ThemedText type="smallBold">{row.title}</ThemedText>
                   <ThemedText>{row.plan.name}</ThemedText>
                   {row.plan.items.map((item) => (
-                    <View key={item.templateKey} style={{ gap: 4 }}>
-                      <ThemedText>{item.title}</ThemedText>
-                      {row.plan.fieldReview?.[item.templateKey]?.map((value, index) => (
-                        <ThemedText key={index}>{value}</ThemedText>
-                      ))}
-                    </View>
+                    <ThemedText key={item.templateKey}>{item.title}</ThemedText>
                   ))}
                 </>
               )}
@@ -343,7 +239,7 @@ function Session(props: Props) {
                 <Button
                   key={id}
                   label={`${t("taskWorkbench.open")} ${index + 1}`}
-                  disabled={snapshot.busy || !!snapshot.storageError}
+                  disabled={snapshot.busy}
                   onPress={() => props.onCreated(id)}
                 />
               ))}
@@ -358,17 +254,10 @@ function Session(props: Props) {
                   onPress={() => props.onCreated(row.taskId!)}
                 />
               )}
-              {row.state === "staged" && row.kind === "task" && (
-                <Button
-                  label={t("taskWorkbench.editDraft")}
-                  disabled={snapshot.busy || !!snapshot.storageError}
-                  onPress={() => setEditing(row.id)}
-                />
-              )}
               {row.state === "staged" && (
                 <Button
                   label={t("taskWorkbench.remove")}
-                  disabled={snapshot.busy || !!snapshot.storageError}
+                  disabled={snapshot.busy}
                   onPress={() => session.remove(row.id)}
                 />
               )}
@@ -380,7 +269,7 @@ function Session(props: Props) {
                     label={t(
                       remove === row.id ? "taskWorkbench.confirmForget" : "taskWorkbench.forget"
                     )}
-                    disabled={snapshot.busy || !!snapshot.storageError}
+                    disabled={snapshot.busy}
                     onPress={() => {
                       if (remove !== row.id) setRemove(row.id);
                       else {
@@ -394,17 +283,12 @@ function Session(props: Props) {
             </View>
           ))}
           {snapshot.error && <ThemedText accessibilityRole="alert">{snapshot.error}</ThemedText>}
-          {snapshot.drafts.some((row) => row.state !== "created") && (
-            <Button
-              primary
-              label={t("taskWorkbench.createAll")}
-              disabled={snapshot.busy || !staged || uncertain || !!snapshot.storageError}
-              onPress={() => {
-                const startedIn = foreground.current;
-                void session.createAll(() => alive.current && foreground.current === startedIn);
-              }}
-            />
-          )}
+          <Button
+            primary
+            label={t("taskWorkbench.createAll")}
+            disabled={snapshot.busy || !staged || uncertain}
+            onPress={() => void session.createAll(() => alive.current)}
+          />
           {snapshot.busy && <ActivityIndicator />}
         </>
       )}

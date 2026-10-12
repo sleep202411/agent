@@ -4,13 +4,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import ProfileEditScreen from "@/app/profile-edit";
 import { profileDraft } from "./api";
 const h = vi.hoisted(() => ({
-  prevent: false,
-  remove: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
-  dispatch: vi.fn(),
   focused: true,
   generation: 1,
   authenticated: true,
-  login: vi.fn(),
   refresh: vi.fn(),
   post: vi.fn(),
   upload: vi.fn(),
@@ -25,17 +21,9 @@ vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useIsFocused: () => h.focused,
   useRouter: () => ({ back: h.back }),
-  useNavigation: () => ({ dispatch: h.dispatch }),
-}));
-vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
-  usePreventRemove: (prevent: boolean, callback: typeof h.remove) => {
-    h.prevent = prevent;
-    h.remove = callback;
-  },
 }));
 vi.mock("@/auth", () => ({
   useLoginGateOnFocus: vi.fn(),
-  useAuthGate: () => ({ requireAuth: h.login }),
   useAuth: () => ({
     status: h.authenticated ? "authenticated" : "anonymous",
     generation: h.generation,
@@ -346,112 +334,4 @@ it("uploads a public cover without saving the text draft or leaving the editor",
   expect(host.textContent).toContain("profileEdit.bannerUpdated");
   expect(h.post).not.toHaveBeenCalled();
   expect(h.back).not.toHaveBeenCalled();
-});
-
-it("changes work availability only on explicit profile save", async () => {
-  await render();
-  const toggle = () =>
-    [...host.querySelectorAll("button")].find(
-      (b) =>
-        b.textContent === "profileEdit.available" ||
-        b.textContent === "profileEdit.unavailable" ||
-        b.textContent === "profileEdit.availabilityUnknown"
-    )!;
-  expect(toggle().textContent).toBe("profileEdit.available");
-  await act(async () => toggle().click());
-  expect(toggle().textContent).toBe("profileEdit.unavailable");
-  expect(h.post).not.toHaveBeenCalled();
-  await act(async () => save());
-  expect(h.post.mock.calls[0][1].data.availableForWork).toBe(false);
-});
-it("does not infer availability when the server omits it", async () => {
-  h.refresh.mockResolvedValue({ ...user, availableForWork: undefined });
-  await render();
-  expect(host.textContent).toContain("profileEdit.availabilityUnknown");
-  await act(async () => save());
-  expect(h.post.mock.calls[0][1].data).not.toHaveProperty("availableForWork");
-});
-it("lets an unspecified creator explicitly opt into availability", async () => {
-  h.refresh.mockResolvedValue({ ...user, availableForWork: undefined });
-  await render();
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((b) => b.textContent === "profileEdit.availabilityUnknown")!
-      .click()
-  );
-  await act(async () => save());
-  expect(h.post.mock.calls[0][1].data.availableForWork).toBe(true);
-});
-
-it("keeps a usable sign-in action after the guest closes the login sheet", async () => {
-  h.authenticated = false;
-  await render();
-  expect(host.textContent).not.toContain("loading");
-  expect(host.querySelector("input")).toBeNull();
-  expect(h.post).not.toHaveBeenCalled();
-  const signIn = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "login.signIn"
-  );
-  expect(signIn).toBeDefined();
-  await act(async () => signIn!.click());
-  expect(h.login).toHaveBeenCalledTimes(1);
-  expect(h.post).not.toHaveBeenCalled();
-});
-
-it.each(["profileEdit.nickname", "profileEdit.school 1"])(
-  "protects unsaved %s during route removal",
-  async (label) => {
-    await render();
-    expect(h.prevent).toBe(false);
-    await act(async () => change(label, "Retained edit"));
-    expect(h.prevent).toBe(true);
-    const action = { type: "GO_BACK" };
-    await act(async () => h.remove!({ data: { action } }));
-    expect(h.dispatch).not.toHaveBeenCalled();
-    await act(async () =>
-      [...host.querySelectorAll("button")]
-        .find((b) => b.textContent === "documentEditor.keepEditing")!
-        .click()
-    );
-    expect(input(label).value).toBe("Retained edit");
-    await act(async () => h.remove!({ data: { action } }));
-    await act(async () =>
-      [...host.querySelectorAll("button")]
-        .find((b) => b.textContent === "documentEditor.discard")!
-        .click()
-    );
-    expect(h.dispatch).toHaveBeenCalledWith(action);
-    expect(h.post).not.toHaveBeenCalled();
-  }
-);
-it("blocks departure during save and lets its successful return through", async () => {
-  let finish!: () => void;
-  h.post.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
-  await render();
-  await act(async () => change("profileEdit.nickname", "Saved"));
-  await act(async () => save());
-  const action = { type: "GO_BACK" };
-  await act(async () => h.remove!({ data: { action } }));
-  expect(h.dispatch).not.toHaveBeenCalled();
-  expect(host.textContent).not.toContain("documentEditor.discardQuestion");
-  await act(async () => finish());
-  await act(async () => h.remove!({ data: { action } }));
-  expect(h.dispatch).toHaveBeenCalledWith(action);
-  expect(h.back).toHaveBeenCalledOnce();
-});
-
-it("protects availability changes and permits account retirement", async () => {
-  await render();
-  await act(async () =>
-    [...host.querySelectorAll("button")]
-      .find((b) => b.textContent === "profileEdit.available")!
-      .click()
-  );
-  expect(h.prevent).toBe(true);
-  const action = { type: "GO_BACK" };
-  await act(async () => h.remove!({ data: { action } }));
-  expect(h.dispatch).not.toHaveBeenCalled();
-  h.generation++;
-  await act(async () => h.remove!({ data: { action } }));
-  expect(h.dispatch).toHaveBeenCalledWith(action);
 });

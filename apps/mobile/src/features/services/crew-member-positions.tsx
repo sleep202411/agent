@@ -16,7 +16,6 @@ type Props = {
   member: CrewMember;
   name: string;
   onClose: () => void;
-  initialPosition?: (typeof PRESET_POSITIONS)[number]["value"];
 };
 export function CrewMemberPositions(props: Props) {
   return props.generation === getAuthGeneration() ? (
@@ -30,13 +29,7 @@ function Form(props: Props) {
   const original = [...props.member.positions]
     .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
     .map((p) => ({ categoryKey: p.categoryKey, title: p.title ?? "" }));
-  const [rows, setRows] = useState(() =>
-      props.initialPosition &&
-      original.length < 12 &&
-      !original.some((p) => p.categoryKey === props.initialPosition)
-        ? [...original, { categoryKey: props.initialPosition, title: "" }]
-        : original
-    ),
+  const [rows, setRows] = useState(original),
     [editing, setEditing] = useState<number>(),
     [armed, setArmed] = useState(false),
     [attempted, setAttempted] = useState(false),

@@ -1,9 +1,7 @@
-import { useServiceEditorExit } from "./service-editor-exit-state";
-import { serviceFieldStyle } from "./service-field-style";
-import { useServiceEditorState, useClearServiceEditorDraft } from "./service-editor-drafts";
 import { useState } from "react";
 import { Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { SERVICE_TIERS } from "@repo/shared/creator-service";
+import { ALL_CURRENCIES } from "@repo/shared/crew";
 import { useAuth } from "@/auth";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { appEnv } from "@/config";
@@ -47,19 +45,6 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(service.id, useScreenActive());
-  const clearDraft = useClearServiceEditorDraft("packages");
-  const [draftVersion, setDraftVersion] = useServiceEditorState(
-    "packages:version",
-    service.version
-  );
-  const saved = () => {
-    clearDraft();
-    refresh();
-  };
-  const discardAndReload = () => {
-    clearDraft();
-    refresh();
-  };
   const initial = (): Row[] =>
     SERVICE_TIERS.map((tier) => {
       const p = service.packages.find((item) => item.tier === tier);
@@ -75,15 +60,11 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
         scope: p?.scope.join("\n") ?? "",
       };
     });
-  const [rows, setRows] = useServiceEditorState("packages:rows", initial),
-    [open, setOpen] = useServiceEditorState("packages:open", false),
+  const [rows, setRows] = useState(initial),
+    [open, setOpen] = useState(false),
     [error, setError] = useState<string>();
-  const [baseline, setBaseline] = useServiceEditorState("packages:baseline", () =>
-    JSON.stringify(initial())
-  );
-  useServiceEditorExit("packages", open && JSON.stringify(rows) !== baseline, op.busy);
   const parsed = packagesSchema.safeParse({
-    expectedVersion: draftVersion,
+    expectedVersion: service.version,
     packages: rows
       .filter((p) => p.enabled)
       .map((p) => ({
@@ -145,13 +126,13 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
                     maxLength={maxLength}
                     multiline={field === "description" || field === "scope"}
                     editable={!op.busy}
-                    style={serviceFieldStyle(theme, field === "description" || field === "scope")}
+                    style={{ color: theme.text }}
                   />
                 </View>
               ))}
               <ThemedText>{t("servicePackages.currency")}</ThemedText>
               <ScrollView horizontal>
-                {(appEnv.siteRegion === "cn" ? ["CNY"] : ["USD"]).map((currency) => (
+                {(appEnv.siteRegion === "cn" ? ["CNY"] : ALL_CURRENCIES).map((currency) => (
                   <Pressable
                     key={currency}
                     accessibilityRole="radio"
@@ -186,20 +167,18 @@ function Editor({ service, refresh }: { service: CreatorServiceDetail; refresh: 
           if (!parsed.success || emptyListed) return;
           void op.run(
             () => saveServicePackages(service.id, service.status, parsed.data),
-            saved,
+            refresh,
             (cause) => setError(cause instanceof Error ? cause.message : String(cause))
           );
         },
         !parsed.success || emptyListed
       )}
       {button(t("myServices.cancel"), () => {
-        setBaseline(JSON.stringify(initial()));
-        setDraftVersion(service.version);
         setRows(initial());
         setError(undefined);
         setOpen(false);
       })}
-      {error && button(t("serviceEdit.reload"), discardAndReload)}
+      {error && button(t("serviceEdit.reload"), refresh)}
     </View>
   );
 }

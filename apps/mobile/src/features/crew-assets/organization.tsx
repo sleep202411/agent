@@ -23,20 +23,10 @@ import {
   type OrganizationNode,
   type OrganizationFolder,
 } from "./organization-api";
-const NEW_FOLDER = Symbol("new-folder");
-type Props = {
-  crewId: string;
-  userId: string;
-  generation: number;
-  onClose: () => void;
-  initialNodeId?: string;
-};
+type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function AssetOrganization(props: Props) {
   return props.generation === getAuthGeneration() ? (
-    <Browser
-      key={JSON.stringify([props.crewId, props.userId, props.generation, props.initialNodeId])}
-      {...props}
-    />
+    <Browser key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Browser(props: Props) {
@@ -52,9 +42,7 @@ function Browser(props: Props) {
   const [showUpload, setShowUpload] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
-    [selection, setSelection] = useState<string | typeof NEW_FOLDER | undefined>(
-      props.initialNodeId
-    );
+    [selection, setSelection] = useState<string>();
   const navigation = useRef<AbortController | undefined>(undefined);
   const [navigating, setNavigating] = useState(false),
     [navigationError, setNavigationError] = useState<string>();
@@ -148,7 +136,7 @@ function Browser(props: Props) {
     return (
       <Editor
         {...props}
-        nodeId={selection === NEW_FOLDER ? undefined : selection}
+        nodeId={selection === "new" ? undefined : selection}
         initialParentId={path.at(-1)?.id ?? null}
         onClose={back}
       />
@@ -204,7 +192,7 @@ function Browser(props: Props) {
         <Button label={t("thread.uploadFile")} onPress={() => setShowUpload(true)} />
       )}
       {source === "all" && (
-        <Button label={t("assetOrganization.create")} onPress={() => setSelection(NEW_FOLDER)} />
+        <Button label={t("assetOrganization.create")} onPress={() => setSelection("new")} />
       )}
       {listing.items.map((row) => (
         <View key={row.id} style={{ gap: 6 }}>
@@ -250,7 +238,6 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     node?: OrganizationNode;
     folders?: OrganizationFolder[];
     rootUpload?: boolean;
-    canView?: boolean;
     error?: string;
   }>();
   useEffect(() => {
@@ -273,13 +260,7 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
       );
       const context = await fetchCrewAssetContext(props.crewId, c.signal);
       if (!c.signal.aborted && props.generation === getAuthGeneration())
-        setResult({
-          revision,
-          node,
-          folders,
-          rootUpload: context.capabilities.upload,
-          canView: context.capabilities.view,
-        });
+        setResult({ revision, node, folders, rootUpload: context.capabilities.upload });
     })().catch((e) => {
       if (!c.signal.aborted && props.generation === getAuthGeneration())
         setResult({ revision, error: e instanceof Error ? e.message : String(e) });
@@ -287,7 +268,7 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     return () => c.abort();
   }, [props.crewId, props.userId, props.generation, props.nodeId, revision]);
   const visible = result?.revision === revision ? result : undefined;
-  if (visible?.folders && visible.canView)
+  if (visible?.folders)
     return (
       <Form
         key={revision}
@@ -302,9 +283,6 @@ function Editor(props: Props & { nodeId?: string; initialParentId: string | null
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
-      {visible?.canView === false && (
-        <ThemedText accessibilityRole="alert">{t("studioMedia.accessDenied")}</ThemedText>
-      )}
       <Button label={t("thread.refresh")} onPress={() => setRevision((v) => v + 1)} />
       <Button label={t("crewTasks.back")} onPress={props.onClose} />
     </ScrollView>
