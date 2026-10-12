@@ -1,3 +1,5 @@
+import { DIRECT_POINTS_GRANT, isPointsOperator } from './admin-points-policy';
+import { ADMIN_PERMISSION_KEYS } from './admin-auth.constants';
 import { writeAdminAudit, type AuditInput } from './admin-audit';
 import {
   BadRequestException,
@@ -703,6 +705,15 @@ export class AdminAuthService implements OnModuleInit {
         permissions.add(rolePermission.permission.key);
       }
     }
+    permissions.delete(DIRECT_POINTS_GRANT);
+    const identity = {
+      id: user.id,
+      status: user.status,
+      siteScope: user.siteScope as AdminSiteScopeValue,
+    };
+    if (isPointsOperator(identity, 'pax')) permissions.add(DIRECT_POINTS_GRANT);
+    if (isPointsOperator(identity, 'producer'))
+      permissions.add(ADMIN_PERMISSION_KEYS.CrewComputeReview);
     return {
       id: user.id,
       email: user.email,

@@ -52,10 +52,12 @@ export function MemberWorkspacesDrawer(props: Parameters<typeof MemberWorkspaces
 function MemberWorkspacesSession({
   member,
   canWrite,
+  canGrantPoints = false,
   onClose,
 }: {
   member: MemberSummaryForDrawer | null;
   canWrite: boolean;
+  canGrantPoints?: boolean;
   onClose: () => void;
 }) {
   const requests = useAdminSessionRequests();
@@ -249,7 +251,7 @@ function MemberWorkspacesSession({
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setGranting(row)}
-                                disabled={!canWrite || row.status !== "active"}
+                                disabled={!canGrantPoints || row.status !== "active"}
                               >
                                 调整积分
                               </Button>
@@ -271,7 +273,7 @@ function MemberWorkspacesSession({
         </SheetContent>
       </Sheet>
 
-      {granting && canWrite ? (
+      {granting && canGrantPoints ? (
         <WorkspaceGrantDialog
           key={granting.id}
           workspace={granting}

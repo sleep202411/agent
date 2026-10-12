@@ -55,9 +55,11 @@ const ACCOUNT_STATUS_LABEL: Record<number, string> = {
 export function MemberDirectoryPanel({
   canReadWorkspaces,
   canWriteBilling,
+  canGrantPoints = false,
 }: {
   canReadWorkspaces: boolean;
   canWriteBilling: boolean;
+  canGrantPoints?: boolean;
 }) {
   const [queryInput, setQueryInput] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
@@ -389,6 +391,7 @@ export function MemberDirectoryPanel({
         key={viewing?.userId ?? "closed"}
         member={viewing}
         canWrite={canWriteBilling}
+        canGrantPoints={canGrantPoints}
         onClose={() => setViewing(null)}
       />
 
