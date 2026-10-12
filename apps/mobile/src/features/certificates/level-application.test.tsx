@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LevelApplicationForm } from "./level-application";
 const h = vi.hoisted(() => ({
+  held: [] as { id: number }[],
   generation: 1,
   active: true,
   focused: true,
@@ -13,7 +14,10 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   change: (_active: boolean) => {},
 }));
-vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/auth/auth-store", () => ({
+  getAuthGeneration: () => h.generation,
+  getAuthSnapshot: () => ({ user: { levels: h.held } }),
+}));
 vi.mock("@/config", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("./level-application-upload", () => ({ pickLevelApplicationAttachment: h.pick }));
@@ -100,6 +104,7 @@ const click = (label: string) =>
     node!.click();
   });
 beforeEach(() => {
+  h.held = [];
   vi.resetAllMocks();
   h.generation = 1;
   h.active = true;
@@ -132,7 +137,7 @@ afterEach(() => {
 });
 it("locks the Crew certification level and submits only after review and confirmation", async () => {
   await render();
-  expect(host.textContent).toContain("AI Producer");
+  expect(host.textContent).toContain("certificationGuide.producerName");
   expect(host.textContent).not.toContain("Other level");
   await click("levelApplication.review");
   expect(h.post).not.toHaveBeenCalled();
@@ -257,5 +262,16 @@ it("surfaces directory errors and retries explicitly", async () => {
     h.change(true);
   });
   expect(host.textContent).toContain("Offline");
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it("blocks an already held certification even if a duplicate application is pending", async () => {
+  h.held = [{ id: 13 }];
+  await render();
+  expect(host.textContent).toContain("levelApplication.alreadyHeld");
+  const review = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "levelApplication.review"
+  )!;
+  expect(review.disabled).toBe(true);
   expect(h.post).not.toHaveBeenCalled();
 });

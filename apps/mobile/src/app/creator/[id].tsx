@@ -1,3 +1,4 @@
+import { CertificationGuide } from "@/features/certificates/certification-guide";
 import { Image } from "expo-image";
 import { router, Stack, useLocalSearchParams } from "expo-router";
 import { SymbolView } from "expo-symbols";
@@ -314,6 +315,7 @@ function CreatorDetailContent({
             <View style={styles.section}>
               <SectionHeader title={t("creatorDetail.credentialsTitle")} />
               <View style={styles.levelWrap}>
+                <CertificationGuide />
                 {creator.levels.map((level) => (
                   <Tag key={level.id} label={level.name} tone="warning" />
                 ))}

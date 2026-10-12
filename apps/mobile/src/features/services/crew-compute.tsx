@@ -220,24 +220,24 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   const [taskId, setTaskId] = useState(props.initialTaskId ?? ""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
-    [beneficiary, setBeneficiary] = useState(""),
     [workload, setWorkload] = useState(""),
     [unit, setUnit] = useState<(typeof workloadUnits)[number]>("minutes"),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
   const request = useRef<ComputeInput | null>(null);
-  const tasks = props.page.tasks;
+  const tasks = props.page.tasks.filter((task) =>
+    task.assignees.some((a) => a.userId === props.userId)
+  );
   const selected = tasks.find((task) => task.id === taskId);
   const assignees = selected?.assignees ?? [];
-  const recipient = assignees.length === 1 ? assignees[0]!.userId : beneficiary;
-  if (!props.page.isOwner) return <ThemedText>{t("crewComputeFinance.ownerOnly")}</ThemedText>;
+  const recipient = props.userId;
   if (!props.page.workspaceLinked)
     return (
       <View>
         <ThemedText>{t("crewComputeFinance.workspaceRequired")}</ThemedText>
         <Pressable
           accessibilityRole="button"
-          disabled={op.busy}
+          disabled={op.busy || !props.page.isOwner}
           onPress={() => {
             if (props.generation !== getAuthGeneration()) return;
             void op.run(
@@ -255,7 +255,9 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   if (!tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
   return (
     <View style={{ gap: 12 }}>
-      <ThemedText>{t("crewComputeFinance.task")}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.project")} *</ThemedText>
+      <ThemedText>{props.page.crewName ?? props.crewId}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.task")} *</ThemedText>
       {tasks.map((task) => (
         <Pressable
           key={task.id}
@@ -265,7 +267,6 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
           style={{ padding: 12 }}
           onPress={() => {
             setTaskId(task.id);
-            setBeneficiary("");
           }}
         >
           <ThemedText>
@@ -280,23 +281,9 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
       {selected && !assignees.length && (
         <ThemedText>{t("crewComputeFinance.assignFirst")}</ThemedText>
       )}
-      <ThemedText>{t("crewComputeFinance.creator")}</ThemedText>
-      {assignees.map((a) => (
-        <Pressable
-          key={a.userId}
-          accessibilityRole="radio"
-          accessibilityState={{ checked: recipient === a.userId }}
-          disabled={attempted || op.busy}
-          onPress={() => setBeneficiary(a.userId)}
-          style={{ padding: 12 }}
-        >
-          <ThemedText>
-            {recipient === a.userId ? "✓ " : ""}
-            {a.userId}
-          </ThemedText>
-        </Pressable>
-      ))}
-      <ThemedText>{t("crewComputeFinance.workloadUnit")}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.creator")} *</ThemedText>
+      <ThemedText>{recipient}</ThemedText>
+      <ThemedText>{t("crewComputeFinance.workloadUnit")} *</ThemedText>
       {workloadUnits.map((value) => (
         <Pressable
           key={value}
@@ -333,7 +320,7 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
                   : "default"
             }
             multiline={field === "reason"}
-            maxLength={field === "points" ? 3 : field === "remainingWorkload" ? 15 : 2000}
+            maxLength={field === "points" ? 4 : field === "remainingWorkload" ? 15 : 2000}
             editable={!attempted && !op.busy}
             style={{
               color: theme.text,

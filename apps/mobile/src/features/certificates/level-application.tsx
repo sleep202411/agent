@@ -1,7 +1,10 @@
+import { CertificationGuide } from "./certification-guide";
+import { certificationEntry, certificationGroup } from "./certification-guide-data";
+import type { MessageKey } from "@/i18n";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useIsFocused } from "expo-router";
-import { getAuthGeneration } from "@/auth/auth-store";
+import { getAuthGeneration, getAuthSnapshot } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { appEnv } from "@/config";
 import { useAppActiveChange, useScreenActive } from "@/hooks/use-app-active";
@@ -45,6 +48,9 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
     locale = useLocale(),
     theme = useTheme(),
     active = useScreenActive();
+  const heldLevelIds = new Set(
+    (getAuthSnapshot().user?.levels ?? []).map((level) => Number(level.id))
+  );
   const controller = useRef<AbortController | null>(null),
     picking = useRef(false),
     locked = useRef(false);
@@ -179,6 +185,7 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
       setError(message(e));
     }
   }
+  const selectedHeld = heldLevelIds.has(levelId ?? -1);
   const selectedPending = applications.some((v) => v.levelId === levelId && v.status === 0);
   return (
     <ScrollView
@@ -260,16 +267,39 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
       ) : (
         <>
           <ThemedText>{t("levelApplication.level")}</ThemedText>
-          {levels
-            .filter((v) => lockedLevelId === undefined || v.id === lockedLevelId)
-            .map((v) => (
-              <View key={v.id}>
-                {button(`${levelId === v.id ? "✓ " : ""}${v.name}`, () => setLevelId(v.id))}
-                {levelId === v.id && v.description ? (
-                  <ThemedText>{v.description}</ThemedText>
-                ) : null}
+          <CertificationGuide />
+          {["partner", "director", "skill", "other"].map((group) => {
+            const options = levels.filter(
+              (v) =>
+                (lockedLevelId === undefined || v.id === lockedLevelId) &&
+                certificationGroup(v.name) === group
+            );
+            if (!options.length) return null;
+            return (
+              <View key={group} style={{ gap: 8 }}>
+                <ThemedText>{t(`certificationGuide.${group}` as MessageKey)}</ThemedText>
+                {options.map((v) => {
+                  const entry = certificationEntry(v.name);
+                  const name = entry ? t(`certificationGuide.${entry}Name` as MessageKey) : v.name;
+                  return (
+                    <View key={v.id}>
+                      {button(
+                        `${levelId === v.id ? "✓ " : ""}${name}`,
+                        () => setLevelId(v.id),
+                        heldLevelIds.has(v.id)
+                      )}
+                      {heldLevelIds.has(v.id) && (
+                        <ThemedText>{t("levelApplication.alreadyHeld")}</ThemedText>
+                      )}
+                      {levelId === v.id && v.description ? (
+                        <ThemedText>{v.description}</ThemedText>
+                      ) : null}
+                    </View>
+                  );
+                })}
               </View>
-            ))}
+            );
+          })}
           {!levels.some((v) => lockedLevelId === undefined || v.id === lockedLevelId) ? (
             <ThemedText>{t("levelApplication.unavailable")}</ThemedText>
           ) : null}
@@ -277,7 +307,10 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
           levels.some((level) => level.id === levelId && level.type === 4) ? (
             <AcademyCoursesForCertificate certificateId={levelId} />
           ) : null}
-          {selectedPending ? <ThemedText>{t("levelApplication.alreadyPending")}</ThemedText> : null}
+          {selectedHeld ? <ThemedText>{t("levelApplication.alreadyHeld")}</ThemedText> : null}
+          {!selectedHeld && selectedPending ? (
+            <ThemedText>{t("levelApplication.alreadyPending")}</ThemedText>
+          ) : null}
           <AssociationChoice
             label={t("levelApplication.crew")}
             items={crews}
@@ -368,7 +401,7 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
                 setError(message(e));
               }
             },
-            !levels.some((v) => v.id === levelId) || selectedPending
+            !levels.some((v) => v.id === levelId) || selectedPending || selectedHeld
           )}
         </>
       )}

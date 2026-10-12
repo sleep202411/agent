@@ -80,7 +80,9 @@ export function TaskManagementMenu({
           {allowed && item("taskMenu.edit", edit)}
           {canInvite && available && task.isRecruiting === false && item("taskMenu.invite", invite)}
           {allowed && available && item("taskMenu.recruit", recruit)}
-          {credit && item("taskMenu.addCredit", credit)}
+          {credit &&
+            task.assignees.some((a) => a.userId === userId) &&
+            item("taskMenu.addCredit", credit)}
         </View>
       )}
     </View>

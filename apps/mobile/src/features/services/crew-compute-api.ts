@@ -21,6 +21,7 @@ export const computeRequest = z.object({
   decisionNote: z.string().nullable(),
 });
 const pageSchema = z.object({
+  crewName: z.string().optional(),
   isOwner: z.boolean(),
   workspaceLinked: z.boolean(),
   projectBudget: z
@@ -76,7 +77,7 @@ export const computeInput = z
   .object({
     taskId: z.string().uuid(),
     beneficiaryUserId: z.string().trim().min(1).max(64),
-    points: z.number().int().positive().max(500),
+    points: z.number().int().positive().max(3000),
     remainingWorkload: z.number().positive().max(999_999_999_999).multipleOf(0.01),
     workloadUnit: z.enum(workloadUnits),
     reason: z.string().trim().min(1).max(2000),
@@ -121,6 +122,8 @@ export async function createCompute(
 ) {
   identifier.parse(crewId);
   const data = computeInput.parse(input);
+  if (data.beneficiaryUserId !== userId)
+    throw new Error("Creators can only request points for themselves");
   if (generation !== getAuthGeneration()) throw new Error("Compute request session expired");
   const receipt = computeRequest
     .extend({ requestKey: z.string().uuid() })

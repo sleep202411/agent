@@ -91,7 +91,7 @@ export function CrewSkillsField({
                 <Pressable
                   key={skill}
                   accessibilityRole="checkbox"
-                  accessibilityLabel={skill}
+                  accessibilityLabel={skill === "Editor" ? t("crewSkills.videoEditor") : skill}
                   accessibilityState={{ checked: selected, disabled }}
                   disabled={disabled}
                   style={{
@@ -108,7 +108,7 @@ export function CrewSkillsField({
                 >
                   <ThemedText>
                     {selected ? "✓ " : ""}
-                    {skill}
+                    {skill === "Editor" ? t("crewSkills.videoEditor") : skill}
                   </ThemedText>
                 </Pressable>
               );

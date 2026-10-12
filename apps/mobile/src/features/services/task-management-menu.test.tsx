@@ -21,6 +21,7 @@ const edit = vi.fn(),
   invite = vi.fn(),
   recruit = vi.fn();
 beforeEach(() => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   h.generation = 1;
   h.access.mockResolvedValue({ canManage: true, canInvite: true });
   host = document.createElement("div");
@@ -30,7 +31,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
 });
-async function render(overrides: Partial<TaskDetail> = {}) {
+async function render(overrides: Partial<TaskDetail> = {}, credit?: () => void) {
   const task = {
     id: "task",
     crewId: "crew",
@@ -48,6 +49,7 @@ async function render(overrides: Partial<TaskDetail> = {}) {
         edit={edit}
         invite={invite}
         recruit={recruit}
+        credit={credit}
       />
     )
   );
@@ -83,4 +85,24 @@ it("does not offer management to a non-manager", async () => {
   h.access.mockResolvedValue({ canManage: false, canInvite: true });
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("allows credit only for the assigned creator without granting management", async () => {
+  h.access.mockResolvedValue({ canManage: false, canInvite: false });
+  const credit = vi.fn();
+  await render({ assignees: [{ id: "a", userId: "u" }] }, credit);
+  await click("•••");
+  expect(host.textContent).toContain("taskMenu.addCredit");
+  expect(host.textContent).not.toContain("taskMenu.edit");
+  await click("taskMenu.addCredit");
+  expect(credit).toHaveBeenCalledOnce();
+  await render({ assignees: [] }, credit);
+  expect(host.textContent).toBe("");
+});
+
+it("does not let an unassigned manager request another creator's points", async () => {
+  await render({}, vi.fn());
+  await click("•••");
+  expect(host.textContent).toContain("taskMenu.edit");
+  expect(host.textContent).not.toContain("taskMenu.addCredit");
 });
