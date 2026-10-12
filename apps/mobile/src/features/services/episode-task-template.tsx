@@ -1,3 +1,4 @@
+import { isTaskRequestReceipt } from "./task-request-receipt";
 import {
   customFieldText,
   fetchTaskFieldDefinitions,
@@ -48,7 +49,7 @@ function Session({ crewId, userId, generation, onClose, onStage, initialEpisodeI
       try {
         const access = await fetchTaskCommentAccess(crewId, userId, controller.signal);
         if (controller.signal.aborted || generation !== getAuthGeneration()) return;
-        if (!access.canManage) {
+        if (!access.canSubmit) {
           setSnapshot({ revision, denied: true });
           return;
         }
@@ -253,8 +254,14 @@ function Preview({
       )}
       {result && (
         <ThemedText>
-          {t(result.replayed ? "episodeTaskTemplate.reused" : "episodeTaskTemplate.created")} ·{" "}
-          {result.taskIds.length}
+          {t(
+            isTaskRequestReceipt(result)
+              ? `taskApproval.${result.status}`
+              : result.replayed
+                ? "episodeTaskTemplate.reused"
+                : "episodeTaskTemplate.created"
+          )}{" "}
+          · {isTaskRequestReceipt(result) ? "" : result.taskIds.length}
         </ThemedText>
       )}
       {visible?.plan && (

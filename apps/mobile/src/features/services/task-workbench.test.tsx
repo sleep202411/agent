@@ -3,6 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
+vi.mock("./task-request-history", () => ({ TaskRequestHistory: () => null }));
+vi.mock("./crew-compute", () => ({
+  CrewCompute: ({ crewId }: { crewId: string }) => <span>points for {crewId}</span>,
+}));
 vi.mock("./pdf-task-import", () => ({ PdfTaskImport: () => <span>pdf import</span> }));
 vi.mock("./task-batch", () => ({ TaskBatch: () => <span>batch tasks</span> }));
 vi.mock("expo-image", () => ({ Image: () => null }));
@@ -161,7 +165,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.generation++;
   h.active = true;
-  h.access.mockResolvedValue({ canManage: true });
+  h.access.mockResolvedValue({ canManage: true, canSubmit: true });
   h.create.mockResolvedValue({ id: "created" });
   host = document.createElement("div");
   document.body.append(host);
@@ -172,7 +176,7 @@ afterEach(() => {
   host.remove();
 });
 it("requires management access before showing drafts or creation", async () => {
-  h.access.mockResolvedValue({ canManage: false });
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   await render();
   expect(host.textContent).toContain("taskCreate.managerOnly");
   expect(button("taskCreate.title")).toBeUndefined();
@@ -278,7 +282,7 @@ it.each([
   expect(h.create).not.toHaveBeenCalled();
 });
 it("leaves asset and episode browsing accessible to non-managers", async () => {
-  h.access.mockResolvedValue({ canManage: false });
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   await render();
   expect(button("taskCreate.title")).toBeUndefined();
   await click("assetOrganization.title");
@@ -339,7 +343,7 @@ it("closes the preserved editor when management permission was revoked in backgr
   await click("taskCreate.title");
   h.active = false;
   await render();
-  h.access.mockResolvedValue({ canManage: false });
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   h.active = true;
   await render();
   expect(button("stage form")).toBeUndefined();
@@ -441,4 +445,11 @@ it("retains the unstaged editor through a failed foreground permission lookup an
   expect(host.querySelector("input")).toBe(title);
   expect(title.value).toBe("Keep through retry");
   expect(h.create).not.toHaveBeenCalled();
+});
+
+it("opens points independently of task category and manager permissions", async () => {
+  h.access.mockResolvedValue({ canManage: false, canSubmit: true });
+  await render();
+  await act(async () => button("taskWorkbench.applyPoints").click());
+  expect(host.textContent).toContain("points for");
 });

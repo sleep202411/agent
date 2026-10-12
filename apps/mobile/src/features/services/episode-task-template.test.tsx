@@ -102,7 +102,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
   h.fields.mockResolvedValue([]);
-  h.access.mockResolvedValue({ canManage: true });
+  h.access.mockResolvedValue({ canManage: true, canSubmit: true });
   h.episodes.mockResolvedValue([{ id: "episode", name: "Episode 1" }]);
   h.preview.mockResolvedValue(plan);
   h.apply.mockResolvedValue({ taskIds: ["task"], replayed: false });
@@ -126,7 +126,7 @@ it("reviews roles before explicit creation and prevents repeat confirmation", as
   expect(button("episodeTaskTemplate.confirm")).toBeUndefined();
 });
 it("does not offer episodes to someone without task management permission", async () => {
-  h.access.mockResolvedValue({ canManage: false });
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   await render();
   expect(h.episodes).not.toHaveBeenCalled();
   expect(host.textContent).toContain("episodeTaskTemplate.denied");
@@ -168,7 +168,7 @@ it("suppresses late membership results after account replacement", async () => {
   );
   await render();
   h.generation = 2;
-  await act(async () => finish({ canManage: true }));
+  await act(async () => finish({ canManage: true, canSubmit: true }));
   expect(h.episodes).not.toHaveBeenCalled();
   expect(button("Episode 1")).toBeUndefined();
 });

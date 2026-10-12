@@ -1,3 +1,4 @@
+import { isTaskRequestReceipt } from "./task-request-receipt";
 import { assertTaskCreationRequired } from "./task-creation-required";
 import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { taskWorkflowSchema } from "./task-workflow-api";
@@ -23,8 +24,9 @@ export type TaskDraftInput = ReturnType<typeof taskCreateInput.parse>;
 export type TaskDraftReview = z.infer<typeof reviewSchema>;
 type DraftState = {
   id: number;
-  state: "staged" | "creating" | "created" | "uncertain";
+  state: "staged" | "creating" | "created" | "uncertain" | "submitted";
   taskId?: string;
+  requestId?: string;
   taskIds?: string[];
   error?: string;
 };
@@ -37,8 +39,9 @@ export type TaskDraft = DraftState &
 type Snapshot = { drafts: TaskDraft[]; busy: boolean; error?: string; storageError?: string };
 const stateSchema = z.object({
   id: z.number().int().positive(),
-  state: z.enum(["staged", "creating", "created", "uncertain"]),
+  state: z.enum(["staged", "creating", "created", "uncertain", "submitted"]),
   taskId: z.string().min(1).optional(),
+  requestId: z.string().uuid().optional(),
   taskIds: z.array(z.string().min(1)).optional(),
   error: z.string().optional(),
 });
@@ -253,7 +256,7 @@ export function createTaskDraftSession(
           if (!current() || !isActive()) break;
           const access = await fetchTaskCommentAccess(crewId, userId, new AbortController().signal);
           if (!current() || !isActive()) break;
-          if (!access.canManage) throw new Error("Task management permission is required.");
+          if (!access.canSubmit) throw new Error("Active project membership is required.");
           if (row.kind === "task") {
             assertTaskCreationRequired(row.input);
             assertTaskCreationDeadline(row.input.dueAt);
@@ -267,7 +270,12 @@ export function createTaskDraftSession(
             if (row.kind === "canvas") {
               const result = await applyCanvasTaskImport(crewId, row.preview, generation);
               if (!current()) break;
-              change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              change(
+                row.id,
+                isTaskRequestReceipt(result)
+                  ? { state: "submitted", requestId: result.requestId, error: undefined }
+                  : { state: "created", taskIds: result.taskIds, error: undefined }
+              );
               if (!persist()) break;
               continue;
             }
@@ -279,14 +287,24 @@ export function createTaskDraftSession(
                 generation
               );
               if (!current()) break;
-              change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              change(
+                row.id,
+                isTaskRequestReceipt(result)
+                  ? { state: "submitted", requestId: result.requestId, error: undefined }
+                  : { state: "created", taskIds: result.taskIds, error: undefined }
+              );
               if (!persist()) break;
               continue;
             }
             const result = await createTask(crewId, row.input);
             if (!current()) break;
             // Keep the receipt if the screen backgrounded while this write was in flight.
-            change(row.id, { state: "created", taskId: result.id });
+            change(
+              row.id,
+              isTaskRequestReceipt(result)
+                ? { state: "submitted", requestId: result.requestId }
+                : { state: "created", taskId: result.id }
+            );
             if (!persist()) break;
           } catch (cause) {
             if (current())

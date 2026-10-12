@@ -5,6 +5,9 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
 import { TaskChildCreate } from "./task-child-create";
 import type { TaskDetail } from "./task-detail-api";
+vi.mock("expo-modules-core", () => ({
+  uuid: { v4: () => "11111111-1111-4111-8111-111111111111" },
+}));
 vi.mock("@/features/crew-assets/asset-picker", () => ({ CrewAssetPicker: () => null }));
 vi.mock("./task-contract", () => ({ TaskContract: () => null }));
 vi.mock("@/features/crew-assets/file-upload", () => ({ AssetFileUpload: () => null }));
@@ -128,7 +131,7 @@ beforeEach(() => {
       archived: false,
     },
   ]);
-  h.access.mockResolvedValue({ allowed: false, canManage: true });
+  h.access.mockResolvedValue({ allowed: false, canManage: true, canSubmit: true });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -150,8 +153,8 @@ vi.mock("./task-mention-picker", () => ({
     onSelect: (m: { userId: string; label: string }) => void;
   }) => <button onClick={() => onSelect({ userId: "1", label: "Self" })}>choose member</button>,
 }));
-it("requires task management permission", async () => {
-  h.access.mockResolvedValue({ allowed: true, canManage: false });
+it("requires active project membership for a proposal", async () => {
+  h.access.mockResolvedValue({ allowed: true, canManage: false, canSubmit: false });
   await render();
   expect(button("taskCreate.submit")).toBeUndefined();
   expect(host.textContent).toContain("taskCreate.managerOnly");
@@ -597,8 +600,8 @@ it("keeps editor unavailable when defaults cannot load", async () => {
   expect(host.textContent).toContain("Project unavailable");
   expect(host.querySelector("input")).toBeNull();
 });
-it("does not request defaults for a non-manager", async () => {
-  h.access.mockResolvedValue({ canManage: false });
+it("does not request defaults without submission permission", async () => {
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   await render();
   expect(h.defaults).not.toHaveBeenCalled();
 });
@@ -1058,4 +1061,11 @@ it("submits a share-only task without a cash fee", async () => {
     "crew",
     expect.objectContaining({ rewardUsdMinor: null, profitShareBps: 100 })
   );
+});
+
+it("allows an active non-manager to submit a proposal", async () => {
+  h.access.mockResolvedValue({ canManage: false, canSubmit: true });
+  await render();
+  expect(button("taskCreate.submit")).toBeDefined();
+  expect(h.defaults).toHaveBeenCalled();
 });

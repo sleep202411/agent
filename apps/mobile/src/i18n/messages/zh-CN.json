@@ -1561,7 +1561,7 @@
   "crewTasks.title": "剧组任务",
   "crewTasks.back": "返回任务列表",
   "taskCreate.title": "发起任务",
-  "taskCreate.managerOnly": "仅任务管理员可以发起任务。",
+  "taskCreate.managerOnly": "只有项目的有效成员可以提交任务申请。",
   "taskCreate.assignees": "负责人",
   "taskCreate.remove": "移除负责人",
   "taskCreate.add": "添加负责人",
@@ -2077,6 +2077,7 @@
   "projectActivity.labels_changed": "标签已更新",
   "projectActivity.resource_added": "资源已添加",
   "projectActivity.resource_removed": "资源已移除",
+  "taskWorkbench.applyPoints": "申请积分",
   "taskWorkbench.title": "任务创建工作台",
   "taskWorkbench.help": "核对草稿后统一创建任务。草稿按账号保存在当前设备上；确认创建后才会成为服务器上的任务。",
   "taskWorkbench.stage": "暂存任务",
@@ -6085,5 +6086,12 @@
   "certificationGuide.writerName": "编剧",
   "certificationGuide.writerDescription": "编写剧本。",
   "crewSkills.videoEditor": "剪辑师",
-  "levelApplication.alreadyHeld": "你已获得此认证。"
+  "levelApplication.alreadyHeld": "你已获得此认证。",
+  "taskApproval.help": "提交任务后由 YH 审批。审批通过后才会创建任务并分配初始积分。",
+  "taskApproval.pending": "等待 YH 审批",
+  "taskApproval.approved": "已批准",
+  "taskApproval.rejected": "已拒绝",
+  "taskWorkbench.submitted": "等待 YH 审批",
+  "taskApproval.title": "我的任务申请",
+  "taskApproval.empty": "暂无任务申请"
 }

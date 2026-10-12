@@ -91,7 +91,7 @@ beforeEach(() => {
   h.get.mockImplementation(async (path: string) =>
     path === "/crews/my"
       ? { founded: [{ id: "crew", name: "River" }], joined: [{ id: "crew", name: "River" }] }
-      : { userId: "alice", permissions: ["tasks.manage"] }
+      : { userId: "alice", permissions: ["tasks.view"] }
   );
   host = document.createElement("div");
   document.body.append(host);

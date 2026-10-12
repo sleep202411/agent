@@ -46,7 +46,7 @@ const session = () => createTaskDraftSession("crew", "user", h.generation);
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation++;
-  h.access.mockResolvedValue({ canManage: true });
+  h.access.mockResolvedValue({ canManage: true, canSubmit: true });
   h.create.mockResolvedValue({ id: "created" });
 });
 it("stages immutable validated drafts without server writes", () => {
@@ -109,19 +109,21 @@ it("continues remaining drafts only after explicitly removing an uncertain local
   expect(h.create.mock.calls[1]?.[1].title).toBe("Next");
 });
 it("rechecks permission for every creation and preserves unattempted drafts", async () => {
-  h.access.mockResolvedValueOnce({ canManage: true }).mockResolvedValueOnce({ canManage: false });
+  h.access
+    .mockResolvedValueOnce({ canManage: true, canSubmit: true })
+    .mockResolvedValueOnce({ canManage: false, canSubmit: false });
   const s = session();
   s.stage(input, review);
   s.stage(input, review);
   await s.createAll(() => true);
   expect(h.create).toHaveBeenCalledTimes(1);
   expect(s.getSnapshot().drafts[1]?.state).toBe("staged");
-  expect(s.getSnapshot().error).toContain("permission");
+  expect(s.getSnapshot().error).toContain("membership");
 });
 it("stops before writing if the account changes during access lookup", async () => {
   h.access.mockImplementation(async () => {
     h.generation++;
-    return { canManage: true };
+    return { canManage: true, canSubmit: true };
   });
   const s = session();
   s.stage(input, review);
@@ -145,7 +147,7 @@ it("does not write when screen leaves during permission lookup", async () => {
   let active = true;
   h.access.mockImplementation(async () => {
     active = false;
-    return { canManage: true };
+    return { canManage: true, canSubmit: true };
   });
   const s = session();
   s.stage(input, review);
@@ -219,7 +221,7 @@ it("retries the exact episode command after a lost reply and pauses later tasks"
   expect(s.getSnapshot().drafts.every((r) => r.state === "created")).toBe(true);
 });
 it("does not start episode creation with revoked permission", async () => {
-  h.access.mockResolvedValue({ canManage: false });
+  h.access.mockResolvedValue({ canManage: false, canSubmit: false });
   const s = session();
   s.stageEpisode(episodeId, "Episode 1", plan);
   await s.createAll(() => true);
@@ -253,7 +255,7 @@ it("locks episode batches during a pending write and stops after backgrounding",
 it("does not post a staged episode after the account changes during authorization", async () => {
   h.access.mockImplementation(async () => {
     h.generation++;
-    return { canManage: true };
+    return { canManage: true, canSubmit: true };
   });
   const s = session();
   s.stageEpisode(episodeId, "Episode 1", plan);

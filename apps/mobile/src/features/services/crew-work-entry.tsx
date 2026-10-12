@@ -63,7 +63,7 @@ function Session({ userId, generation, mode, onClose }: Props) {
           })
         );
         if (member.userId !== userId) throw Error("Crew membership account mismatch.");
-        allowed = member.permissions.includes(mode === "task" ? "tasks.manage" : "openings.manage");
+        allowed = member.permissions.includes(mode === "task" ? "tasks.view" : "openings.manage");
       }
       if (!c.signal.aborted && generation === getAuthGeneration())
         setResult({ key, items, allowed });

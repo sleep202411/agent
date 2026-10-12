@@ -1,3 +1,4 @@
+import { taskRequestReceipt, isTaskRequestReceipt } from "./task-request-receipt";
 import { z } from "zod";
 import * as DocumentPicker from "expo-document-picker";
 import { Platform } from "react-native";
@@ -24,6 +25,7 @@ export const pdfPreviewSchema = z
     id,
     createdAt: z.string().datetime({ offset: true }),
     status: z.enum(["queued", "analyzing", "ready", "applied", "failed"]),
+    approval: taskRequestReceipt.nullish(),
     failure: z.object({ code: z.string(), message: z.string() }).nullish(),
     tasks: z
       .array(
@@ -163,7 +165,7 @@ export async function applyPdfTasks(
     .parse(indices)
     .slice()
     .sort((a, b) => a - b);
-  const result = receipt.parse(
+  const result = z.union([taskRequestReceipt, receipt]).parse(
     await api.post(`${base(crewId, requestId)}/apply`, {
       service: "aurora",
       signal,
@@ -171,6 +173,7 @@ export async function applyPdfTasks(
     })
   );
   current(generation, signal);
+  if (isTaskRequestReceipt(result)) return result;
   if (result.taskIds.length !== selection.length)
     throw new Error("Task creation receipt does not match the selection");
   return result;

@@ -17,6 +17,7 @@ import {
 } from "./crew-compute-api";
 import { formatFinanceMoney } from "./crew-finance-api";
 type Props = {
+  requestFirst?: boolean;
   initialTaskId?: string;
   crewId: string;
   userId: string;
@@ -86,6 +87,7 @@ function Panel(props: Props & { onSaved: () => void }) {
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {page && (
         <>
+          {props.requestFirst && <RequestForm {...props} page={page} />}
           <ThemedText>
             {t(page.isOwner ? "crewComputeFinance.crewScope" : "crewComputeFinance.myScope")}
           </ThemedText>
@@ -153,7 +155,7 @@ function Panel(props: Props & { onSaved: () => void }) {
                 </ThemedText>
               </View>
             ))}
-          <RequestForm {...props} page={page} />
+          {!props.requestFirst && <RequestForm {...props} page={page} />}
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
             <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>

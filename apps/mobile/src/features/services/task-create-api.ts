@@ -1,3 +1,4 @@
+import { taskRequestReceipt } from "./task-request-receipt";
 import { requiredSkillsSchema, sameSkills } from "./crew-skills-api";
 import { assertTaskCreationRequired } from "./task-creation-required";
 import { assertTaskCreationDeadline } from "./task-creation-deadline";
@@ -9,6 +10,7 @@ import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
     ...taskCompensationShape,
+    submissionKey: z.string().uuid().optional(),
     customFieldValues: z
       .array(
         z
@@ -79,6 +81,12 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
   const data = taskCreateInput.parse(input);
   assertTaskCreationRequired(data);
   assertTaskCreationDeadline(data.dueAt);
+  const response = await api.post(`/crews/${encodeURIComponent(crewId)}/tasks`, {
+    service: "aurora",
+    data,
+  });
+  const submitted = taskRequestReceipt.safeParse(response);
+  if (submitted.success) return submitted.data;
   const result = taskDetailSchema
     .extend({
       customFieldValues: z
@@ -89,9 +97,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       cycleId: z.string().uuid().nullable().optional(),
       episodeId: z.string().uuid().nullable().optional(),
     })
-    .parse(
-      await api.post(`/crews/${encodeURIComponent(crewId)}/tasks`, { service: "aurora", data })
-    );
+    .parse(response);
   const dateMatches = (a: string | null, b: string | null) =>
     a === null || b === null ? a === b : Date.parse(a) === Date.parse(b);
   const customMatches =

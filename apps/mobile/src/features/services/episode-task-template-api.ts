@@ -1,3 +1,4 @@
+import { taskRequestReceipt } from "./task-request-receipt";
 import { z } from "zod";
 import { taskKindSchema } from "./task-kind-api";
 import { api } from "@/lib/api-client";
@@ -100,5 +101,7 @@ export async function applyEpisodeTaskPlan(
 ) {
   if (generation !== getAuthGeneration()) throw new Error("Task template session expired");
   const data = snapshot.parse(episodeTaskPlan.parse(plan));
-  return receipt.parse(await api.post(path(crewId, episodeId), { service: "aurora", data }));
+  return z
+    .union([taskRequestReceipt, receipt])
+    .parse(await api.post(path(crewId, episodeId), { service: "aurora", data }));
 }

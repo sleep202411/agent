@@ -1561,7 +1561,7 @@
   "crewTasks.title": "Crew Tasks",
   "crewTasks.back": "Back to Tasks",
   "taskCreate.title": "Create Task",
-  "taskCreate.managerOnly": "Only task managers can create tasks.",
+  "taskCreate.managerOnly": "Active project membership is required to submit a task.",
   "taskCreate.assignees": "Assignees",
   "taskCreate.remove": "Remove assignee",
   "taskCreate.add": "Add Assignee",
@@ -2077,6 +2077,7 @@
   "projectActivity.labels_changed": "Labels Changed",
   "projectActivity.resource_added": "Resource Added",
   "projectActivity.resource_removed": "Resource Removed",
+  "taskWorkbench.applyPoints": "Apply for points",
   "taskWorkbench.title": "Task Creation Workbench",
   "taskWorkbench.help": "Review drafts, then create the tasks together. Drafts are saved locally on this device for your account; they are not server tasks until you create them.",
   "taskWorkbench.stage": "Stage Task",
@@ -6085,5 +6086,12 @@
   "certificationGuide.writerName": "Scriptwriter",
   "certificationGuide.writerDescription": "Writes scripts.",
   "crewSkills.videoEditor": "Video editor",
-  "levelApplication.alreadyHeld": "You already hold this qualification."
+  "levelApplication.alreadyHeld": "You already hold this qualification.",
+  "taskApproval.help": "Submit your task for YH’s approval. Tasks and initial point allowances are created only after approval.",
+  "taskApproval.pending": "Awaiting YH approval",
+  "taskApproval.approved": "Approved",
+  "taskApproval.rejected": "Rejected",
+  "taskWorkbench.submitted": "Awaiting YH approval",
+  "taskApproval.title": "My task requests",
+  "taskApproval.empty": "No task requests yet"
 }

@@ -1561,7 +1561,7 @@
   "crewTasks.title": "劇組任務",
   "crewTasks.back": "返回任務列表",
   "taskCreate.title": "發起任務",
-  "taskCreate.managerOnly": "僅任務管理員可以發起任務。",
+  "taskCreate.managerOnly": "只有項目的有效成員可以提交任務申請。",
   "taskCreate.assignees": "負責人",
   "taskCreate.remove": "移除負責人",
   "taskCreate.add": "添加負責人",
@@ -2077,6 +2077,7 @@
   "projectActivity.labels_changed": "標籤已更新",
   "projectActivity.resource_added": "資源已新增",
   "projectActivity.resource_removed": "資源已移除",
+  "taskWorkbench.applyPoints": "申請積分",
   "taskWorkbench.title": "任務建立工作台",
   "taskWorkbench.help": "核對草稿後統一建立任務。草稿按帳號儲存在目前裝置上；確認建立後才會成為伺服器上的任務。",
   "taskWorkbench.stage": "暫存任務",
@@ -6085,5 +6086,12 @@
   "certificationGuide.writerName": "編劇",
   "certificationGuide.writerDescription": "編寫劇本。",
   "crewSkills.videoEditor": "剪輯師",
-  "levelApplication.alreadyHeld": "你已獲得此認證。"
+  "levelApplication.alreadyHeld": "你已獲得此認證。",
+  "taskApproval.help": "提交任務後由 YH 審批。審批通過後才會建立任務並分配初始積分。",
+  "taskApproval.pending": "等待 YH 審批",
+  "taskApproval.approved": "已批准",
+  "taskApproval.rejected": "已拒絕",
+  "taskWorkbench.submitted": "等待 YH 審批",
+  "taskApproval.title": "我的任務申請",
+  "taskApproval.empty": "暫無任務申請"
 }

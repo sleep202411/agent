@@ -1,3 +1,5 @@
+import { CrewCompute } from "./crew-compute";
+import { TaskRequestHistory } from "./task-request-history";
 import { PdfTaskImport } from "./pdf-task-import";
 import { TaskBatch } from "./task-batch";
 import { TaskDeadline } from "./task-deadline";
@@ -61,12 +63,21 @@ function Session(props: Props) {
   const [accessResult, setAccessResult] = useState<{
     scope: typeof accessScope;
     allowed?: boolean;
+    canManage?: boolean;
     error?: string;
   }>();
   const allowed = accessResult?.scope === accessScope ? accessResult.allowed : undefined;
   const error = accessResult?.scope === accessScope ? accessResult.error : undefined;
   const [section, setSection] = useState<
-    "assets" | "progress" | "episodes" | "template" | "canvas" | "pdf" | "assign" | "recruit"
+    | "compute"
+    | "assets"
+    | "progress"
+    | "episodes"
+    | "template"
+    | "canvas"
+    | "pdf"
+    | "assign"
+    | "recruit"
   >();
   const alive = useRef(false);
   const foreground = useRef(0);
@@ -78,7 +89,11 @@ function Session(props: Props) {
     void fetchTaskCommentAccess(props.crewId, props.userId, c.signal).then(
       (access) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setAccessResult({ scope: accessScope, allowed: access.canManage });
+          setAccessResult({
+            scope: accessScope,
+            allowed: access.canSubmit,
+            canManage: access.canManage,
+          });
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
@@ -97,6 +112,7 @@ function Session(props: Props) {
   // Each destination checks its own read/write permissions independently.
   if (section) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
+    if (section === "compute") return <CrewCompute {...childProps} requestFirst />;
     if (section === "pdf") return <PdfTaskImport {...childProps} />;
     if (section === "assign" || section === "recruit")
       return <TaskBatch {...childProps} mode={section} />;
@@ -185,6 +201,7 @@ function Session(props: Props) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskWorkbench.title")}</ThemedText>
       <ThemedText>{t("taskWorkbench.help")}</ThemedText>
+      <Button label={t("taskWorkbench.applyPoints")} onPress={() => setSection("compute")} />
       {snapshot.storageError && (
         <View style={{ gap: 8 }}>
           <ThemedText accessibilityRole="alert">
@@ -219,6 +236,7 @@ function Session(props: Props) {
           onPress={() => setSection("episodes")}
         />
       </View>
+      <TaskRequestHistory crewId={props.crewId} generation={props.generation} />
       {allowed === undefined && !error && <ActivityIndicator />}
       {(error || allowed === false) && (
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
@@ -250,12 +268,12 @@ function Session(props: Props) {
           />
           <Button
             label={t("mobileProduction.batchAssign")}
-            disabled={snapshot.busy}
+            disabled={snapshot.busy || !accessResult?.canManage}
             onPress={() => setSection("assign")}
           />
           <Button
             label={t("mobileProduction.batchRecruit")}
-            disabled={snapshot.busy}
+            disabled={snapshot.busy || !accessResult?.canManage}
             onPress={() => setSection("recruit")}
           />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>

@@ -1,3 +1,4 @@
+import { isTaskRequestReceipt, type TaskRequestReceipt } from "./task-request-receipt";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -27,6 +28,7 @@ type Props = {
 };
 export function PdfTaskImport(props: Props) {
   const t = useTranslations();
+  const [approval, setApproval] = useState<TaskRequestReceipt | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -88,6 +90,7 @@ export function PdfTaskImport(props: Props) {
         );
         if (!controller.signal.aborted) {
           setPreview(result);
+          setApproval(result.approval ?? null);
           setError(undefined);
           if (!recovery.indices && result.status === "ready")
             setSelection(result.tasks.map((_, i) => i));
@@ -276,7 +279,7 @@ export function PdfTaskImport(props: Props) {
           {frozen && <ThemedText>{t("mobileProduction.pdfRetryHelp")}</ThemedText>}
           {expired && <ThemedText>{t("mobileProduction.expired")}</ThemedText>}
           <Action
-            disabled={op.busy || !selection.length || (!!expired && !frozen)}
+            disabled={op.busy || !!approval || !selection.length || (!!expired && !frozen)}
             label={
               frozen
                 ? t("mobileProduction.pdfRetry")
@@ -300,12 +303,16 @@ export function PdfTaskImport(props: Props) {
                     abort.current.signal
                   );
                 },
-                (result) => setPreview({ ...preview, status: "applied", taskIds: result.taskIds })
+                (result) => {
+                  if (isTaskRequestReceipt(result)) setApproval(result);
+                  else setPreview({ ...preview, status: "applied", taskIds: result.taskIds });
+                }
               )
             }
           />
         </>
       )}
+      {approval && <ThemedText>{t(`taskApproval.${approval.status}`)}</ThemedText>}
       {preview?.status === "applied" && (
         <>
           <ThemedText>
@@ -333,6 +340,7 @@ export function PdfTaskImport(props: Props) {
                 () => {
                   setUnavailable(false);
                   setRecovery(null);
+                  setApproval(null);
                   setPreview(null);
                   setFile(null);
                   setSelection([]);

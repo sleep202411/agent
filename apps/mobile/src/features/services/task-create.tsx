@@ -1,3 +1,5 @@
+import { uuid } from "expo-modules-core";
+import { isTaskRequestReceipt, type TaskRequestReceipt } from "./task-request-receipt";
 import type { TaskPaymentTerms } from "@repo/shared/crew";
 import { TaskContractField } from "./task-contract-field";
 import { CrewSkillsField } from "./crew-skills-field";
@@ -72,7 +74,7 @@ function Access(props: Props) {
     void (async () => {
       const access = await fetchTaskCommentAccess(props.crewId, props.userId, controller.signal);
       if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
-      if (!access.canManage) {
+      if (!(props.onSave ? access.canManage : access.canSubmit)) {
         setAllowed(false);
         return;
       }
@@ -109,6 +111,7 @@ function Access(props: Props) {
     props.viewId,
     props.initialWorkflow?.id,
     props.initialDraft,
+    props.onSave,
     retry,
   ]);
   if (allowed && defaults)
@@ -213,6 +216,8 @@ function Editor({
   const attemptedRef = useRef(false),
     locked = attempted || op.busy;
   const [validationError, setValidationError] = useState<string>();
+  const [approvalStatus, setApprovalStatus] = useState<string>();
+  const submissionKey = useRef<string | undefined>(undefined);
   let deadlineInvalid = false;
   let input: ReturnType<typeof taskCreateInput.parse> | undefined;
   try {
@@ -482,6 +487,8 @@ function Editor({
           {t(deadlineInvalid ? "taskCreate.deadlinePast" : "taskCreate.invalid")}
         </ThemedText>
       )}
+      {!onSave && <ThemedText>{t("taskApproval.help")}</ThemedText>}
+      {approvalStatus && <ThemedText>{approvalStatus}</ThemedText>}
       {validationError && <ThemedText accessibilityRole="alert">{validationError}</ThemedText>}
       {error && (
         <>
@@ -509,7 +516,9 @@ function Editor({
             return;
           }
           setValidationError(undefined);
-          const data = input;
+          const data = onSave
+            ? input
+            : { ...input, submissionKey: (submissionKey.current ??= uuid.v4()) };
           if (onStage) {
             attemptedRef.current = true;
             setAttempted(true);
@@ -535,13 +544,16 @@ function Editor({
             });
             return;
           }
-          void op.run(
+          void op.run<{ id: string } | TaskRequestReceipt>(
             () => {
               attemptedRef.current = true;
               setAttempted(true);
               return onSave ? onSave(data) : createTask(crewId, data);
             },
-            (task) => onCreated(task.id),
+            (task) => {
+              if (isTaskRequestReceipt(task)) setApprovalStatus(t(`taskApproval.${task.status}`));
+              else onCreated(task.id);
+            },
             (cause) => {
               if (cause instanceof TaskCreationRequiredError) {
                 attemptedRef.current = false;

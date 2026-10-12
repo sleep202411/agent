@@ -340,9 +340,9 @@ it("sends selected payment terms and rejects a receipt with different terms", as
 
 it("verifies the saved CN reward currency as well as its amount", async () => {
   vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "CNY" });
-  expect((await createTask("crew", { ...input, rewardCurrency: "CNY" })).rewardCurrency).toBe(
-    "CNY"
-  );
+  expect(await createTask("crew", { ...input, rewardCurrency: "CNY" })).toMatchObject({
+    rewardCurrency: "CNY",
+  });
   vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "USD" });
   await expect(createTask("crew", { ...input, rewardCurrency: "CNY" })).rejects.toThrow();
 });
@@ -362,3 +362,14 @@ it.each([0, null, undefined, -1, 10001, 0.5])(
     expect(api.post).not.toHaveBeenCalled();
   }
 );
+
+it("returns a pending approval receipt without fabricating an active task", async () => {
+  const receipt = {
+    code: "TASK_APPROVAL_REQUIRED",
+    requestId: id,
+    status: "pending",
+    message: "Submitted for approval",
+  };
+  vi.mocked(api.post).mockResolvedValue(receipt);
+  expect(await createTask("crew", input)).toEqual(receipt);
+});

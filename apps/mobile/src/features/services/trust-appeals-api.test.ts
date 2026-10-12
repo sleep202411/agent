@@ -15,6 +15,7 @@ beforeEach(() => {
   vi.mocked(fetchTaskCommentAccess).mockResolvedValue({
     allowed: true,
     canInvite: false,
+    canSubmit: true,
     canManage: true,
   });
   vi.mocked(api.get).mockResolvedValue({ items: [], nextCursor: null });
@@ -31,6 +32,7 @@ it("denies reads and writes without tasks.manage", async () => {
   vi.mocked(fetchTaskCommentAccess).mockResolvedValue({
     allowed: true,
     canInvite: false,
+    canSubmit: true,
     canManage: false,
   });
   await expect(fetchTrustAppeals("crew", "user", 1, false, null, signal)).rejects.toThrow(
@@ -107,7 +109,7 @@ it("rejects a mismatched mutation receipt", async () => {
 it("blocks account changes during authorization before writing", async () => {
   vi.mocked(fetchTaskCommentAccess).mockImplementation(async () => {
     h.generation = 2;
-    return { allowed: true, canInvite: false, canManage: true };
+    return { allowed: true, canInvite: false, canSubmit: true, canManage: true };
   });
   await expect(
     reviewTrustAppeal(

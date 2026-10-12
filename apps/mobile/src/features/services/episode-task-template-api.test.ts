@@ -48,7 +48,7 @@ it("permits explicit retry with the same snapshot and accepts a replay receipt",
     .mockRejectedValueOnce(new Error("Response lost"))
     .mockResolvedValueOnce({ taskIds: [id], replayed: true });
   await expect(applyEpisodeTaskPlan("crew", id, plan, 1)).rejects.toThrow();
-  expect((await applyEpisodeTaskPlan("crew", id, plan, 1)).replayed).toBe(true);
+  expect(await applyEpisodeTaskPlan("crew", id, plan, 1)).toMatchObject({ replayed: true });
   expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
 });
 it("blocks stale sessions and invalid scope before posting", async () => {

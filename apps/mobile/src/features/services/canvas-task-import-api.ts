@@ -1,3 +1,4 @@
+import { taskRequestReceipt } from "./task-request-receipt";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -83,11 +84,13 @@ export async function applyCanvasTaskImport(
   const scenes = canvasScenes(parsed);
   if (!scenes.length || scenes.length > 200)
     throw new Error("Import requires between 1 and 200 scenes.");
-  return z
-    .object({
-      taskIds: z.array(z.string().uuid()).refine((ids) => new Set(ids).size === ids.length),
-      replayed: z.boolean(),
-    })
+  return taskRequestReceipt
+    .or(
+      z.object({
+        taskIds: z.array(z.string().uuid()).refine((ids) => new Set(ids).size === ids.length),
+        replayed: z.boolean(),
+      })
+    )
     .parse(
       await api.post(`${path(crewId, parsed.projectId)}/apply`, {
         service: "aurora",
