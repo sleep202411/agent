@@ -89,10 +89,11 @@ def check(instance, required=False):
             if not group or group not in groups:
                 raise ValueError('Set CN_SSH_SECURITY_GROUP to an attached builder security group before authorizing access')
             cloud('AuthorizeSecurityGroup', '--SecurityGroupId', group,
-                  '--Permissions.1.IpProtocol', 'tcp', '--Permissions.1.PortRange', '22/22',
-                  '--Permissions.1.SourceCidrIp', str(address) + '/32',
-                  '--Permissions.1.Policy', 'accept',
-                  '--Permissions.1.Description', 'CN deployment operator SSH')
+                  '--Permissions', json.dumps([{
+                      'IpProtocol': 'tcp', 'PortRange': '22/22',
+                      'SourceCidrIp': str(address) + '/32', 'Policy': 'accept',
+                      'Description': 'CN deployment operator SSH',
+                  }]))
             data = cloud('DescribeSecurityGroupAttribute', '--SecurityGroupId', group)
             if not any(allows_ssh(rule, address) for rule in data['Permissions']['Permission']):
                 raise ValueError('SSH authorization was not visible after the update; retry the precheck')

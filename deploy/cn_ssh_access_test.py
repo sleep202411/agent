@@ -1,6 +1,7 @@
 import contextlib
 import io
 import ipaddress
+import json
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -113,9 +114,14 @@ class SshAccessTests(unittest.TestCase):
         self.assertEqual(access.check('fixture', required=True), 0)
         mutation = cloud.call_args_list[2].args
         self.assertEqual(mutation[0], 'AuthorizeSecurityGroup')
-        self.assertIn('192.0.2.10/32', mutation)
-        self.assertIn('22/22', mutation)
-        self.assertNotIn('0.0.0.0/0', mutation)
+        self.assertEqual(mutation[1:3], ('--SecurityGroupId', 'sg-fixture'))
+        self.assertEqual(mutation[3], '--Permissions')
+        permissions = json.loads(mutation[4])
+        self.assertEqual(len(permissions), 1)
+        self.assertEqual(permissions[0]['SourceCidrIp'], '192.0.2.10/32')
+        self.assertEqual(permissions[0]['PortRange'], '22/22')
+        self.assertEqual(permissions[0]['IpProtocol'], 'tcp')
+        self.assertEqual(permissions[0]['Policy'], 'accept')
 
     @patch.dict(access.os.environ, {'CN_AUTHORIZE_CURRENT_IP': 'YES', 'CN_SSH_SECURITY_GROUP': 'sg-other'})
     @patch.object(access, 'cloud')
