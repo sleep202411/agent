@@ -69,7 +69,7 @@ export function RequiredSkillsSelect({
                 )
               }
             />
-            {skill}
+            {skill === "Editor" ? t("videoEditor") : skill}
           </label>
         ))}
       </div>

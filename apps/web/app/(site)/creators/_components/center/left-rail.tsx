@@ -18,6 +18,7 @@
  * is typically equally tall, so empty space below the rail isn't a
  * concern in practice.
  */
+import { CertificationGuide } from "./certification-guide";
 import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
@@ -151,7 +152,15 @@ export function CreatorLeftRail({
           of imagePath icons, name underneath, full description on
           hover. Empty state encourages owners to earn one and reads
           as "not yet" rather than "broken" for visitors. */}
-      <RailCard title={t("levels.heading")} action={levelApplyAction}>
+      <RailCard
+        title={t("levels.heading")}
+        action={
+          <div className="flex items-center gap-1">
+            <CertificationGuide />
+            {levelApplyAction}
+          </div>
+        }
+      >
         {levels.length === 0 ? (
           <div className="space-y-2.5">
             <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />

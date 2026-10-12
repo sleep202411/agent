@@ -114,9 +114,10 @@ export class CrewComputeRequestsService {
     const budget = await readProjectBudget(this.prisma, crewId);
     const crew = await this.prisma.crew.findUnique({
       where: { id: crewId },
-      select: { workspaceId: true },
+      select: { workspaceId: true, name: true },
     });
     return {
+      crewName: crew?.name ?? crewId,
       projectBudget: budget
         ? {
             version: budget.version,
@@ -206,7 +207,7 @@ export class CrewComputeRequestsService {
     if (
       !Number.isInteger(input.points) ||
       input.points < 1 ||
-      input.points > 500 ||
+      input.points > 3000 ||
       !Number.isFinite(input.remainingWorkload) ||
       input.remainingWorkload <= 0 ||
       !['minutes', 'hours', 'days', 'person_days', 'percent'].includes(
@@ -215,15 +216,15 @@ export class CrewComputeRequestsService {
       (input.workloadUnit === 'percent' && input.remainingWorkload > 100)
     )
       throw new BadRequestException(
-        'Top-ups require 1–500 points and a valid remaining workload',
+        'Top-ups require 1–3000 points and a valid remaining workload',
       );
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
       await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
-      const owner = await this.access(crewId, userId, tx);
-      if (!owner.isOwner)
+      await this.access(crewId, userId, tx);
+      if (input.beneficiaryUserId && input.beneficiaryUserId !== userId)
         throw new ForbiddenException(
-          'Only the project owner can request compute points for an assigned creator',
+          'Creators can only request points for themselves',
         );
       const { beneficiaryUserId = userId, ...requestInput } = input;
       if (input.requestKey === input.taskId)

@@ -914,7 +914,7 @@ it("exposes Edit and invitation actions for a saved eligible task without openin
     [...document.querySelectorAll('[role="menuitem"]')].find(
       (e) => e.textContent === label
     ) as HTMLElement;
-  expect(item("Apply for credit")).toBeDefined();
+  expect(item("Apply for credit")).toBeUndefined();
   await act(async () => item("Edit Task").click());
   expect(editTask).toHaveBeenCalledWith("managed");
   await openMenu();
@@ -1021,7 +1021,7 @@ it("blocks oversized batches and allows the 100-task boundary after deselection"
   expect(button("Batch recruitment").disabled).toBe(false);
   expect(button("Batch assignment").disabled).toBe(false);
 });
-it("does not expose owner-only credit applications to task managers or assignees", async () => {
+it("exposes self-request credit applications to assigned creators without management rights", async () => {
   state.isOwner = false;
   state.tasks = [
     {
@@ -1044,9 +1044,9 @@ it("does not expose owner-only credit applications to task managers or assignees
     [...document.querySelectorAll('[role="menuitem"]')].some(
       (e) => e.textContent === "Apply for credit"
     )
-  ).toBe(false);
+  ).toBe(true);
   await render(false);
-  expect(host.querySelector('button[aria-label="Task Actions"]')).toBeNull();
+  expect(host.querySelector('button[aria-label="Task Actions"]')).not.toBeNull();
 });
 
 it("shows actual point totals, compact deadlines and a disabled submitted state", async () => {

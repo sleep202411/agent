@@ -37,6 +37,8 @@ export function useLogout() {
     // cookie. A failed server roundtrip must not restore browser authentication.
     void apiLogout().catch(() => {});
     clearSessionCookie();
+    void queryClient.cancelQueries({ queryKey: ["user-levels", "apply"] });
+    queryClient.removeQueries({ queryKey: ["user-levels", "apply"] });
     // Cancel any in-flight user-bound request so they can't repopulate
     // the cache after we clear it.
     void queryClient.cancelQueries({ queryKey: ["user"] });
