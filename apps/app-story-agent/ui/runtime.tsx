@@ -54,7 +54,7 @@ import type {
   StoryRun,
   StoryVideoModels,
 } from "@repo/app-story-protocol";
-import { StoryTransport, copy, isActive } from "./transport";
+import { StoryTransport, copy, isActive, resumeAuthorization } from "./transport";
 import { createStorySession } from "./session";
 
 const StoryPlayer = lazy(() => import("./player"));
@@ -826,6 +826,11 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 ? run.mediaQuote
                 : null;
             const quoteExpired = Boolean(quote && Date.parse(quote.expiresAt) <= clock);
+            const authorizationLimit = projectHistoryState?.authorizationLimit;
+            const exceedsLimit =
+              authorizationLimit !== undefined &&
+              resumeAuthorization(run, increase ? run.requiredPoints! : undefined, Boolean(quote)) >
+                authorizationLimit;
             const showMedia =
               !quote &&
               latest &&
@@ -845,6 +850,14 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 {error && (
                   <p role="alert" className="story-error">
                     {error}
+                  </p>
+                )}
+                {exceedsLimit && (
+                  <p role="alert" className="story-error">
+                    {t.h5.authorizationLimitExceeded.replace(
+                      "{points}",
+                      formatNumber(authorizationLimit!)
+                    )}
                   </p>
                 )}
                 {quote && (
@@ -927,7 +940,11 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                       <Button
                         className="story-quote-confirm"
                         variant="primary"
-                        disabled={pending || !canResume}
+                        disabled={
+                          pending ||
+                          !canResume ||
+                          (!quoteExpired && (authorizationLimit === undefined || exceedsLimit))
+                        }
                         onClick={() =>
                           void act(() =>
                             transport.resume(run, undefined, quoteExpired ? "refresh" : "confirm")
@@ -974,7 +991,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 )}
                 {!quote && ["blocked", "failed"].includes(run.status) && canResume && (
                   <button
-                    disabled={pending}
+                    disabled={pending || authorizationLimit === undefined || exceedsLimit}
                     onClick={() =>
                       void act(() =>
                         transport.resume(run, increase ? run.requiredPoints! : undefined)

@@ -12187,6 +12187,7 @@
       "quoteDurationSeconds": "{seconds} 秒",
       "quoteEstimatedCost": "預計消耗",
       "quotePointsUnit": "算力點",
+      "authorizationLimitExceeded": "本次製作超出目前 {points} 算力積分上限。請選擇費用較低的影片模型、取消本次製作，或聯絡客服。",
       "quoteConsentHint": "確認後才會開始生成並使用算力點。",
       "quoteWaitingHint": "請先確認上方生成費用，或選擇暫不生成。",
       "quoteExpiredHint": "請先更新報價，確認新價格後才會開始生成。",

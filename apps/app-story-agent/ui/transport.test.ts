@@ -50,6 +50,53 @@ afterEach(() => {
 });
 
 describe("Story UI admission and recovery", () => {
+  it("blocks cumulative spending above the regional cap but permits exact-cap confirmation and free quote refresh", async () => {
+    const posted: unknown[] = [];
+    const paused: StoryRun = {
+      ...run({ submissionId: projectId, message: "Make a film" }),
+      status: "blocked",
+      committedPoints: 80,
+      authorizedPoints: 80,
+      mediaQuote: {
+        batchId: projectId,
+        version: 1,
+        points: 21,
+        imageCount: 1,
+        videoCount: 0,
+        approved: false,
+        expiresAt: "2099-01-01T00:00:00Z",
+      },
+    };
+    let limit = 100;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options: RequestInit) => {
+        if (url.endsWith("/history"))
+          return response({ ...history, authorizationLimit: limit, runs: [paused] });
+        posted.push(JSON.parse(String(options.body)));
+        return response(paused);
+      })
+    );
+    const transport = create();
+    await expect(transport.resume(paused, undefined, "confirm")).rejects.toThrow(
+      "100 compute points"
+    );
+    expect(posted).toEqual([]);
+    await expect(transport.resume(paused, 101)).rejects.toThrow("100 compute points");
+    expect(posted).toEqual([]);
+    const exact = { ...paused, mediaQuote: { ...paused.mediaQuote!, points: 20 } };
+    await transport.resume(exact, undefined, "confirm");
+    expect(posted).toEqual([{ confirmedQuote: { batchId: projectId, version: 1, points: 20 } }]);
+    // A stale client cap must not override a newly lowered regional limit.
+    limit = 90;
+    await expect(transport.resume(exact, undefined, "confirm")).rejects.toThrow(
+      "90 compute points"
+    );
+    await transport.resume(paused, undefined, "refresh");
+    expect(posted).toHaveLength(2);
+    expect(posted[1]).toMatchObject({ refreshQuote: true });
+  });
+
   it("keeps media outside collapsed process groups with the same node identity through completion", () => {
     const producing = {
       ...run({ submissionId: chapterId, message: "Make a story" }),
@@ -281,7 +328,8 @@ describe("Story UI admission and recovery", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, options: RequestInit) => {
-        if (url.endsWith("/history")) return response({ ...history, runs: [paused] });
+        if (url.endsWith("/history"))
+          return response({ ...history, authorizationLimit: 100, runs: [paused] });
         posted.push(JSON.parse(String(options.body)));
         return response(paused);
       })
@@ -317,7 +365,8 @@ describe("Story UI admission and recovery", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, options: RequestInit) => {
-        if (url.endsWith("/history")) return response({ ...history, runs: [paused] });
+        if (url.endsWith("/history"))
+          return response({ ...history, authorizationLimit: 100, runs: [paused] });
         if (url.endsWith("/video-models"))
           return response({
             selectedModelId: "seedance-2-0",

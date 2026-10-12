@@ -51,6 +51,12 @@ export async function loadContext(bridge?: StoryBridge): Promise<StoryContext> {
   });
 }
 
+export function resumeAuthorization(run: StoryRun, authorizedPoints?: number, confirm = false) {
+  return confirm && run.mediaQuote
+    ? Math.max(run.authorizedPoints, run.committedPoints + run.mediaQuote.points)
+    : (authorizedPoints ?? run.authorizedPoints);
+}
+
 export class StoryTransport {
   readonly queries: QueryClient;
   readonly conversations: QueryObserver<ReturnType<typeof StoryConversationsSchema.parse>>;
@@ -319,6 +325,20 @@ export class StoryTransport {
   async resume(run: StoryRun, authorizedPoints?: number, mediaAction?: "confirm" | "refresh") {
     const quote = mediaAction ? run.mediaQuote : undefined;
     if (mediaAction && !quote) throw new Error(copy(this.context.locale).h5.quoteUnavailable);
+    if (mediaAction !== "refresh") {
+      const current = await this.history.refetch({ throwOnError: true });
+      if (!current.data) throw new Error(copy(this.context.locale).app.previousActive);
+      if (
+        resumeAuthorization(run, authorizedPoints, mediaAction === "confirm") >
+        current.data.authorizationLimit
+      )
+        throw new Error(
+          copy(this.context.locale).h5.authorizationLimitExceeded.replace(
+            "{points}",
+            new Intl.NumberFormat(this.context.locale).format(current.data.authorizationLimit)
+          )
+        );
+    }
     await this.request(`/runs/${run.id}/resume`, StoryRunSchema, {
       authorizedPoints,
       ...(mediaAction === "refresh" ? { refreshQuote: true } : {}),

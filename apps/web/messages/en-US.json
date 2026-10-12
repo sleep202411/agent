@@ -12187,6 +12187,7 @@
       "quoteDurationSeconds": "{seconds} seconds",
       "quoteEstimatedCost": "Estimated cost",
       "quotePointsUnit": "compute points",
+      "authorizationLimitExceeded": "This production exceeds the current limit of {points} compute points. Choose a lower-cost video model, cancel this production, or contact support.",
       "quoteConsentHint": "Generation and compute-point usage start only after you confirm.",
       "quoteWaitingHint": "Review the generation estimate above to continue, or choose Not now.",
       "quoteExpiredHint": "Update this estimate first, then confirm the new price to start generation.",
