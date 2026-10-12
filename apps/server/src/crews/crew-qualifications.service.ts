@@ -1,13 +1,14 @@
 import {
   Controller,
   Get,
-  Headers,
+  Header,
   ForbiddenException,
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ExperienceLevel as CrewExperienceLevel } from '@prisma/client';
 import { z } from 'zod';
+import { ViewerCookie } from '../auth/auth.decorator';
 import {
   JAVA_CONTENT_URL,
   JAVA_REQUEST_TIMEOUT_MS,
@@ -302,7 +303,8 @@ function readCatalog() {
 export class CrewQualificationCatalogController {
   constructor(private readonly qualifications: CrewQualificationsService) {}
   @Get()
-  catalog(@Headers('cookie') cookie?: string) {
+  @Header('Cache-Control', 'no-store')
+  catalog(@ViewerCookie() cookie: string) {
     return this.qualifications.catalog(cookie);
   }
 }
