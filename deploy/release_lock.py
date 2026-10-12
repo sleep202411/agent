@@ -35,9 +35,23 @@ class Lock:
                               capture_output=True, text=True, timeout=40)
 
     def read(self):
-        result = self.call('get', 'configmap', NAME, '--ignore-not-found', '-o', 'json')
-        if result.returncode:
-            raise RuntimeError('Cannot read regional release lock; check ConfigMap access/connectivity')
+        for attempt in range(3):
+            try:
+                result = self.call('get', 'configmap', NAME, '--ignore-not-found', '-o', 'json')
+            except subprocess.TimeoutExpired:
+                transient = True
+            else:
+                if not result.returncode:
+                    break
+                detail = result.stderr.lower()
+                transient = (not any(error in detail for error in ('forbidden', 'unauthorized', 'x509'))
+                             and any(error in detail for error in ('timeout', 'timed out', 'connection reset',
+                                     'connection refused', 'unexpected eof', 'serviceunavailable',
+                                     'too many requests', 'toomanyrequests', 'temporary failure')))
+            if not transient or attempt == 2:
+                raise RuntimeError('Cannot read regional release lock; check ConfigMap access/connectivity') from None
+            print(f'==> {self.region} release lock lookup temporarily unavailable; retry {attempt + 2}/3', flush=True)
+            time.sleep((2, 5)[attempt])
         if not result.stdout.strip():
             return None
         value = json.loads(result.stdout)

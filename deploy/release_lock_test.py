@@ -84,6 +84,46 @@ class LockTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 Lock('cn').write(None, 'mine')
 
+    def test_transient_lookup_preserves_other_owner(self):
+        value = {'metadata': {'resourceVersion': '7'}, 'data': {'region': 'cn', 'owner': 'other'}}
+        results = [subprocess.CompletedProcess([], 1, '', 'connection reset by peer'),
+                   subprocess.CompletedProcess([], 0, json.dumps(value), '')]
+        lock = Lock('cn')
+        with patch.object(lock, 'call', side_effect=results) as call, patch('release_lock.time.sleep') as sleep, patch.object(lock, 'write') as write:
+            self.assertEqual(lock.read(), value)
+            self.assertEqual(call.call_count, 2)
+            self.assertTrue(all(c.args[0] == 'get' for c in call.call_args_list))
+            sleep.assert_called_once_with(2)
+            write.assert_not_called()
+
+    def test_lookup_process_timeout_is_retried(self):
+        with patch.object(Lock, 'call', side_effect=[subprocess.TimeoutExpired('kubectl', 40), subprocess.CompletedProcess([], 0, '', '')]), patch('release_lock.time.sleep'):
+            self.assertIsNone(Lock('cn').read())
+
+    def test_lookup_retry_exhaustion_fails_closed(self):
+        lock = Lock('cn')
+        with patch.object(lock, 'call', return_value=subprocess.CompletedProcess([], 1, '', 'i/o timeout')) as call, patch('release_lock.time.sleep') as sleep, patch.object(lock, 'write') as write:
+            with self.assertRaisesRegex(RuntimeError, 'Cannot read'):
+                lock.read()
+            self.assertEqual(call.call_count, 3)
+            self.assertEqual([c.args[0] for c in sleep.call_args_list], [2, 5])
+            write.assert_not_called()
+
+    def test_lookup_authorization_failure_is_not_retried(self):
+        for detail in ('Forbidden', 'Unauthorized', 'x509: certificate has expired', 'Forbidden: unexpected EOF'):
+            with self.subTest(detail=detail), patch.object(Lock, 'call', return_value=subprocess.CompletedProcess([], 1, '', detail)) as call, patch('release_lock.time.sleep') as sleep:
+                with self.assertRaisesRegex(RuntimeError, 'Cannot read'):
+                    Lock('cn').read()
+                call.assert_called_once()
+                sleep.assert_not_called()
+
+    def test_uncertain_lock_write_is_never_replayed(self):
+        with patch.object(Lock, 'call', return_value=subprocess.CompletedProcess([], 1, '', 'connection reset by peer')) as call, patch('release_lock.time.sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'inspect lock ownership'):
+                Lock('cn').write(None, 'mine')
+            call.assert_called_once()
+            sleep.assert_not_called()
+
     def test_explicit_region_not_current_context(self):
         self.assertIn('218059191361846222-c72d2039c68624a3e8d0dee257a13d451', Lock('cn').command)
 
