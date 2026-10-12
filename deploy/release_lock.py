@@ -60,17 +60,46 @@ class Lock:
             raise RuntimeError(f'Release lock update failed (requested owner={owner!r}); inspect lock ownership before retrying')
         return True
 
-    def acquire(self, owner, timeout=14400):
+    def status(self):
+        value = self.read()
+        data = (value or {}).get('data', {})
+        return {'region': self.region, 'owner': data.get('owner', ''),
+                'updatedAt': data.get('updatedAt'),
+                'held': bool(data.get('owner')),
+                'activity': 'unknown: lock ownership does not prove remote work is active'}
+
+    def acquire(self, owner, timeout=None):
+        if timeout is None:
+            try:
+                timeout = int(os.environ.get('CN_RELEASE_LOCK_WAIT_SECONDS', '120'))
+            except ValueError:
+                raise RuntimeError('CN_RELEASE_LOCK_WAIT_SECONDS must be an integer from 0 to 14400') from None
+        if not isinstance(timeout, int) or not 0 <= timeout <= 14400:
+            raise RuntimeError('CN_RELEASE_LOCK_WAIT_SECONDS must be an integer from 0 to 14400')
         deadline = time.monotonic() + timeout
+        announced = False
         while True:
             previous = self.read()
             holder = (previous or {}).get('data', {}).get('owner', '')
             if not holder and self.write(previous, owner):
                 return
-            if time.monotonic() >= deadline:
-                raise RuntimeError('Timed out waiting for regional release lock; no build started')
-            print(f'==> {self.region} release held by {holder or "another operator"}; waiting before image lookup', flush=True)
-            time.sleep(15)
+            remaining = deadline - time.monotonic()
+            updated = (previous or {}).get('data', {}).get('updatedAt', 'unknown')
+            if not announced:
+                print(f'==> {self.region} lock last updated {updated}; remote activity is unknown. '
+                      f'Lock-wait budget: {timeout}s. Inspect with: python3 deploy/release_lock.py --status {self.region}', flush=True)
+                announced = True
+            if remaining <= 0:
+                raise RuntimeError(
+                    f'Timed out waiting for regional release lock (owner={holder or "acquisition race"}, '
+                    f'updatedAt={updated}); no build started and no lock was cleared. '
+                    'Check the existing release, remote builder, migration Jobs and Helm operations. '
+                    'Only after they have stopped, use --recover-owner with the exact owner and '
+                    'CONFIRM_REMOTE_RELEASE_STOPPED=YES, then resume the saved release. '
+                    'Set CN_RELEASE_LOCK_WAIT_SECONDS (0..14400) to change the wait budget.')
+            print(f'==> {self.region} release held by {holder or "another operator"}; waiting before image lookup '
+                  f'({remaining:.0f}s remaining)', flush=True)
+            time.sleep(min(15, remaining))
 
     def check(self, owner):
         value = self.read()
@@ -86,10 +115,16 @@ class Lock:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('region', choices=('cn', 'com'))
+    parser.add_argument('--status', action='store_true', help='Read lock metadata without acquiring or recovering it')
     parser.add_argument('--recover-owner', help='Release an orphan only after verifying all remote work has stopped')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     lock = Lock(args.region)
+    if args.status:
+        if args.recover_owner or args.command:
+            parser.error('--status cannot be combined with recovery or a release command')
+        print(json.dumps(lock.status(), indent=2))
+        return 0
     if args.recover_owner:
         if os.environ.get('CONFIRM_REMOTE_RELEASE_STOPPED') != 'YES':
             raise RuntimeError('Recovery requires CONFIRM_REMOTE_RELEASE_STOPPED=YES after checking remote builds, migrations and deployments')
