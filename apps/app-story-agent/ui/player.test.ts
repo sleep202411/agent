@@ -22,9 +22,7 @@ it("loads the packaged theme under the authenticated shell and preserves integri
     theme: { themeId: "core.film-dark.v1", configAssetId: "theme" },
     assets: [asset],
   } as unknown as ExperienceRuntimeManifest;
-  const fetcher = vi.fn(
-    async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(theme))
-  );
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(theme)));
   vi.stubGlobal("fetch", fetcher);
   vi.stubGlobal("crypto", webcrypto);
   await expect(loadHostedStoryTheme(manifest)).resolves.toMatchObject(theme);
