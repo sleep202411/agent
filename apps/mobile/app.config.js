@@ -282,7 +282,7 @@ module.exports = ({ config }) => {
     owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.3.2",
+    version: "2.4.0",
     orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: getUrlSchemes(appRegion, appVariant),
@@ -297,7 +297,7 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "82",
+      buildNumber: "83",
       infoPlist: {
         ...config.ios?.infoPlist,
         NSCameraUsageDescription: "Use your camera to verify your own likeness.",
@@ -313,7 +313,7 @@ module.exports = ({ config }) => {
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 82,
+      versionCode: 83,
       permissions: [
         ...new Set([
           ...(config.android?.permissions ?? []),
