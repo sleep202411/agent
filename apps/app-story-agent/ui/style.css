@@ -83,9 +83,7 @@ body,
 }
 .story-result {
   width: 100%;
-  padding: 20px;
-  border-radius: 16px;
-  background: var(--card);
+  padding: 0;
 }
 .story-result h3 {
   margin: 0;
@@ -100,7 +98,7 @@ body,
   gap: 10px;
   margin-top: 16px;
 }
-.story-result button {
+.story-result-actions button {
   min-height: 42px;
   padding: 10px 16px;
   gap: 8px;
@@ -109,43 +107,38 @@ body,
   line-height: 20px;
   transition: background 120ms;
 }
-.story-result button svg {
+.story-result-actions button svg {
   flex-shrink: 0;
 }
-.story-result .story-result-primary {
+.story-result-actions .story-result-primary {
   background: var(--primary);
 }
-.story-result .story-result-primary:hover {
+.story-result-actions .story-result-primary:hover {
   background: color-mix(in oklab, var(--primary), black 14%);
 }
-.story-result .story-result-secondary:hover {
+.story-result-actions .story-result-secondary:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.story-result button:focus-visible {
+.story-result-actions button:focus-visible {
   outline: 2px solid var(--foreground);
   outline-offset: 3px;
 }
 .story-film-preview {
-  position: relative;
+  width: fit-content;
+  max-width: 100%;
   margin-top: 16px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--secondary);
 }
 .story-media .story-film-preview img {
   display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  width: auto;
+  max-width: 100%;
+  height: auto;
   max-height: 240px;
-  object-fit: contain;
 }
 .story-film-preview > span {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: oklch(0.17 0 0 / 85%);
+  display: block;
+  margin-top: 8px;
+  color: var(--dsw-alias-label-secondary);
   font-size: 11px;
 }
 .story-film-progress {

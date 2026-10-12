@@ -12240,6 +12240,7 @@
       "play": "Play your work",
       "authorize": "Authorize up to {points} points and continue",
       "resume": "Resume production",
+      "retryAndContinue": "Retry and continue",
       "authorization": "Sending authorizes up to {points} compute points for this production.",
       "previousActive": "Your previous production is still active. You can stop it here.",
       "stop": "Stop production",

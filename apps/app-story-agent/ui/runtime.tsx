@@ -34,6 +34,7 @@ import {
   IconChevronLeft,
   IconDownload,
   IconShare,
+  IconPlayerStop,
 } from "@tabler/icons-react";
 
 import { projectHistory, storyMediaDefinition, videoProgress } from "./events";
@@ -871,8 +872,11 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
               run.result?.kind !== "script" &&
               run.chapterId === transport.context.chapterId &&
               ["asset_media", "storyboard", "clip_media", "verify"].includes(run.phase);
-            const formatNumber = (value: number) =>
-              new Intl.NumberFormat(transport.context.locale).format(value);
+            const showMediaAction = showMedia && !run.result;
+            const showStopAction = !quote && run.status === "blocked";
+            const showResumeAction =
+              !quote && ["blocked", "failed"].includes(run.status) && canResume;
+            const formatNumber = (value: number) => new Intl.NumberFormat(locale).format(value);
             return (
               <section className="story-production" aria-live="polite">
                 {run.status === "cancelled" && <p>{t.app.stopped}</p>}
@@ -1013,29 +1017,55 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                       onOpen={(panel) => ctx.sidebarRight.openTab(panel)}
                     />
                   )}
-                {showMedia && !run.result && (
-                  <button onClick={() => ctx.sidebarRight.openTab("story-media")}>
-                    {t.h5.resultViewMedia}
-                  </button>
-                )}
-                {!quote && run.status === "blocked" && (
-                  <button disabled={pending} onClick={() => void act(() => transport.cancel())}>
-                    {t.app.stop}
-                  </button>
-                )}
-                {!quote && ["blocked", "failed"].includes(run.status) && canResume && (
-                  <button
-                    disabled={pending || authorizationLimit === undefined || exceedsLimit}
-                    onClick={() =>
-                      void act(() =>
-                        transport.resume(run, increase ? run.requiredPoints! : undefined)
-                      )
-                    }
-                  >
-                    {increase
-                      ? t.app.authorize.replace("{points}", String(run.requiredPoints))
-                      : t.app.resume}
-                  </button>
+                {(showMediaAction || showStopAction || showResumeAction) && (
+                  <div className="story-result-actions" aria-busy={pending}>
+                    {showResumeAction && (
+                      <Button
+                        className="story-result-primary"
+                        variant="primary"
+                        disabled={pending || authorizationLimit === undefined || exceedsLimit}
+                        onClick={() =>
+                          void act(() =>
+                            transport.resume(run, increase ? run.requiredPoints! : undefined)
+                          )
+                        }
+                      >
+                        {pending ? (
+                          <IconLoader2
+                            size={18}
+                            className="story-quote-spinner"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <IconArrowRight size={18} aria-hidden="true" />
+                        )}
+                        {increase
+                          ? t.app.authorize.replace("{points}", String(run.requiredPoints))
+                          : run.status === "failed"
+                            ? t.app.retryAndContinue
+                            : t.app.resume}
+                      </Button>
+                    )}
+                    {showMediaAction && (
+                      <Button
+                        className="story-result-secondary"
+                        onClick={() => ctx.sidebarRight.openTab("story-media")}
+                      >
+                        <IconPhoto size={18} aria-hidden="true" />
+                        {t.h5.resultViewMedia}
+                      </Button>
+                    )}
+                    {showStopAction && (
+                      <Button
+                        className="story-result-secondary"
+                        disabled={pending}
+                        onClick={() => void act(() => transport.cancel())}
+                      >
+                        <IconPlayerStop size={18} aria-hidden="true" />
+                        {t.app.stop}
+                      </Button>
+                    )}
+                  </div>
                 )}
               </section>
             );

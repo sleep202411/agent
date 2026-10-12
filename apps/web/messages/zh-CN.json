@@ -12240,6 +12240,7 @@
       "play": "播放作品",
       "authorize": "授权最多 {points} 点并继续",
       "resume": "继续制作",
+      "retryAndContinue": "重试并继续",
       "authorization": "发送即授权本次制作使用最多 {points} 算力点。",
       "previousActive": "之前的制作仍在进行，可以在这里停止。",
       "stop": "停止制作",
