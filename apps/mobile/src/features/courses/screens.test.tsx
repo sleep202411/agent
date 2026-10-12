@@ -154,15 +154,15 @@ afterEach(() => act(() => root.unmount()));
 const detail = () => act(async () => root.render(<CourseScreen id="7" />));
 const button = (text: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
-it("preserves the existing five tabs including News", () => {
+it("keeps five tabs and replaces News with Courses", () => {
   expect(appTabItems.map((item) => item.name)).toEqual([
     "index",
     "creators",
     "crews",
-    "news",
+    "courses",
     "mine",
   ]);
-  expect(appTabItems[3].href).toBe("/news");
+  expect(appTabItems[3].href).toBe("/courses");
 });
 it("lets guests browse real courses and navigate to their native detail", async () => {
   vi.mocked(api.get).mockResolvedValue([course]);

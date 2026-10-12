@@ -17,6 +17,9 @@ import { useGatedScreenActive } from "@/hooks/use-app-active";
 
 import { resolveExperienceVideoSource } from "../lib/experience-playback-delivery";
 import {
+  clipPlaybackEndSeconds,
+  clipPlaybackReachedEnd,
+  clipPlaybackStalled,
   invalidatePlayableMediaUrl,
   isStillVideoVariant,
   resolveVideoMedia,
@@ -136,20 +139,7 @@ export type ExperienceMediaPlaybackHandle = {
   seek(seconds: number): boolean | void;
 };
 
-export function ExperienceVideoRenderer({
-  manifest,
-  renderer,
-  copy,
-  onTimelineTimeMs,
-  onCompleted,
-  onRuntimeError,
-  onPlaybackHandle,
-  onPlaybackRefused,
-  onPlaybackInterrupted,
-  checkpoint,
-  onPlaybackProgress,
-  playbackRate = 1,
-}: {
+type ExperienceVideoRendererProps = {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   copy: ExperiencePlayerCopy;
@@ -162,20 +152,50 @@ export function ExperienceVideoRenderer({
   checkpoint?: ExperienceMediaCheckpoint;
   playbackRate?: number;
   onPlaybackProgress?: (checkpoint: ExperienceMediaCheckpoint) => void;
+};
+
+export function ExperienceVideoRenderer(props: ExperienceVideoRendererProps) {
+  return <ExperienceVideoSequence key={props.renderer.instanceId} {...props} />;
+}
+
+function ExperienceVideoSequence(props: ExperienceVideoRendererProps) {
+  const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
+    initialCoreVideoPlaybackState(props.renderer.instanceId, props.checkpoint)
+  );
+  const mode = playbackState.terminalMode;
+  const clipKey = `${props.renderer.instanceId}:${playbackState.sequenceIndex}:${mode?.kind === "loop" ? `loop:${mode.assetId}:${mode.clipStartTime ?? 0}` : "sequence"}`;
+  return (
+    <ExperienceVideoClip
+      key={clipKey}
+      {...props}
+      playbackState={playbackState}
+      setPlaybackState={setPlaybackState}
+    />
+  );
+}
+
+function ExperienceVideoClip({
+  manifest,
+  renderer,
+  copy,
+  onTimelineTimeMs,
+  onCompleted,
+  onRuntimeError,
+  onPlaybackHandle,
+  onPlaybackRefused,
+  onPlaybackInterrupted,
+  onPlaybackProgress,
+  playbackRate = 1,
+  playbackState,
+  setPlaybackState,
+}: ExperienceVideoRendererProps & {
+  playbackState: CoreVideoPlaybackState;
+  setPlaybackState: (state: CoreVideoPlaybackState) => void;
 }) {
   if (!Number.isFinite(playbackRate) || playbackRate <= 0)
     throw new RangeError("Playback rate must be finite and positive.");
   const rateRef = useRef(playbackRate);
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
-  const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
-    initialCoreVideoPlaybackState(renderer.instanceId, checkpoint)
-  );
-  // Reset sequence when the renderer instance changes (same component, new scene).
-  const [playbackRendererId, setPlaybackRendererId] = useState(renderer.instanceId);
-  if (renderer.instanceId !== playbackRendererId) {
-    setPlaybackRendererId(renderer.instanceId);
-    setPlaybackState(initialCoreVideoPlaybackState(renderer.instanceId, checkpoint));
-  }
   const { sequenceIndex, terminalMode } = playbackState;
   const completedRendererIdRef = useRef<string | null>(
     playbackState.checkpoint?.completed ? renderer.instanceId : null
@@ -498,6 +518,41 @@ export function ExperienceVideoRenderer({
     return () => clearInterval(timer);
   }, [presenting, videoHoldMs, playbackIdentity, terminalMode?.kind, emitProgress]);
 
+  const stallRef = useRef<{ time: number; since: number; moved: boolean } | null>(null);
+  const watchClip = useEffectEvent(() => {
+    if (isStill || isLooping || !presentingRef.current || !shouldAutoplay || !player.playing) {
+      stallRef.current = null;
+      return;
+    }
+    const currentTime = player.currentTime;
+    const endSeconds = clipPlaybackEndSeconds(durationMs, player.duration);
+    if (clipPlaybackReachedEnd(currentTime, endSeconds)) {
+      handleEnd();
+      return;
+    }
+    const now = Date.now();
+    const stall = stallRef.current;
+    if (!stall || Math.abs(currentTime - stall.time) > 0.05) {
+      stallRef.current = { time: currentTime, since: now, moved: currentTime > 0.05 };
+      return;
+    }
+    if (
+      clipPlaybackStalled({
+        currentTimeSeconds: currentTime,
+        anchoredTimeSeconds: stall.time,
+        anchoredForMs: now - stall.since,
+        endSeconds,
+        moved: stall.moved,
+        held: false,
+      })
+    )
+      handleEnd();
+  });
+  useEffect(() => {
+    if (!presenting || !shouldAutoplay || isStill || isLooping) return;
+    const timer = setInterval(() => watchClip(), 250);
+    return () => clearInterval(timer);
+  }, [presenting, shouldAutoplay, isStill, isLooping]);
   const reportTimeline = useEffectEvent((currentTime: number) => {
     if (isStill || readyIdentity.current !== playbackIdentity) return;
     setSubtitlePosition({
@@ -506,15 +561,9 @@ export function ExperienceVideoRenderer({
     });
     observeProgress(currentTime * 1000);
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
-    if (isStill || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
-    const totalSeconds =
-      Number.isFinite(player.duration) && player.duration > 0
-        ? player.duration
-        : durationMs
-          ? durationMs / 1_000
-          : 0;
-    // iOS expo-video sometimes never emits `playToEnd` on a finished clip.
-    if (totalSeconds > 0 && currentTime >= totalSeconds - 0.08) handleEnd();
+    if (terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
+    if (clipPlaybackReachedEnd(currentTime, clipPlaybackEndSeconds(durationMs, player.duration)))
+      handleEnd();
   });
 
   /**

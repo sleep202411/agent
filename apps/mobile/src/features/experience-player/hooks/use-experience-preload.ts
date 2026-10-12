@@ -35,13 +35,15 @@ const CHAPTER_BYTE_CEILING = EXPERIENCE_MEDIA_BUDGET_BYTES * 0.9;
 
 /**
  * Downloads the chapter's clips to on-device cache and gates Start on all of
- * them, so no scene transition mid-film waits on the network. Nothing downloads
- * behind playback: by the time Start opens there is nothing left to fetch.
+ * them, so a prepared chapter cuts without waiting on the network. A clip that
+ * is not on disk yet still plays: the player opens the signed URL immediately
+ * and the download continues behind it.
  *
  * Uses HTTP file download rather than AVPlayer warm-up: avoids native track
  * probe timeouts, and leaves real bytes on disk for playback to hit. A clip that
  * keeps failing still counts as settled — one bad URI cannot permanently lock
- * Start, and playback falls back to streaming that clip.
+ * Start. Playback does not wait on that download: it opens a cached file or the
+ * signed media URL immediately.
  *
  * `percent` is byte-accurate within each clip and weights clips equally, so the
  * bar moves continuously rather than in one step per finished file.

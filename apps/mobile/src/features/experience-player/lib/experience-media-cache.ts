@@ -3,7 +3,11 @@ import { File } from "expo-file-system";
 import { subscribeAppActive } from "@/hooks/app-active";
 
 import { createDiskCachePool, deleteQuietly } from "./experience-disk-cache";
-import { absolutizeExperienceMediaUri, resolvePlayableMediaUrl } from "./experience-media";
+import {
+  absolutizeExperienceMediaUri,
+  resolvePlayableMediaUrl,
+  resolveClipPlaybackUri,
+} from "./experience-media";
 
 /**
  * Stall window, not a total deadline: a large clip on a slow link is allowed to
@@ -392,4 +396,26 @@ export async function resolvePlaybackUri(sourceUri: string, signal?: AbortSignal
  */
 export function maintainExperienceMediaCache(): Promise<void> {
   return pool.enqueueEviction();
+}
+
+/** A clip cut must not wait for an in-flight whole-file download. */
+export async function resolveImmediatePlaybackUri(
+  sourceUri: string,
+  signal: AbortSignal
+): Promise<string> {
+  const uri = await resolveClipPlaybackUri(sourceUri, signal, {
+    cached: (source) => {
+      const cached = peekCachedMediaUri(source);
+      if (cached)
+        pool.touch(cacheFileFor(absolutizeExperienceMediaUri(source) ?? source.trim()).name);
+      return cached;
+    },
+    sign: resolvePlayableMediaUrl,
+    warm: (source) => {
+      void ensureMediaCached(source).catch(() => undefined);
+    },
+  });
+  signal.throwIfAborted();
+  if (!uri) throw new Error("Media download cancelled");
+  return uri;
 }

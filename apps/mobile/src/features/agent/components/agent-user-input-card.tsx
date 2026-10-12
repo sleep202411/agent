@@ -1,6 +1,4 @@
 import { Image } from "expo-image";
-import { storyVisualStyleSkillBySlug } from "@repo/shared";
-import { storyVisualStylePreviews } from "../lib/story-visual-style-previews";
 import { useMemo } from "react";
 import { useAuth } from "@/auth";
 import { durableRecord } from "@/lib/durable-record";
@@ -15,6 +13,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useLocale, useTranslations } from "@/i18n";
@@ -23,8 +22,33 @@ import { agentInputQuestionCopy, agentInputOptionLabel } from "../lib/agent-inpu
 import { fillMessageTemplate } from "../api/story-production-api";
 import { useAgentInputForm } from "../hooks/use-agent-input-form";
 import type { AgentOsPendingUserInput } from "../api/agent-os-api";
+import {
+  isStoryCreativeProfileForm,
+  storyLanguageLabel,
+  storyProfileOptionLabelKey,
+  storyProfileQuestionCopy,
+} from "../lib/story-profile-choices";
+import { storyProfileStylePreview } from "../lib/story-profile-previews";
 
 const theme = Colors.dark;
+
+/** Bottom-half fade matching the web `from-black/95 via-black/55 to-transparent`. */
+function StyleLabelScrim({ id }: { id: string }) {
+  return (
+    <View pointerEvents="none" style={styles.styleScrim}>
+      <Svg width="100%" height="100%" preserveAspectRatio="none" style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id={id} x1="0" y1="1" x2="0" y2="0">
+            <Stop offset="0" stopColor="#000" stopOpacity={0.95} />
+            <Stop offset="0.5" stopColor="#000" stopOpacity={0.55} />
+            <Stop offset="1" stopColor="#000" stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill={`url(#${id})`} />
+      </Svg>
+    </View>
+  );
+}
 
 type AgentUserInputCardProps = {
   draftScope: { projectId: string; chapterId: string; workbenchMode: string };
@@ -78,6 +102,12 @@ function AgentUserInputView({
   if (!question) return null;
   const questionCopy = agentInputQuestionCopy(request.formId, question, t);
 
+  const profileCopy = storyProfileQuestionCopy(question.id);
+  const header = profileCopy ? t(profileCopy.header) : questionCopy.header;
+  const body = profileCopy ? t(profileCopy.question) : questionCopy.question;
+  const visualStyle =
+    (isStoryCreativeProfileForm(request.formId) || profileCopy != null) &&
+    question.id === "visual_direction";
   const stepLabel = fillMessageTemplate(t("agent.userInputStep"), {
     current: step + 1,
     total: questions.length,
@@ -116,20 +146,31 @@ function AgentUserInputView({
           <View style={styles.qBadge}>
             <Text style={styles.qBadgeText}>Q{step + 1}</Text>
           </View>
-          {questionCopy.header ? (
-            <Text style={styles.questionHeaderText}>{questionCopy.header}</Text>
-          ) : null}
+          {header ? <Text style={styles.questionHeaderText}>{header}</Text> : null}
           <Text style={styles.requiredMark}>*</Text>
         </View>
-        <Text style={styles.questionBody}>{questionCopy.question}</Text>
+        <Text style={styles.questionBody}>{body}</Text>
 
-        <View style={styles.optionsGrid}>
+        <ScrollView
+          style={visualStyle ? styles.styleScroll : undefined}
+          contentContainerStyle={[styles.optionsGrid, visualStyle && styles.styleGrid]}
+          nestedScrollEnabled
+          removeClippedSubviews={false}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={visualStyle}
+        >
           {question.options.map((option) => {
             const checked = option.value === selected;
-            const visualStyle =
-              request.formId === "story_creative_profile" && question.id === "visual_direction"
-                ? storyVisualStyleSkillBySlug(option.value)
-                : undefined;
+            const labelKey = profileCopy
+              ? storyProfileOptionLabelKey(question.id, option.value)
+              : null;
+            const label =
+              question.id === "story_language" && profileCopy
+                ? storyLanguageLabel(option.value, locale, option.label)
+                : labelKey
+                  ? t(labelKey)
+                  : agentInputOptionLabel(request.formId, question.id, option, locale, t);
+            const preview = visualStyle ? storyProfileStylePreview(option.value) : null;
             return (
               <Pressable
                 key={option.value}
@@ -138,31 +179,31 @@ function AgentUserInputView({
                 aria-checked={checked}
                 disabled={locked}
                 onPress={() => choose(option.value)}
-                style={({ pressed }) => [
-                  styles.option,
-                  visualStyle && styles.previewOption,
-                  checked && styles.optionSelected,
-                  pressed && !locked && styles.pressed,
-                ]}
+                style={visualStyle ? styles.styleHit : styles.optionHit}
               >
-                {visualStyle ? (
-                  <Image
-                    source={storyVisualStylePreviews[visualStyle.slug]}
-                    contentFit="cover"
-                    accessible={false}
-                    style={styles.preview}
-                  />
-                ) : null}
-                <Text style={[styles.optionLabel, visualStyle && styles.previewLabel]}>
-                  {agentInputOptionLabel(request.formId, question.id, option, locale, t)}
-                </Text>
-                {option.description ? (
-                  <Text style={styles.optionDescription}>{option.description}</Text>
-                ) : null}
+                <View
+                  style={[
+                    visualStyle ? styles.styleOption : styles.option,
+                    checked && styles.optionSelected,
+                  ]}
+                >
+                  {preview != null ? (
+                    <Image source={preview} style={styles.styleImage} contentFit="cover" />
+                  ) : (
+                    <FrameGlyph value={option.value} selected={checked} />
+                  )}
+                  {preview != null ? <StyleLabelScrim id={`style-scrim-${option.value}`} /> : null}
+                  <Text style={[styles.optionLabel, preview != null && styles.styleLabel]}>
+                    {label}
+                  </Text>
+                  {!preview && option.description ? (
+                    <Text style={styles.optionDescription}>{option.description}</Text>
+                  ) : null}
+                </View>
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
       </ScrollView>
       <View style={styles.actions}>
         {step > 0 ? (
@@ -170,36 +211,53 @@ function AgentUserInputView({
             accessibilityRole="button"
             disabled={locked}
             onPress={back}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+            style={styles.actionHit}
           >
-            <SymbolView
-              name={{ ios: "chevron.left", android: "chevron_left", web: "chevron_left" }}
-              size={14}
-              tintColor={theme.textSecondary}
-            />
-            <Text style={styles.backText}>{t("agent.userInputBack")}</Text>
+            <View style={[styles.backChrome, busy && styles.disabled]}>
+              <SymbolView
+                name={{ ios: "chevron.left", android: "chevron_left", web: "chevron_left" }}
+                size={14}
+                tintColor="rgba(255,255,255,0.88)"
+              />
+              <Text style={styles.backText}>{t("agent.userInputBack")}</Text>
+            </View>
           </Pressable>
         ) : null}
         <Pressable
           accessibilityRole="button"
           disabled={!selected || locked}
           onPress={submit}
-          style={({ pressed }) => [
-            styles.submitBtn,
-            !selected || locked ? styles.submitDisabled : styles.submitEnabled,
-            pressed && selected && !locked && styles.pressed,
-          ]}
+          style={styles.actionHit}
         >
-          {busy ? <ActivityIndicator color="#FFFFFF" size="small" style={styles.spinner} /> : null}
-          <Text style={[styles.submitText, (!selected || locked) && styles.submitTextDisabled]}>
-            {busy
-              ? t("agent.userInputSubmitting")
-              : isLast
-                ? t("agent.userInputSubmit")
-                : t("agent.userInputContinue")}
-          </Text>
+          <View style={[styles.continueChrome, (!selected || locked) && styles.disabled]}>
+            {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+            <Text style={styles.continueText}>
+              {busy
+                ? t("agent.userInputSubmitting")
+                : isLast
+                  ? t("agent.userInputSubmit")
+                  : t("agent.userInputContinue")}
+            </Text>
+          </View>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+function FrameGlyph({ value, selected }: { value: string; selected: boolean }) {
+  const portrait = value.includes("9_16") || value.includes("portrait");
+  const landscape = value.includes("16_9") || value.includes("landscape");
+  if (!portrait && !landscape) return null;
+  return (
+    <View style={styles.glyphSlot}>
+      <View
+        style={[
+          styles.glyph,
+          portrait ? styles.glyphPortrait : styles.glyphLandscape,
+          { borderColor: selected ? theme.brand : "rgba(255,255,255,0.6)" },
+        ]}
+      />
     </View>
   );
 }
@@ -261,11 +319,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
+  questionTitle: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: 2,
+  },
   questionHeaderText: {
     color: theme.text,
+    flexShrink: 1,
     fontSize: 14,
     fontWeight: "600",
-    flex: 1,
   },
   requiredMark: {
     color: theme.brand,
@@ -277,20 +341,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 17,
   },
+  styleScroll: {
+    flexGrow: 0,
+    maxHeight: 248,
+  },
   optionsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.two,
   },
+  optionHit: {
+    flexBasis: "46%",
+    flexGrow: 1,
+    maxWidth: "48%",
+  },
   option: {
+    alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.065)",
     borderRadius: 16,
-    flexGrow: 1,
-    flexBasis: "46%",
-    maxWidth: "48%",
+    justifyContent: "center",
     minHeight: 80,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
+    width: "100%",
   },
   previewOption: {
     paddingHorizontal: 0,
@@ -310,6 +383,58 @@ const styles = StyleSheet.create({
     borderColor: theme.brand,
     borderWidth: 1.5,
   },
+  styleGrid: {
+    gap: 6,
+  },
+  styleHit: {
+    flexBasis: "31%",
+    flexGrow: 1,
+    maxWidth: "32%",
+  },
+  styleOption: {
+    backgroundColor: "rgba(255,255,255,0.065)",
+    borderRadius: 12,
+    overflow: "hidden",
+    width: "100%",
+  },
+  styleImage: {
+    aspectRatio: 2 / 3,
+    width: "100%",
+  },
+  styleScrim: {
+    bottom: 0,
+    height: "50%",
+    left: 0,
+    position: "absolute",
+    right: 0,
+  },
+  styleLabel: {
+    bottom: 8,
+    left: 8,
+    position: "absolute",
+    right: 8,
+    textShadowColor: "rgba(0,0,0,0.8)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  glyphSlot: {
+    alignItems: "center",
+    height: 28,
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  glyph: {
+    borderRadius: 3,
+    borderWidth: 2,
+  },
+  glyphPortrait: {
+    height: 28,
+    width: 14,
+  },
+  glyphLandscape: {
+    height: 14,
+    width: 28,
+  },
   optionLabel: {
     color: theme.text,
     fontSize: 12,
@@ -322,49 +447,45 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   actions: {
-    alignItems: "center",
     flexDirection: "row",
     gap: Spacing.two,
+    width: "100%",
   },
-  backBtn: {
+  actionHit: {
+    flex: 1,
+    minWidth: 0,
+  },
+  backChrome: {
     alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 14,
     flexDirection: "row",
     gap: 4,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    height: 40,
+    justifyContent: "center",
+    width: "100%",
   },
   backText: {
-    color: theme.textSecondary,
-    fontSize: 13,
-    fontWeight: "600",
+    color: "rgba(255,255,255,0.88)",
+    fontSize: 12,
+    fontWeight: "500",
   },
-  submitBtn: {
+  continueChrome: {
     alignItems: "center",
-    borderRadius: 12,
-    flex: 1,
-    flexDirection: "row",
-    height: 44,
-    justifyContent: "center",
-    marginLeft: "auto",
-  },
-  submitEnabled: {
     backgroundColor: theme.brand,
+    borderRadius: 14,
+    flexDirection: "row",
+    gap: 6,
+    height: 40,
+    justifyContent: "center",
+    width: "100%",
   },
-  submitDisabled: {
-    backgroundColor: theme.backgroundSelected,
-  },
-  submitText: {
+  continueText: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "500",
   },
-  submitTextDisabled: {
-    color: "rgba(255,255,255,0.4)",
-  },
-  spinner: {
-    marginRight: Spacing.two,
-  },
-  pressed: {
-    opacity: 0.85,
+  disabled: {
+    opacity: 0.5,
   },
 });

@@ -2,7 +2,7 @@ import { supportsAdaptivePlayback } from "./adaptive-playback-support";
 import { StoryBuildAssetPlaybackResponseSchema } from "@repo/shared/story-playback";
 import { appEnv } from "@/config";
 import { absolutizeExperienceMediaUri } from "./experience-media";
-import { resolvePlaybackUri } from "./experience-media-cache";
+import { resolveImmediatePlaybackUri as resolvePlaybackUri } from "./experience-media-cache";
 
 const BUILD_CONTENT =
   /\/story-projects\/[^/]+\/builds\/[^/]+\/assets\/[^/]+\/variants\/[^/]+\/content$/;

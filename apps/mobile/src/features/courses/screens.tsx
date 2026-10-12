@@ -17,6 +17,7 @@ import { useLocale, useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
+import { useTabScreenInsets } from "@/components/tab-screen";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, ScreenHeader } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
@@ -101,7 +102,7 @@ function Catalog() {
   const locale = useLocale();
   const theme = useTheme();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  const { contentPadding } = useTabScreenInsets();
   const read = useCourseRead(
     useCallback((signal: AbortSignal) => listCourses(locale, signal), [locale])
   );
@@ -119,10 +120,8 @@ function Catalog() {
         onRefresh={read.retry}
         refreshing={!read.data && !read.error}
         keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: Spacing.three, paddingBottom: Spacing.four + insets.bottom },
-        ]}
+        contentInsetAdjustmentBehavior="never"
+        contentContainerStyle={[styles.content, contentPadding]}
         ListHeaderComponent={
           <View style={styles.section}>
             <ScreenHeader title={t("courses.title")} />

@@ -11,6 +11,7 @@ import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import type { ExperienceMediaCheckpoint } from "../lib/experience-playback-checkpoint";
 const h = vi.hoisted(() => ({
   active: true,
+  mounts: vi.fn(),
   stillProps: null as null | {
     onTimelineTimeMs: (timeMs: number) => void;
     playbackRate: number;
@@ -33,10 +34,19 @@ vi.mock("react-native", () => ({
   Text: "span",
   StyleSheet: { create: (s: unknown) => s },
 }));
-vi.mock("./experience-video-platform", () => ({
-  useVideoPlayer: () => h.player,
-  VideoView: () => null,
-}));
+vi.mock("./experience-video-platform", async () => {
+  const { useState } = await import("react");
+  return {
+    useVideoPlayer: () => {
+      useState(() => {
+        h.mounts();
+        return null;
+      });
+      return h.player;
+    },
+    VideoView: () => null,
+  };
+});
 vi.mock("@/hooks/use-app-active", () => ({ useGatedScreenActive: () => h.active }));
 vi.mock("../lib/experience-playback-delivery", () => ({
   resolveExperienceVideoSource: vi.fn().mockResolvedValue({ uri: "file:///clip.mp4" }),
@@ -126,6 +136,7 @@ beforeEach(() => {
     toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
   });
   h.active = true;
+  h.mounts.mockClear();
   checkpoint = undefined;
   playbackRate = 1;
   h.player.playbackRate = 1;
@@ -550,4 +561,55 @@ it("clamps still seeking to watched time and does not touch the video player", a
   seekStill.mockReturnValue(false);
   await act(async () => handle!.seek(0));
   expect(progress.mock.calls.at(-1)![0].positionMs).toBe(1000);
+});
+
+it("creates a fresh player for the next shot even when both shots use the same URI", async () => {
+  await act(async () =>
+    root.render(
+      <ExperienceVideoRenderer
+        manifest={
+          {
+            assets: [
+              {
+                kind: "video",
+                assetId: "clip",
+                variants: [
+                  {
+                    orientation: "landscape",
+                    uri: "file:///clip.mp4",
+                    mediaType: "video/mp4",
+                    durationMs: 20000,
+                  },
+                ],
+              },
+            ],
+          } as unknown as ExperienceRuntimeManifest
+        }
+        renderer={
+          {
+            instanceId: "cuts",
+            config: {
+              sequence: [
+                { clipId: "one", assetId: "clip", endBehavior: { behavior: "advance" } },
+                { clipId: "two", assetId: "clip", endBehavior: { behavior: "advance" } },
+              ],
+              fit: "contain",
+              autoplay: true,
+            },
+          } as unknown as ExperienceRendererInstance
+        }
+        copy={testCopy}
+        onCompleted={completed}
+        onRuntimeError={noop}
+        onTimelineTimeMs={noop}
+      />
+    )
+  );
+  expect(h.mounts).toHaveBeenCalledTimes(1);
+  const end = (h.player.addListener.mock.calls as unknown as [string, () => void][]).find(
+    ([name]) => name === "playToEnd"
+  )![1];
+  await act(async () => end());
+  expect(h.mounts).toHaveBeenCalledTimes(2);
+  expect(completed).not.toHaveBeenCalled();
 });

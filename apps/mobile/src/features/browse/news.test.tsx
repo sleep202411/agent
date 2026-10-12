@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import NewsScreen from "@/app/(tabs)/news";
+import NewsScreen from "./news-screen";
 
 const h = vi.hoisted(() => ({
   feed: vi.fn(),
