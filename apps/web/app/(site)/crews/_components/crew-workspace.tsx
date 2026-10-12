@@ -170,6 +170,7 @@ export function CrewWorkspace({
     [replaceParams]
   );
 
+  const [canvasActionTarget, setCanvasActionTarget] = useState<HTMLDivElement | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [communityInviteOpen, setCommunityInviteOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
@@ -331,6 +332,7 @@ export function CrewWorkspace({
     <CrewTransfersProvider crewId={id}>
       <CrewVisitReadMarker crewId={id} />
       <CrewWorkbenchShell
+        canvasActionRef={setCanvasActionTarget}
         embedded={embedded}
         activeChatChannel={requestedCommunityChannel ? "community" : "team"}
         activeTab={activeTab}
@@ -465,6 +467,7 @@ export function CrewWorkspace({
 
             {activeTab === "tasks" ? (
               <CrewTasksTab
+                canvasActionTarget={canvasActionTarget}
                 crewId={id}
                 createTaskRequested={searchParams.get("createTask") === "1"}
                 onCreateTaskRequestHandled={() => {

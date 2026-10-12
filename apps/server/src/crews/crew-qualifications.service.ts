@@ -25,6 +25,9 @@ const ranks: Record<CrewExperienceLevel, number> = {
   lead: 4,
   master: 5,
 };
+const fdRoles = ['FD-I', 'FD-II', 'FD-III', 'FD-IV', 'FD-V'];
+const fdRoleRank = (name: string) =>
+  fdRoles.indexOf(name.trim().toUpperCase()) + 1;
 const catalogSchema = z.object({
   fdLevels: z.array(
     z.object({
@@ -78,7 +81,7 @@ export class CrewQualificationsService {
     // catalog value is provisioned. See thread with Isaac 2026-09-27.
   }
 
-  private async liveSkills(cookie?: string) {
+  private async liveCatalog(cookie?: string) {
     if (!cookie)
       throw unavailable(
         'A current session is required to read verified skills.',
@@ -110,7 +113,24 @@ export class CrewQualificationsService {
           throw new Error('Ambiguous skill name');
         skills.set(key, { name: item.name, ids: [item.id] });
       }
-      return skills;
+      const fdLevels: Array<{ id: number; rank: number }> = [];
+      for (const item of result.data.filter((item) => item.type === 1)) {
+        const match = item.name.match(
+          /^FD\s*[-－–]?\s*(III|IV|II|V|I|[1-5])(?=$|[\s·.・-])/i,
+        );
+        if (!match) continue;
+        const token = match[1].toUpperCase();
+        const rank =
+          ({ I: 1, II: 2, III: 3, IV: 4, V: 5 } as Record<string, number>)[
+            token
+          ] ?? Number(token);
+        if (
+          fdLevels.some((level) => level.rank === rank || level.id === item.id)
+        )
+          throw new Error('Ambiguous FD level');
+        fdLevels.push({ id: item.id, rank });
+      }
+      return { skills, fdLevels };
     } catch {
       throw unavailable(
         'The regional verification skill catalogue could not be loaded. Please retry.',
@@ -118,8 +138,15 @@ export class CrewQualificationsService {
     }
   }
   async catalog(cookie?: string) {
-    const skills = await this.liveSkills(cookie);
-    return { skills: [...skills.values()].map((item) => item.name).sort() };
+    const { skills, fdLevels } = await this.liveCatalog(cookie);
+    return {
+      skills: [
+        ...fdLevels
+          .sort((a, b) => a.rank - b.rank)
+          .map((level) => fdRoles[level.rank - 1]),
+        ...[...skills.values()].map((item) => item.name).sort(),
+      ],
+    };
   }
 
   async assertEligible(
@@ -127,21 +154,31 @@ export class CrewQualificationsService {
     cookie: string | undefined,
     requirements: CrewQualificationRequirements,
   ) {
-    const minimum = ranks[requirements.experienceLevel];
-    if (minimum === 0 && requirements.requiredSkills.length === 0) return;
-    let configured = minimum > 0 ? readCatalog() : null;
-    const live = requirements.requiredSkills.length
-      ? await this.liveSkills(cookie)
-      : new Map<string, { name: string; ids: number[] }>();
+    const requiredSkills = requirements.requiredSkills.filter(
+      (skill) => !fdRoleRank(skill),
+    );
+    const minimum = Math.max(
+      ranks[requirements.experienceLevel],
+      ...requirements.requiredSkills.map(fdRoleRank),
+    );
+    if (minimum === 0 && requiredSkills.length === 0) return;
+    let configured =
+      ranks[requirements.experienceLevel] > 0 ? readCatalog() : null;
+    const liveCatalog =
+      requiredSkills.length || minimum > 0
+        ? await this.liveCatalog(cookie)
+        : {
+            skills: new Map<string, { name: string; ids: number[] }>(),
+            fdLevels: [],
+          };
+    const live = liveCatalog.skills;
     const skills = new Map([...live].map(([key, item]) => [key, item.ids]));
     // Live-name skill-only roles need no static FD catalogue. Consult optional
     // historical mappings only when a required name is absent from live data.
     if (
       !configured &&
       process.env.CREW_QUALIFICATION_CATALOG_JSON?.trim() &&
-      requirements.requiredSkills.some(
-        (skill) => !skills.has(skill.trim().toLowerCase()),
-      )
+      requiredSkills.some((skill) => !skills.has(skill.trim().toLowerCase()))
     )
       configured = readCatalog();
     // Preserve explicitly configured historical names only while their IDs still
@@ -155,12 +192,12 @@ export class CrewQualificationsService {
     const catalog: Pick<
       z.infer<typeof catalogSchema>,
       'fdLevels'
-    > = configured?.catalog ?? { fdLevels: [] };
-    if (
-      requirements.requiredSkills.some(
-        (skill) => !skills.has(skill.trim().toLowerCase()),
-      )
-    )
+    > = configured?.catalog ?? { fdLevels: liveCatalog.fdLevels };
+    if (minimum > 0 && !catalog.fdLevels.length)
+      throw unavailable(
+        'The regional FD certificate catalogue could not be verified. Please retry.',
+      );
+    if (requiredSkills.some((skill) => !skills.has(skill.trim().toLowerCase())))
       throw unavailable(
         'A required skill has no verified certificate mapping in this site’s catalog.',
       );
@@ -213,7 +250,7 @@ export class CrewQualificationsService {
         .filter((level) => fdLevels.has(level.id))
         .map((level) => level.rank),
     );
-    const missingSkills = requirements.requiredSkills.filter(
+    const missingSkills = requiredSkills.filter(
       (skill) =>
         !skills
           .get(skill.trim().toLowerCase())!

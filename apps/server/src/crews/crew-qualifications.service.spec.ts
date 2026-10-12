@@ -16,7 +16,11 @@ const liveOptions = [
   { id: 901, name: 'editing', type: 4 },
   { id: 903, name: 'music', type: 4 },
   { id: 950, name: 'Lighting', type: 4 },
-  { id: 103, name: 'FD3', type: 1 },
+  ...[1, 2, 3, 4, 5].map((rank) => ({
+    id: 100 + rank,
+    name: `FD${rank}`,
+    type: 1,
+  })),
 ];
 const response = (ids: number[] | null, id = '42', code = 200) => ({
   ok: true,
@@ -41,15 +45,33 @@ afterEach(() => {
   else process.env.CREW_QUALIFICATION_CATALOG_JSON = original;
 });
 describe('Current Java qualification admission', () => {
-  it('offers all current regional verification skills, excluding FD ranks', async () => {
+  it('offers regional skills and configured FD task roles', async () => {
     await expect(service.catalog('fixture-session')).resolves.toEqual({
-      skills: ['Lighting', 'editing', 'music'],
+      skills: [
+        'FD-I',
+        'FD-II',
+        'FD-III',
+        'FD-IV',
+        'FD-V',
+        'Lighting',
+        'editing',
+        'music',
+      ],
     });
   });
   it('loads live skills without a static skill configuration', async () => {
     delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
     await expect(service.catalog('fixture-session')).resolves.toEqual({
-      skills: ['Lighting', 'editing', 'music'],
+      skills: [
+        'FD-I',
+        'FD-II',
+        'FD-III',
+        'FD-IV',
+        'FD-V',
+        'Lighting',
+        'editing',
+        'music',
+      ],
     });
   });
   it('fails closed when the regional skill catalogue is unavailable', async () => {
@@ -227,4 +249,82 @@ describe('Historical skill aliases', () => {
       service.assertEligible('42', 'fixture-session', aliasRequirement),
     ).rejects.toMatchObject({ status: 503 });
   });
+});
+
+describe('FD task roles', () => {
+  it.each([
+    ['FD-I', 101],
+    ['FD-II', 102],
+    ['FD-II', 103],
+    ['FD-V', 105],
+  ])('admits %s with a sufficient verified director rank', async (role, id) => {
+    fetcher.mockResolvedValue(response([id as number]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: [role as string],
+      }),
+    ).resolves.toBeUndefined();
+  });
+  it('does not grant rough-cut eligibility to FD-I alone', async () => {
+    fetcher.mockResolvedValue(response([101]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['FD-II'],
+      }),
+    ).rejects.toMatchObject({ response: { requiredFdRank: 2 }, status: 403 });
+  });
+  it('still requires every independently selected skill certificate', async () => {
+    fetcher.mockResolvedValue(response([103]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['FD-I', 'editing'],
+      }),
+    ).rejects.toMatchObject({
+      response: { missingSkills: ['editing'] },
+      status: 403,
+    });
+  });
+  it('keeps the higher experience-level requirement', async () => {
+    fetcher.mockResolvedValue(response([101]) as Response);
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'senior',
+        requiredSkills: ['FD-I'],
+      }),
+    ).rejects.toMatchObject({ response: { requiredFdRank: 3 }, status: 403 });
+  });
+  it('uses live regional IDs for FD task roles without static configuration', async () => {
+    delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+    await expect(
+      service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['FD-I'],
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+it('resolves a regional FD role from its live name and ID, not a global ID guess', async () => {
+  delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+  fetcher.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      code: 200,
+      data: [{ id: 777, name: 'FD-I · Affiliate Creator', type: 1 }],
+      info: { id: '42' },
+      level: [{ id: 777, type: 1 }],
+    }),
+  } as Response);
+  await expect(service.catalog('fixture-session')).resolves.toEqual({
+    skills: ['FD-I'],
+  });
+  await expect(
+    service.assertEligible('42', 'fixture-session', {
+      experienceLevel: 'any',
+      requiredSkills: ['FD-I'],
+    }),
+  ).resolves.toBeUndefined();
 });

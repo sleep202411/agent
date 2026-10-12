@@ -7,12 +7,14 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { CrewStudioWorkspacePicker } from "./crew-studio-workspace-picker";
 
 export function CrewWorkbenchHeader({
+  canvasActionRef,
   crewId,
   crewName,
   crewLogo,
   pageTitle,
   showProductionActions,
 }: {
+  canvasActionRef?: (node: HTMLDivElement | null) => void;
   crewId: string;
   crewName: string;
   crewLogo?: string | null;
@@ -38,6 +40,7 @@ export function CrewWorkbenchHeader({
         <span className="hidden shrink-0 text-xs text-[#858a95] sm:block">{pageTitle}</span>
       </div>
       <div className="ml-auto flex min-w-0 max-w-full shrink-0 items-center gap-2">
+        <div ref={canvasActionRef} className="flex flex-wrap gap-2" />
         {showProductionActions ? (
           <CrewStudioWorkspacePicker
             key={crewId}

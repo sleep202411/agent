@@ -5,6 +5,7 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { certificationEntry } from "../../creators/_components/center/certification-guide-data";
 import { crewApi } from "../_hooks/api";
 
 /** Uses the same regional catalog as server-side application eligibility. */
@@ -18,6 +19,7 @@ export function RequiredSkillsSelect({
   disabled?: boolean;
 }) {
   const t = useTranslations("crewSkills");
+  const guide = useTranslations("certificationGuide");
   const { user } = useCurrentUser();
   const query = useQuery({
     queryKey: ["crew-qualification-catalog", user?.id],
@@ -69,7 +71,7 @@ export function RequiredSkillsSelect({
                 )
               }
             />
-            {skill === "Editor" ? t("videoEditor") : skill}
+            {certificationEntry(skill) ? guide(`${certificationEntry(skill)}Name`) : skill}
           </label>
         ))}
       </div>

@@ -107,6 +107,7 @@ function TaskCreationSession({
   canManageEpisodes,
   active,
   toolbarTarget,
+  canvasActionTarget,
   onSelectTask,
   onEditTask,
   onSubmitTask,
@@ -124,6 +125,7 @@ function TaskCreationSession({
   canManageEpisodes: boolean;
   active: boolean;
   toolbarTarget?: HTMLElement | null;
+  canvasActionTarget?: HTMLElement | null;
   onSelectTask: (id: string) => void;
   onEditTask?: (id: string) => void;
   onSubmitTask?: (id: string) => void;
@@ -349,6 +351,11 @@ function TaskCreationSession({
       if (alive.current) setBusy(false);
     }
   }
+  const canvasAction = canManage ? (
+    <Button variant="outline" color="muted" size="sm" onClick={() => setProductionOpen(true)}>
+      {t("canvasImport")}
+    </Button>
+  ) : null;
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="ghost" size="sm" onClick={() => setShowEpisodes(true)}>
@@ -363,24 +370,7 @@ function TaskCreationSession({
             {t("viewTasks")}
           </Button>
         ) : null}
-        {canManage ? (
-          <>
-            <Button
-              variant="outline"
-              color="muted"
-              size="sm"
-              onClick={() => setProductionOpen(true)}
-            >
-              {t("canvasImport")}
-            </Button>
-          </>
-        ) : null}
       </div>
-      {canManage && analysisStatus !== "idle" && !pdfOpen && (
-        <Button variant="outline" size="sm" onClick={() => setPdfOpen(true)}>
-          {t("analysisStatus", { status: t(`analysis_${analysisStatus}`) })}
-        </Button>
-      )}
       {canManageTasks ? (
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">
@@ -417,6 +407,7 @@ function TaskCreationSession({
   );
   return (
     <div hidden={!active} className="min-h-0 min-w-0 flex-1 overflow-auto @container">
+      {active && canvasActionTarget ? createPortal(canvasAction, canvasActionTarget) : canvasAction}
       {batchMode ? (
         <WorkbenchBatchActions
           crewId={crewId}
@@ -489,7 +480,7 @@ function TaskCreationSession({
                     key={key}
                     size="sm"
                     variant="ghost"
-                    className={`shrink-0 rounded-none border-0 border-b-2 px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
+                    className={`shrink-0 rounded-none border-0 border-b-2 bg-white/[0.025] shadow-[0_3px_5px_rgba(0,0,0,0.35)] px-4 uppercase tracking-wide ${category === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`}
                     color="muted"
                     aria-pressed={category === key}
                     onClick={() => setCategory(key)}
