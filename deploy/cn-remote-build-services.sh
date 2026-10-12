@@ -19,9 +19,32 @@ cd /root/src || { echo "FATAL: no source"; exit 1; }
   exit 1
 }
 
-echo "=== disk free before prune: $(df -h / | awk 'NR==2{print $4}') ==="
-docker image prune -f >/dev/null 2>&1 || true
-echo "=== disk free after prune:  $(df -h / | awk 'NR==2{print $4}') ==="
+# This ECS is a dedicated, release-lock-serialized image builder. Reclaim only
+# unused images/build containers/cache, never volumes or running containers. Tagged images
+# from previous services are already verified in ACR before the next build.
+prepare_build_storage() {
+  if docker --version 2>/dev/null | grep -qi podman; then
+    # Failed Buildah containers can pin layers after ENOSPC. This is run only
+    # between builds on the dedicated builder, never with --volumes.
+    docker system prune --all --force --build >/dev/null
+  else
+    docker image prune -af >/dev/null
+    docker builder prune -af >/dev/null
+  fi
+  local storage_root free_kb free_inodes
+  storage_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  if [ ! -d "$storage_root" ]; then
+    storage_root=$(docker info --format '{{.Store.GraphRoot}}' 2>/dev/null || true)
+  fi
+  [ -d "$storage_root" ] || { echo "FATAL: cannot locate container storage for disk preflight" >&2; return 1; }
+  free_kb=$(df -Pk "$storage_root" | awk 'NR==2{print $4}')
+  free_inodes=$(df -Pi "$storage_root" | awk 'NR==2{print $4}')
+  echo "=== container storage available: ${free_kb} KiB / ${free_inodes} inodes ==="
+  if [ "$free_kb" -lt 12582912 ] || [ "$free_inodes" -lt 250000 ]; then
+    echo "FATAL: CN builder needs at least 12 GiB and 250000 free inodes after unused-cache cleanup. Expand the builder disk before retrying; no workloads changed." >&2
+    return 1
+  fi
+}
 
 trap 'rm -f /root/.acr_user /root/.acr_token' EXIT
 docker login "$REG" -u "$(cat /root/.acr_user)" --password-stdin < /root/.acr_token
@@ -39,8 +62,9 @@ SERVER_URL=http://fizzdragon-server:3001
 build() {
   local name=$1 df=$2; shift 2
   local image="$REG/$NS/fizzdragon-$name:$TAG"
+  prepare_build_storage
   echo "=== [$(date +%T)] BUILD $name (npm=$NPM_REGISTRY) ==="
-  docker build -f "$df" -t "$image" \
+  docker build --rm --force-rm -f "$df" -t "$image" \
     --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" .
   echo "=== [$(date +%T)] PUSH $name ==="
   docker push "$image"

@@ -75,7 +75,7 @@ export function WorkbenchPanelContent({
   const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
   const { documentId, provider } = useCanvasConnection();
   const { projectId, workspaceId } = useProjectContext();
-  const directorDesk = useDirectorDeskImport({ workspaceId, canEdit });
+  const directorDesk = useDirectorDeskImport({ workspaceId, projectId, canEdit });
   const storyboard = useStoryboard();
 
   const drawerActions = useMemo<ShotPictureDrawerActions>(

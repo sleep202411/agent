@@ -128,14 +128,15 @@ export function directorDeskOrigin(region: SiteRegion = "global"): string {
 
 export function requestDirectorDeskCapture(
   target: Window | null | undefined,
-  region: SiteRegion = "global"
+  region: SiteRegion = "global",
+  requestId = globalThis.crypto?.randomUUID?.() ?? `capture-${Date.now()}`
 ): void {
   const origin = directorDeskOrigin(region);
   target?.postMessage({ type: DIRECTOR_DESK_CAPTURE_REQUEST }, origin);
   target?.postMessage(
     {
       type: DIRECTOR_DESK_STAGING,
-      requestId: globalThis.crypto?.randomUUID?.() ?? `capture-${Date.now()}`,
+      requestId,
       operation: "capture",
       payload: {},
     },

@@ -8,7 +8,9 @@ import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-sto
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import {
   importDirectorCaptures,
-  isDirectorDeskOrigin,
+  directorDeskOrigin,
+  DIRECTOR_DESK_STAGING_RESULT,
+  type DirectorCapturesMessage,
   requestDirectorDeskCapture,
   parseDirectorCapturesMessage,
   parseDirectorDeskCommandError,
@@ -18,9 +20,11 @@ const CAPTURE_TIMEOUT_MS = 45_000;
 
 export function useDirectorDeskImport({
   workspaceId,
+  projectId,
   canEdit,
 }: {
   workspaceId?: string | null;
+  projectId: string;
   canEdit: boolean;
 }) {
   const t = useTranslations("canvasNodes.asset.directorDesk");
@@ -32,8 +36,13 @@ export function useDirectorDeskImport({
     selectNodes,
     canEdit: graphCanEdit,
   } = useCanvasGraphContext();
-  const seenOperations = useRef(new Set<string>());
-  const importing = useRef(false);
+  const active = useRef<{
+    target: Window;
+    requestId: string;
+    queue: DirectorCapturesMessage[];
+    seen: Set<string>;
+    processing: boolean;
+  } | null>(null);
   const timeoutRef = useRef<number | null>(null);
   const open = useProjectUIStore((s) => s.directorDeskOpen);
   const storeOpen = useProjectUIStore((s) => s.openDirectorDesk);
@@ -45,7 +54,7 @@ export function useDirectorDeskImport({
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    importing.current = false;
+    active.current = null;
     setBusy(false);
   }, []);
 
@@ -71,87 +80,109 @@ export function useDirectorDeskImport({
 
   const capture = useCallback(
     (target: Window | null | undefined) => {
-      if (busy || importing.current) return;
+      if (!open || !canEdit || !graphCanEdit || !target || active.current) return;
+      const requestId = crypto.randomUUID();
+      active.current = { target, requestId, queue: [], seen: new Set(), processing: false };
       setBusy(true);
       timeoutRef.current = window.setTimeout(() => {
         timeoutRef.current = null;
-        importing.current = false;
+        active.current = null;
         setBusy(false);
         toast.error(t("captureTimeout"));
       }, CAPTURE_TIMEOUT_MS);
-      requestDirectorDeskCapture(target, region);
+      requestDirectorDeskCapture(target, region, requestId);
     },
-    [busy, region, t]
+    [open, canEdit, graphCanEdit, region, t]
   );
 
   useEffect(() => {
-    if (!canEdit || !graphCanEdit) return;
+    if (!open || !canEdit || !graphCanEdit) return;
 
     const onMessage = (event: MessageEvent) => {
-      if (!isDirectorDeskOrigin(event.origin)) return;
+      const session = active.current;
+      if (
+        !session ||
+        event.origin !== directorDeskOrigin(region) ||
+        event.source !== session.target
+      )
+        return;
+      const staging = event.data?.type === DIRECTOR_DESK_STAGING_RESULT;
+      if (staging && event.data.requestId !== session.requestId) return;
       const commandError = parseDirectorDeskCommandError(event.data);
       if (commandError) {
-        clearBusy();
+        if (!session.processing) clearBusy();
         toast.error(commandError);
         return;
       }
       const parsed = parseDirectorCapturesMessage(event.data);
-      if (!parsed || seenOperations.current.has(parsed.payload.operationId)) return;
-      seenOperations.current.add(parsed.payload.operationId);
-      if (importing.current) return;
-      importing.current = true;
-      setBusy(true);
-      void importDirectorCaptures({
-        captures: parsed.payload.captures,
-        workspaceId,
-      })
-        .then((assets) => {
-          if (assets.length === 0) return;
-          addAssets(assets);
-          const origin = getNodes().length;
-          const ids = assets.map((asset, index) => {
-            const id = crypto.randomUUID();
-            addNode({
-              id,
-              type: "image",
-              position: {
-                x: 80 + (origin + index) * 36,
-                y: 80 + (origin + index) * 36,
-              },
-              data: {
-                src: asset.url,
-                mediaAssetId: asset.mediaAssetId,
-                label: asset.name,
-              },
+      if (!parsed || (!staging && parsed.payload.instanceId !== projectId)) return;
+      if (session.seen.has(parsed.payload.operationId)) return;
+      session.seen.add(parsed.payload.operationId);
+      session.queue.push(parsed);
+      // The capture arrived. Upload duration is independent of the capture timeout.
+      if (timeoutRef.current != null) window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+      if (session.processing) return;
+      session.processing = true;
+      void (async () => {
+        let failed = false;
+        let count = 0;
+        while (active.current === session && session.queue.length) {
+          const message = session.queue.shift()!;
+          try {
+            const assets = await importDirectorCaptures({
+              captures: message.payload.captures,
+              workspaceId,
             });
-            return id;
-          });
-          selectNodes(ids);
-          setDialogOpen(false);
-          toast.success(t("imported", { count: assets.length }));
-        })
-        .catch((error) => {
-          seenOperations.current.delete(parsed.payload.operationId);
-          toast.error(error instanceof Error ? error.message : t("importFailed"));
-        })
-        .finally(() => {
-          clearBusy();
-        });
+            // Closing, changing project or losing permission invalidates the session.
+            if (active.current !== session) return;
+            addAssets(assets);
+            const origin = getNodes().length;
+            const ids = assets.map((asset, index) => {
+              const id = crypto.randomUUID();
+              addNode({
+                id,
+                type: "image",
+                position: { x: 80 + (origin + index) * 36, y: 80 + (origin + index) * 36 },
+                data: { src: asset.url, mediaAssetId: asset.mediaAssetId, label: asset.name },
+              });
+              return id;
+            });
+            selectNodes(ids);
+            count += assets.length;
+          } catch (error) {
+            if (active.current !== session) return;
+            failed = true;
+            session.seen.delete(message.payload.operationId);
+            toast.error(error instanceof Error ? error.message : t("importFailed"));
+          }
+        }
+        if (active.current !== session) return;
+        clearBusy();
+        if (!failed) setDialogOpen(false);
+        if (count) toast.success(t("imported", { count }));
+      })();
     };
 
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      clearBusy();
+    };
   }, [
+    open,
+    projectId,
+    region,
+    workspaceId,
+    canEdit,
+    graphCanEdit,
     addAssets,
     addNode,
-    canEdit,
-    clearBusy,
     getNodes,
-    graphCanEdit,
     selectNodes,
+    clearBusy,
     setDialogOpen,
     t,
-    workspaceId,
   ]);
 
   return { open: openDesk, isOpen: open, setOpen: setDialogOpen, busy, capture };

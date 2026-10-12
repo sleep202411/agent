@@ -16,7 +16,7 @@ import {
   DIRECTOR_DESK_READY,
   DIRECTOR_DESK_STAGING_READY,
   directorDeskSrc,
-  isDirectorDeskOrigin,
+  directorDeskOrigin,
 } from "@/lib/canvas-authoring/director-desk-import";
 
 export function DirectorDeskDialog({
@@ -36,14 +36,21 @@ export function DirectorDeskDialog({
   const region = useSiteRegion();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [ready, setReady] = useState(false);
+  const identity = `${open}:${region}:${projectId}`;
+  const [readyIdentity, setReadyIdentity] = useState(identity);
+  if (readyIdentity !== identity) {
+    setReadyIdentity(identity);
+    setReady(false);
+  }
 
   useEffect(() => {
-    if (!open) {
-      setReady(false);
-      return;
-    }
+    if (!open) return;
     const onMessage = (event: MessageEvent) => {
-      if (!isDirectorDeskOrigin(event.origin)) return;
+      if (
+        event.origin !== directorDeskOrigin(region) ||
+        event.source !== frameRef.current?.contentWindow
+      )
+        return;
       if (
         event.data?.type === DIRECTOR_DESK_READY ||
         event.data?.type === DIRECTOR_DESK_STAGING_READY
@@ -53,7 +60,7 @@ export function DirectorDeskDialog({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [open]);
+  }, [open, projectId, region]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

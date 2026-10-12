@@ -88,7 +88,12 @@ it("trusts the deployed desk and local sidecar hosts", () => {
 });
 
 it("uploads each capture and returns canvas assets", async () => {
-  const upload = vi.fn(async (file: File) => ({
+  const upload = vi.fn<
+    (
+      file: File,
+      options?: { kind: string; workspaceId?: string }
+    ) => Promise<{ mediaAssetId: string; variantId: string; storageKey: string; url: string }>
+  >(async (file) => ({
     mediaAssetId: `media-${file.name}`,
     variantId: "v",
     storageKey: "k",
