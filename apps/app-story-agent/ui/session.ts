@@ -62,7 +62,7 @@ function createBinding(ctx: Context, transport: StoryTransport) {
     return source;
   };
   const unsupported = async () => {
-    throw new Error(copy(transport.context.locale).app.requestFailed);
+    throw new Error(copy(transport.displayLocale).app.requestFailed);
   };
   const failure = (error: unknown) =>
     new RemoteError("gateway/internal", error instanceof Error ? error.message : String(error), {});
@@ -395,7 +395,7 @@ function createBinding(ctx: Context, transport: StoryTransport) {
       byId: {
         [sessionId]: {
           id: sessionId,
-          displayTitle: metadata?.title ?? copy(transport.context.locale).h5.title,
+          displayTitle: metadata?.title ?? copy(transport.displayLocale).h5.title,
           title: metadata?.title,
           running,
           retainedBy: retention.getSnapshot().retainedBy,
@@ -409,7 +409,11 @@ function createBinding(ctx: Context, transport: StoryTransport) {
   const unsubscribeMetadata = transport.conversations.subscribe(() =>
     refreshBinding(transport.history.getCurrentResult())
   );
+  const unsubscribeLanguage = transport.subscribeDisplayLocale(() =>
+    refreshBinding(transport.history.getCurrentResult())
+  );
   ctx.effect(() => async () => {
+    unsubscribeLanguage();
     unsubscribe();
     unsubscribeMetadata();
     await scope.fiber.dispose();
@@ -506,7 +510,7 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
         return root.context.chapterId as SessionId;
       }
       const row = await root.createConversation({
-        title: copy(root.context.locale).h5.newConversation,
+        title: copy(root.displayLocale).h5.newConversation,
       });
       refresh();
       return row.id as SessionId;
@@ -592,7 +596,7 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
   const view = (): WorkspaceView => ({
     workspaceId: (root.context.projectId ?? "new-story") as WorkspaceId,
     path: `story://${root.context.projectId}`,
-    title: copy(root.context.locale).h5.title,
+    title: copy(root.displayLocale).h5.title,
     sessionIds: (root.conversations.getCurrentResult().data ?? []).map(
       (row) => row.id as SessionId
     ),

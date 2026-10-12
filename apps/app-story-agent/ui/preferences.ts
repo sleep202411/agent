@@ -1,4 +1,6 @@
 import { createSnapshotStore } from "@deepseek-ai/dsh-client-store";
+import { useSyncExternalStore } from "react";
+import { presentationLocale, type StoryContext, type StoryTransport } from "./transport";
 import type {
   ConfigForm,
   ConfigFormSnapshot,
@@ -7,13 +9,16 @@ import type {
 import type { SettingsPathOpView } from "@deepseek-ai/dsh-api-remotes/client";
 
 /** Browser presentation preferences only. No model, credential or developer settings are served. */
-export function storyPreferences(projectId: string) {
+export function storyPreferences(projectId: string, locale: StoryContext["locale"]) {
   const defaults: Record<string, Record<string, unknown>> = {
+    locale: { preference: locale },
     "ui-theme": { preference: "dark", fontSize: 14 },
     "ui-chat": { transcriptView: "compact", performanceUsage: "detailed", linkOpening: "new-tab" },
     "ui-conversation": { busyEnter: "queue" },
   };
   const valid = (namespace: string, value: Record<string, unknown>) => {
+    if (namespace === "locale")
+      return ["en", "zh", "en-US", "zh-CN", "zh-HK"].includes(String(value.preference));
     if (namespace === "ui-theme")
       return (
         ["dark", "light", "system"].includes(String(value.preference)) &&
@@ -43,7 +48,8 @@ export function storyPreferences(projectId: string) {
     get<T>(namespace: string): ConfigForm<T> {
       if (!forms.has(namespace)) {
         const base = defaults[namespace] ?? {};
-        const storageKey = `story-ui:${projectId}:${namespace}`;
+        const storageKey =
+          namespace === "locale" ? "story-ui:locale" : `story-ui:${projectId}:${namespace}`;
         let user: Record<string, unknown> = {};
         try {
           const value = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
@@ -73,6 +79,10 @@ export function storyPreferences(projectId: string) {
           }
           const value = { ...base, ...next };
           if (!valid(namespace, value)) return false;
+          if (namespace === "locale" && next.preference !== undefined) {
+            next.preference = presentationLocale(String(next.preference));
+            value.preference = next.preference;
+          }
           user = next;
           try {
             localStorage.setItem(storageKey, JSON.stringify(user));
@@ -112,4 +122,9 @@ export function storyPreferences(projectId: string) {
   } satisfies Pick<ConfigForms, "get" | "describe" | "whileServed"> & {
     developerTools: Pick<ConfigForms["developerTools"], "enabled" | "setEnabled">;
   };
+}
+
+/** Subscribe to Harness's language; production requests retain their admitted locale. */
+export function useStoryLocale(transport: StoryTransport) {
+  return useSyncExternalStore(transport.subscribeDisplayLocale, transport.getDisplayLocale);
 }

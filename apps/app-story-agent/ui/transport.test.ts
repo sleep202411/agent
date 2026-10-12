@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryHistory, StoryRun } from "@repo/app-story-protocol";
+import { createSnapshotStore } from "@deepseek-ai/dsh-client-store";
 import { StoryTransport, copy, loadContext } from "./transport";
+import { storyPreferences } from "./preferences";
 import { projectHistory, forkBoundary, storyMediaDefinition, videoProgress } from "./events";
 
 const projectId = "00000000-0000-4000-8000-000000000001";
@@ -43,6 +45,42 @@ const create = () => {
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
+});
+
+it("shares live UI language across chapters and reloads without changing the production locale", async () => {
+  window.history.replaceState(null, "", "/index.html");
+  const transport = create();
+  const chapter = transport.forChapter(chapterId);
+  const child = chapter.forChapter(projectId);
+  transports.push(chapter, child);
+  const language = createSnapshotStore({ active: "en-US" });
+  transport.bindDisplayLanguage(language);
+  const changed = vi.fn();
+  const unsubscribe = child.subscribeDisplayLocale(changed);
+  language.set({ active: "zh" });
+  expect(child.displayLocale).toBe("zh-CN");
+  expect(changed).toHaveBeenCalledOnce();
+  language.set({ active: "zh-HK" });
+  expect(child.displayLocale).toBe("zh-HK");
+  const fetcher = vi.fn<typeof fetch>(async () => response({ code: 200, data: null }));
+  vi.stubGlobal("fetch", fetcher);
+  await child.script();
+  expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ "accept-language": "en-US" });
+  expect(child.context.locale).toBe("en-US");
+  unsubscribe();
+  changed.mockClear();
+  language.set({ active: "en" });
+  expect(changed).not.toHaveBeenCalled();
+  expect(child.displayLocale).toBe("en-US");
+
+  const preference = storyPreferences(projectId, "en-US").get<{ preference: string }>("locale");
+  await expect(preference.set("preference", "zh")).resolves.toBe(true);
+  expect(
+    storyPreferences(chapterId, "en-US").get<{ preference: string }>("locale").getSnapshot().value
+      ?.preference
+  ).toBe("zh-CN");
+  await expect(preference.set("preference", "unsupported")).resolves.toBe(false);
 });
 afterEach(() => {
   transports.splice(0).forEach((transport) => transport.dispose());

@@ -8,6 +8,7 @@ import {
 } from "@repo/experience-player-react";
 import type { StoryPreview } from "@repo/app-story-protocol";
 import { StoryTransport, playerCopy } from "./transport";
+import { useStoryLocale } from "./preferences";
 
 // Only relocate the packaged built-in theme; preserve the server's integrity hash.
 export const loadHostedStoryTheme: ExperienceThemeLoader = (manifest, signal) =>
@@ -42,7 +43,8 @@ export default function StoryPlayer({ transport }: { transport: StoryTransport }
   const subscribe = useMemo(() => observer.subscribe.bind(observer), [observer]);
   const result = useSyncExternalStore(subscribe, () => observer.getCurrentResult());
   useEffect(() => () => observer.destroy(), [observer]);
-  const t = playerCopy(transport.context.locale);
+  const locale = useStoryLocale(transport);
+  const t = playerCopy(locale);
   const copy: ExperiencePlayerCopy = {
     ...t,
     unknownEnding: () => t.unknownEnding,
@@ -66,7 +68,7 @@ export default function StoryPlayer({ transport }: { transport: StoryTransport }
           key={result.data.contentHash}
           runtime={result.data.runtime}
           loadTheme={loadHostedStoryTheme}
-          locale={transport.context.locale}
+          locale={locale}
           coverUrl={result.data.coverUrl ?? undefined}
           frameProfile="auto"
           copy={copy}

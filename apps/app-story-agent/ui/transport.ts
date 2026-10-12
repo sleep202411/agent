@@ -42,6 +42,14 @@ export const copy = (locale: StoryContext["locale"]) =>
 export const playerCopy = (locale: StoryContext["locale"]) =>
   ({ "en-US": en, "zh-CN": cn, "zh-HK": hk })[locale].experiencePlayer;
 
+export const presentationLocale = (locale: string): StoryContext["locale"] =>
+  ContextSchema.shape.locale.parse(locale === "en" ? "en-US" : locale === "zh" ? "zh-CN" : locale);
+
+interface DisplayLanguage {
+  getSnapshot(): { active: string };
+  subscribe(listener: () => void): () => void;
+}
+
 export function storyLocale(): StoryContext["locale"] {
   const explicit = ContextSchema.shape.locale.safeParse(
     new URLSearchParams(location.search).get("locale")
@@ -76,6 +84,23 @@ export function resumeAuthorization(run: StoryRun, authorizedPoints?: number, co
 }
 
 export class StoryTransport {
+  private displayLanguage?: DisplayLanguage;
+  bindDisplayLanguage(language: DisplayLanguage) {
+    if (this.owner) this.owner.bindDisplayLanguage(language);
+    else this.displayLanguage = language;
+  }
+  get displayLocale(): StoryContext["locale"] {
+    return this.owner
+      ? this.owner.displayLocale
+      : this.displayLanguage
+        ? presentationLocale(this.displayLanguage.getSnapshot().active)
+        : this.context.locale;
+  }
+  readonly getDisplayLocale = () => this.displayLocale;
+  readonly subscribeDisplayLocale = (listener: () => void): (() => void) =>
+    this.owner
+      ? this.owner.subscribeDisplayLocale(listener)
+      : (this.displayLanguage?.subscribe(listener) ?? (() => {}));
   readonly queries: QueryClient;
   readonly conversations: QueryObserver<ReturnType<typeof StoryConversationsSchema.parse>>;
   private readonly ownsQueries: boolean;
@@ -136,7 +161,7 @@ export class StoryTransport {
             ? Promise.resolve([
                 {
                   id: context.chapterId!,
-                  title: copy(context.locale).h5.newConversation,
+                  title: copy(this.displayLocale).h5.newConversation,
                   pinned: false,
                   archived: false,
                   rank: 0,
@@ -169,7 +194,7 @@ export class StoryTransport {
       const url = new URL(location.href);
       const entryId = this.context.chapterId!;
       if (!z.uuid().safeParse(entryId).success)
-        throw new Error(copy(this.context.locale).h5.contextRequired);
+        throw new Error(copy(this.displayLocale).h5.contextRequired);
       url.searchParams.set("entryId", entryId);
       window.history.replaceState(null, "", url);
       const response = await fetch("/aurora/app-story-agent/entry", {
@@ -180,14 +205,14 @@ export class StoryTransport {
         body: JSON.stringify({
           entryId,
           locale: this.context.locale,
-          title: copy(this.context.locale).h5.newConversation,
+          title: copy(this.displayLocale).h5.newConversation,
         }),
         signal: AbortSignal.timeout(20000),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.code !== 200)
         throw new Error(
-          payload?.msg || payload?.message || copy(this.context.locale).app.requestFailed
+          payload?.msg || payload?.message || copy(this.displayLocale).app.requestFailed
         );
       const context = ContextSchema.safeParse(payload.data);
       if (
@@ -196,7 +221,7 @@ export class StoryTransport {
         context.data.projectId !== entryId ||
         context.data.chapterId !== entryId
       )
-        throw new Error(copy(this.context.locale).h5.backendInvalidResponse);
+        throw new Error(copy(this.displayLocale).h5.backendInvalidResponse);
       Object.assign(this.context, context.data);
       this.legacyChapterId = this.context.chapterId;
       url.searchParams.delete("entryId");
@@ -299,7 +324,7 @@ export class StoryTransport {
     signal?: AbortSignal
   ): Promise<T> {
     if (this.bridge?.authenticationRequired)
-      throw Object.assign(new Error(copy(this.context.locale).h5.sessionRequired), { status: 401 });
+      throw Object.assign(new Error(copy(this.displayLocale).h5.sessionRequired), { status: 401 });
     const response = await fetch(`${this.path}${path}`, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
@@ -313,13 +338,13 @@ export class StoryTransport {
     const payload = await response.json().catch(() => null);
     if (response.status === 401 || payload?.code === 401) this.bridge?.authenticationExpired();
     if (!payload || typeof payload !== "object")
-      throw new Error(copy(this.context.locale).h5.backendInvalidResponse);
+      throw new Error(copy(this.displayLocale).h5.backendInvalidResponse);
     const businessFailure = this.local
       ? payload.code !== undefined && payload.code !== 200
       : payload.code !== 200;
     if (!response.ok || businessFailure) {
       const error = new Error(
-        payload.msg || payload.message || copy(this.context.locale).app.requestFailed
+        payload.msg || payload.message || copy(this.displayLocale).app.requestFailed
       );
       Object.assign(error, { status: response.ok ? payload.code : response.status });
       throw error;
@@ -327,7 +352,7 @@ export class StoryTransport {
     try {
       return schema.parse(this.local ? payload : payload.data);
     } catch {
-      throw new Error(copy(this.context.locale).h5.backendInvalidResponse);
+      throw new Error(copy(this.displayLocale).h5.backendInvalidResponse);
     }
   }
   get pendingSubmissionId() {
@@ -340,11 +365,11 @@ export class StoryTransport {
   async send(message: string, submissionId?: string, attachmentIds?: string[]) {
     await this.initializeProject();
     if (!this.context.ready || !this.context.chapterId)
-      throw new Error(copy(this.context.locale).h5.backendUnconfigured);
+      throw new Error(copy(this.displayLocale).h5.backendUnconfigured);
     const refreshed = await this.history.refetch();
     if (refreshed.error) throw refreshed.error;
     const history = refreshed.data;
-    if (!history) throw new Error(copy(this.context.locale).h5.backendUnavailable);
+    if (!history) throw new Error(copy(this.displayLocale).h5.backendUnavailable);
     // Retain the same submission after an uncertain reply. Server owns admission
     // and spending; a lost HTTP response must never create a second paid run.
     const observed =
@@ -368,12 +393,12 @@ export class StoryTransport {
       .map((byte) => byte.toString(16).padStart(2, "0"))
       .join("");
     if (this.receipt && this.receipt.messageHash !== messageHash)
-      throw new Error(copy(this.context.locale).h5.awaitingReceipt);
+      throw new Error(copy(this.displayLocale).h5.awaitingReceipt);
     if (
       history.legacyActiveRunId ||
       history.runs.some((run) => isActive(run) || run.status === "blocked")
     )
-      throw new Error(copy(this.context.locale).app.previousActive);
+      throw new Error(copy(this.displayLocale).app.previousActive);
     this.savePending(
       StartStoryRunSchema.parse({
         submissionId: this.receipt?.submissionId ?? submissionId ?? crypto.randomUUID(),
@@ -423,24 +448,24 @@ export class StoryTransport {
         (run) =>
           run.chapterId === this.context.chapterId && (isActive(run) || run.status === "blocked")
       );
-    if (!active) throw new Error(copy(this.context.locale).app.previousActive);
+    if (!active) throw new Error(copy(this.displayLocale).app.previousActive);
     await this.request(`/runs/${active.id}/cancel`, StoryRunSchema, {});
     await this.history.refetch();
   }
   async resume(run: StoryRun, authorizedPoints?: number, mediaAction?: "confirm" | "refresh") {
     const quote = mediaAction ? run.mediaQuote : undefined;
-    if (mediaAction && !quote) throw new Error(copy(this.context.locale).h5.quoteUnavailable);
+    if (mediaAction && !quote) throw new Error(copy(this.displayLocale).h5.quoteUnavailable);
     if (mediaAction !== "refresh") {
       const current = await this.history.refetch({ throwOnError: true });
-      if (!current.data) throw new Error(copy(this.context.locale).app.previousActive);
+      if (!current.data) throw new Error(copy(this.displayLocale).app.previousActive);
       if (
         resumeAuthorization(run, authorizedPoints, mediaAction === "confirm") >
         current.data.authorizationLimit
       )
         throw new Error(
-          copy(this.context.locale).h5.authorizationLimitExceeded.replace(
+          copy(this.displayLocale).h5.authorizationLimitExceeded.replace(
             "{points}",
-            new Intl.NumberFormat(this.context.locale).format(current.data.authorizationLimit)
+            new Intl.NumberFormat(this.displayLocale).format(current.data.authorizationLimit)
           )
         );
     }
@@ -464,7 +489,7 @@ export class StoryTransport {
   }
   async changeVideoModel(run: StoryRun, modelId: string) {
     const quote = run.mediaQuote;
-    if (!quote) throw new Error(copy(this.context.locale).h5.quoteUnavailable);
+    if (!quote) throw new Error(copy(this.displayLocale).h5.quoteUnavailable);
     await this.request(`/runs/${run.id}/video-model`, StoryRunSchema, {
       modelId,
       runVersion: run.version,
@@ -531,7 +556,7 @@ export class StoryTransport {
   }
   async attachmentData(id: string) {
     if (this.bridge?.authenticationRequired)
-      throw new Error(copy(this.context.locale).h5.sessionRequired);
+      throw new Error(copy(this.displayLocale).h5.sessionRequired);
     const response = await fetch(this.attachmentUrl(id), {
       credentials: "same-origin",
       redirect: "error",
@@ -540,7 +565,7 @@ export class StoryTransport {
     if (response.status === 401) this.bridge?.authenticationExpired();
     if (!response.ok) {
       const error = await response.json().catch(() => null);
-      throw new Error(error?.msg || error?.message || copy(this.context.locale).app.requestFailed);
+      throw new Error(error?.msg || error?.message || copy(this.displayLocale).app.requestFailed);
     }
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -551,9 +576,9 @@ export class StoryTransport {
     onProgress?: (progress: { loaded: number; total?: number }) => void
   ) {
     if (this.bridge?.authenticationRequired)
-      throw new Error(copy(this.context.locale).h5.sessionRequired);
+      throw new Error(copy(this.displayLocale).h5.sessionRequired);
     if (file.size > 10 * 1024 * 1024)
-      throw new Error(copy(this.context.locale).h5.attachmentTooLarge);
+      throw new Error(copy(this.displayLocale).h5.attachmentTooLarge);
     signal?.throwIfAborted();
     await this.initializeProject();
     const form = new FormData();
@@ -579,7 +604,7 @@ export class StoryTransport {
         });
       xhr.onerror = xhr.ontimeout = () => {
         cleanup();
-        reject(new Error(copy(this.context.locale).h5.backendUnavailable));
+        reject(new Error(copy(this.displayLocale).h5.backendUnavailable));
       };
       xhr.onload = () => {
         cleanup();
@@ -592,7 +617,7 @@ export class StoryTransport {
           (!this.local && value?.code !== 200)
         )
           return reject(
-            new Error(value?.msg || value?.message || copy(this.context.locale).app.requestFailed)
+            new Error(value?.msg || value?.message || copy(this.displayLocale).app.requestFailed)
           );
         resolve(this.local ? value : value?.data);
       };

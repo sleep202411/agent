@@ -46,7 +46,7 @@ import * as Resources from "@deepseek-ai/dsh-client-resources/client";
 import * as SettingsGeneral from "@deepseek-ai/dsh-client-ui-settings-general/client";
 import ShortcutsService from "@deepseek-ai/dsh-client-shortcuts/client";
 import type { SessionId } from "@deepseek-ai/dsh-session/types";
-import { storyPreferences } from "./preferences";
+import { storyPreferences, useStoryLocale } from "./preferences";
 import type { PropsRuntime } from "@deepseek-ai/dsh-client-ui-slots";
 import type {
   StoryOutputs,
@@ -69,7 +69,8 @@ function NativeResourceActions({
   runId?: string;
 }) {
   const bridge = transport.bridge;
-  const t = copy(transport.context.locale).h5;
+  const locale = useStoryLocale(transport);
+  const t = copy(locale).h5;
   const [pending, setPending] = useState(false);
   const busy = useRef(false);
   const [error, setError] = useState<string>();
@@ -139,7 +140,8 @@ function VideoModelChoice({
   disabled: boolean;
   onChange: (modelId: string) => void;
 }) {
-  const t = copy(transport.context.locale).h5;
+  const locale = useStoryLocale(transport);
+  const t = copy(locale).h5;
   const [open, setOpen] = useState(false);
   const observer = useMemo(
     () =>
@@ -208,7 +210,8 @@ function ResultCard({
   title?: string;
   children?: React.ReactNode;
 }) {
-  const t = copy(transport.context.locale).h5;
+  const locale = useStoryLocale(transport);
+  const t = copy(locale).h5;
   const playable =
     run.status === "completed" &&
     run.result?.previewPath ===
@@ -271,7 +274,8 @@ function MediaOutputs({
   latest?: boolean;
   onOpen?: (panel: StoryPanel) => void;
 }) {
-  const t = copy(transport.context.locale).h5;
+  const locale = useStoryLocale(transport);
+  const t = copy(locale).h5;
   const runId = run?.id;
   const observer = useMemo(
     () =>
@@ -299,13 +303,13 @@ function MediaOutputs({
       ? t.videoProgressSeconds
           .replace(
             "{completed}",
-            new Intl.NumberFormat(transport.context.locale, { maximumFractionDigits: 1 }).format(
+            new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
               progress.completedMs! / 1000
             )
           )
           .replace(
             "{total}",
-            new Intl.NumberFormat(transport.context.locale, { maximumFractionDigits: 1 }).format(
+            new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(
               progress.totalMs / 1000
             )
           )
@@ -453,6 +457,7 @@ function MediaOutputs({
 }
 
 function ScriptOutput({ transport, title }: { transport: StoryTransport; title: string }) {
+  const t = copy(useStoryLocale(transport)).h5;
   const observer = useMemo(
     () =>
       new QueryObserver<StoryScript>(transport.queries, {
@@ -465,10 +470,7 @@ function ScriptOutput({ transport, title }: { transport: StoryTransport; title: 
   const result = useSyncExternalStore(subscribe, () => observer.getCurrentResult());
   useEffect(() => () => observer.destroy(), [observer]);
   const error =
-    result.error?.message ??
-    (result.isSuccess && !result.data
-      ? copy(transport.context.locale).h5.scriptUnavailable
-      : undefined);
+    result.error?.message ?? (result.isSuccess && !result.data ? t.scriptUnavailable : undefined);
   return (
     <div className="story-script" aria-busy={result.isPending}>
       {error && (
@@ -493,8 +495,10 @@ function ScriptOutput({ transport, title }: { transport: StoryTransport; title: 
 export async function mountStoryAgent(container: HTMLElement, transport: StoryTransport) {
   const ctx = new Context();
   try {
-    const t = copy(transport.context.locale);
-    const preferences = storyPreferences(transport.context.projectId ?? "unconfigured");
+    const preferences = storyPreferences(
+      transport.context.projectId ?? "unconfigured",
+      transport.context.locale
+    );
     ctx.reflect.provide("configForms", preferences);
     const { sessions, transportFor, initialId, activate } = createStorySession(ctx, transport);
     const remote = {
@@ -564,6 +568,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     await ctx.plugin(Renderer).await();
     await ctx.plugin(UiSession).await();
     await ctx.plugin(Locale).await();
+    transport.bindDisplayLanguage(ctx.locale);
     const locales = ["en-US", "zh-CN", "zh-HK"] as const;
     for (const locale of locales) {
       ctx.locale.addLanguage({
@@ -628,7 +633,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     ctx.effect(() => transport.history.subscribe(updateStatus));
     ctx.effect(() => () => removeStatus?.());
     updateStatus();
-    ctx.locale.setLocale(transport.context.locale);
+    ctx.locale.setLocale(transport.displayLocale);
     await ctx.plugin(Theme).await();
     await ctx.plugin(ShortcutsService).await();
     await ctx.plugin(Layout).await();
@@ -680,6 +685,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
           children: { "sidebar.settings": { kind: "single", scope: "root" } },
         },
         function ProductHeader({ renderSlot }) {
+          const t = copy(useStoryLocale(transport));
           return (
             <div className="story-product-header">
               {transport.bridge && (
@@ -711,6 +717,9 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     await transport.conversations.refetch();
     if (initialId) ctx.uiWorkspace.openSession(initialId);
     activate();
+    ctx.on("locale/change", ({ active }) => {
+      if (active !== "en" && active !== "zh") activate();
+    });
     await ctx.plugin(Attachment).await();
     await ctx.plugin(InputTrigger).await();
     await ctx.plugin(Conversation).await();
@@ -726,16 +735,18 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
         inject: ["uiConversation", "conversation", "slots"],
         apply(scope: Context) {
           for (const [kind, label] of [
-            ["story-script", t.h5.scriptPanel],
-            ["story-media", t.h5.mediaPanel],
-            ["story-player", t.h5.playerPanel],
+            ["story-script", "scriptPanel"],
+            ["story-media", "mediaPanel"],
+            ["story-player", "playerPanel"],
           ] as const) {
             scope.effect(() =>
               ctx.sidebarRightTabs.register({
                 id: kind,
                 kind,
-                title: () => label,
-                guide: [{ id: kind, order: 100, title: () => label }],
+                title: () => copy(transport.displayLocale).h5[label],
+                guide: [
+                  { id: kind, order: 100, title: () => copy(transport.displayLocale).h5[label] },
+                ],
               })
             );
             scope.slots.inject("sidebar.right.pane.tab", () =>
@@ -743,6 +754,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 { name: "sidebar.right.pane.tab", key: kind },
                 function StoryPanel({ sessionId }: PropsRuntime<"sidebar.right.pane.tab">) {
                   const current = transportFor(sessionId!);
+                  const t = copy(useStoryLocale(current));
                   const history = useSyncExternalStore(
                     current.history.subscribe.bind(current.history),
                     () => current.history.getCurrentResult()
@@ -769,6 +781,8 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
           }
           function Production({ turn, sessionId }: PropsRuntime<"conversation.chat.turnTail">) {
             const transport = transportFor(sessionId);
+            const locale = useStoryLocale(transport);
+            const t = copy(locale);
             const snapshot = useSyncExternalStore(
               transport.history.subscribe.bind(transport.history),
               () => transport.history.getCurrentResult()
@@ -1066,6 +1080,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
           );
           // Admission and spending remain Server-owned for every selected chapter.
           const block = () => {
+            const t = copy(transport.displayLocale);
             const result = transport.history.getCurrentResult();
             const reason = !transport.context.ready
               ? t.h5.backendUnconfigured
@@ -1086,6 +1101,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
               scope.conversation.blocks.set(row.id as SessionId, reason ? { reason } : undefined);
           };
           scope.effect(() => transport.history.subscribe(block));
+          scope.effect(() => transport.subscribeDisplayLocale(block));
           block();
         },
       })
