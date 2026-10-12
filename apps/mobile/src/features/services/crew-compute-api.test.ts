@@ -10,6 +10,7 @@ const row = {
   id,
   crewId: "crew",
   userId: "creator",
+  kind: "top_up",
   requestedByUserId: "user",
   remainingWorkload: "1.5",
   workloadUnit: "hours",
@@ -27,6 +28,8 @@ const row = {
 const page = {
   isOwner: true,
   workspaceLinked: true,
+  projectBudget: null,
+  taskUsage: [],
   consumedPoints: "9007199254740993",
   totals: { pending: 20 },
   tasks: [

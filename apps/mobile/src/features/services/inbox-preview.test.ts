@@ -44,3 +44,15 @@ it("preserves literal text markers and safely handles malformed or future activi
     "File"
   );
 });
+
+it("formats recent and earlier message times in the active locale", async () => {
+  const { inboxTime } = await import("./inbox-preview");
+  const date = new Date(2026, 9, 2, 14, 5);
+  expect(inboxTime(date.toISOString(), "en-US", date)).toBe(
+    date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+  );
+  expect(inboxTime(date.toISOString(), "zh-CN", new Date(2026, 9, 3))).toBe(
+    date.toLocaleDateString("zh-CN", { month: "short", day: "numeric" })
+  );
+  expect(inboxTime("invalid", "en-US", date)).toBe("invalid");
+});

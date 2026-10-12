@@ -1,28 +1,43 @@
-import { useEffect, useRef, useState } from "react";
+import { taskWorkflowLabel } from "./task-workflow-label";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
+import { useTaskWorkflowSession, type TaskWorkflowSession } from "./use-task-workflow-session";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
-import {
-  fetchTaskWorkflow,
-  moveTaskWorkflow,
-  type WorkflowSnapshot,
-} from "./task-workflow-edit-api";
+import { fetchTaskWorkflow, type WorkflowSnapshot } from "./task-workflow-edit-api";
 import { TaskWorkflowField } from "./task-workflow-field";
-import type { TaskWorkflow } from "./task-workflow-api";
 import type { TaskDetail } from "./task-detail-api";
-type Props = { task: TaskDetail; userId: string; generation: number; onRefresh: () => void };
+type Props = {
+  task: TaskDetail;
+  userId: string;
+  generation: number;
+  onRefresh: () => void;
+  session?: TaskWorkflowSession;
+};
 export function TaskWorkflowEditor(props: Props) {
+  if (props.session) return <WorkflowAccess {...props} session={props.session} />;
+  return <LocalWorkflow key={`${props.task.id}:${props.generation}`} {...props} />;
+}
+function LocalWorkflow(props: Props) {
+  const session = useTaskWorkflowSession(props.task.id, props.generation, props.onRefresh);
+  return <WorkflowAccess {...props} session={session} />;
+}
+function WorkflowAccess(props: Props & { session: TaskWorkflowSession }) {
   if (["submitted", "approved", "cancelled"].includes(props.task.status)) return null;
   return <Access key={`${props.task.id}:${props.task.version}:${props.generation}`} {...props} />;
 }
-function Access({ task, userId, generation, onRefresh }: Props) {
+function Access({
+  task,
+  userId,
+  generation,
+  onRefresh,
+  session,
+}: Props & { session: TaskWorkflowSession }) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
-  const [editing, setEditing] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskCommentAccess(task.crewId, userId, controller.signal).then(
@@ -38,14 +53,9 @@ function Access({ task, userId, generation, onRefresh }: Props) {
     return () => controller.abort();
   }, [task.crewId, userId, generation]);
   if (allowed === false) return null;
-  if (editing && allowed)
+  if (session.editing && allowed)
     return (
-      <LoadEditor
-        task={task}
-        generation={generation}
-        onRefresh={onRefresh}
-        onCancel={() => setEditing(false)}
-      />
+      <LoadEditor task={task} generation={generation} onRefresh={onRefresh} session={session} />
     );
   return (
     <View style={{ gap: 8 }}>
@@ -62,7 +72,7 @@ function Access({ task, userId, generation, onRefresh }: Props) {
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            if (generation === getAuthGeneration()) setEditing(true);
+            if (generation === getAuthGeneration()) session.open();
           }}
           style={{ padding: 12 }}
         >
@@ -73,16 +83,19 @@ function Access({ task, userId, generation, onRefresh }: Props) {
   );
 }
 
-function LoadEditor(props: Omit<Props, "userId"> & { onCancel: () => void }) {
+function LoadEditor(props: Omit<Props, "userId"> & { session: TaskWorkflowSession }) {
   const t = useTranslations();
+  const initialize = props.session.initialize;
   const [snapshot, setSnapshot] = useState<WorkflowSnapshot>(),
     [error, setError] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskWorkflow(props.task, controller.signal).then(
       (value) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+        if (!controller.signal.aborted && props.generation === getAuthGeneration()) {
+          initialize(value);
           setSnapshot(value);
+        }
       },
       (cause) => {
         if (!controller.signal.aborted && props.generation === getAuthGeneration())
@@ -90,13 +103,16 @@ function LoadEditor(props: Omit<Props, "userId"> & { onCancel: () => void }) {
       }
     );
     return () => controller.abort();
-  }, [props.task, props.generation]);
-  if (snapshot) return <Editor {...props} snapshot={snapshot} />;
+  }, [props.task, props.generation, initialize]);
+  if (snapshot && props.session.draft) return <Editor {...props} snapshot={snapshot} />;
   return (
     <View style={{ gap: 8 }}>
       {!error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      <Pressable accessibilityRole="button" onPress={error ? props.onRefresh : props.onCancel}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={error ? props.onRefresh : props.session.cancel}
+      >
         <ThemedText>{t(error ? "thread.refresh" : "myServices.cancel")}</ThemedText>
       </Pressable>
     </View>
@@ -106,69 +122,75 @@ function Editor({
   snapshot,
   generation,
   onRefresh,
-  onCancel,
+  session,
 }: {
   snapshot: WorkflowSnapshot;
   generation: number;
   onRefresh: () => void;
-  onCancel: () => void;
+  session: TaskWorkflowSession;
 }) {
-  const t = useTranslations(),
-    op = useAuthFormOperation(snapshot.id, true);
-  const [draft, setDraft] = useState<TaskWorkflow | null>(snapshot.workflowState);
-  const [attempted, setAttempted] = useState(false),
-    [error, setError] = useState<string>();
-  const attemptedRef = useRef(false),
-    locked = attempted || op.busy;
-  const changed = draft !== null && draft.id !== snapshot.workflowStateId;
+  const t = useTranslations();
+  const draft = session.draft!;
+  const locked = session.busy || !!draft.attemptedAt;
+  const stale = snapshot.version !== draft.snapshot.version;
+  const changed = !!draft.target && draft.target.id !== draft.snapshot.workflowStateId;
+  const canSave = changed && !locked && !stale;
+  const canReview =
+    !session.busy && (stale || (!!draft.attemptedAt && snapshot !== draft.attemptedAt));
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskWorkflow.edit")}</ThemedText>
       <TaskWorkflowField
         crewId={snapshot.crewId}
         generation={generation}
-        selected={draft}
-        onSelect={setDraft}
+        selected={draft.target}
+        onSelect={session.change}
         allowDefault={false}
         locked={locked}
       />
-      {error && (
-        <>
-          <ThemedText accessibilityRole="alert">{error}</ThemedText>
-          <Pressable accessibilityRole="button" onPress={onRefresh}>
-            <ThemedText>{t("thread.refresh")}</ThemedText>
+      {draft.error && <ThemedText accessibilityRole="alert">{draft.error}</ThemedText>}
+      {(draft.error || stale) && (
+        <Pressable
+          accessibilityRole="button"
+          disabled={session.busy}
+          onPress={onRefresh}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>{t("thread.refresh")}</ThemedText>
+        </Pressable>
+      )}
+      {canReview && (
+        <View style={{ gap: 8 }}>
+          <ThemedText>{t("taskWorkflow.latest")}</ThemedText>
+          <ThemedText>{taskWorkflowLabel(snapshot.workflowState, t)}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => session.review(snapshot)}
+            style={{ padding: 12 }}
+          >
+            <ThemedText>{t("taskBrief.reviewLatest")}</ThemedText>
           </Pressable>
-        </>
+        </View>
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={!changed || locked}
-        style={{ padding: 12 }}
+        disabled={!canSave}
         onPress={() => {
-          if (!changed || locked || attemptedRef.current || generation !== getAuthGeneration())
-            return;
-          void op.run(
-            () => {
-              attemptedRef.current = true;
-              setAttempted(true);
-              return moveTaskWorkflow(snapshot, draft!);
-            },
-            onRefresh,
-            (cause) => setError(cause instanceof Error ? cause.message : String(cause))
-          );
+          if (canSave) session.save(snapshot);
         }}
+        style={{ padding: 12, opacity: canSave ? 1 : 0.45 }}
       >
         <ThemedText>{t("taskWorkflow.save")}</ThemedText>
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy}
-        style={{ padding: 12 }}
-        onPress={attempted ? onRefresh : onCancel}
+        disabled={session.busy}
+        onPress={session.cancel}
+        style={{ padding: 12, opacity: session.busy ? 0.45 : 1 }}
       >
         <ThemedText>{t("myServices.cancel")}</ThemedText>
       </Pressable>
-      {op.busy && <ActivityIndicator />}
+      {session.busy && <ActivityIndicator />}
     </View>
   );
 }

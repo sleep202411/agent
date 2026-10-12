@@ -12,6 +12,7 @@ vi.mock("./application-amendments-api", async (original) => ({
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  active: true,
   get: vi.fn(),
   post: vi.fn(),
   close: vi.fn(),
@@ -118,6 +119,7 @@ const render = async (reviewer = false) => {
   await act(async () =>
     root.render(
       <ApplicationAmendments
+        active={h.active}
         crewId="crew"
         applicationId="app"
         applicantId="creator"
@@ -143,6 +145,7 @@ const type = async (key: string, value: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.context.mockResolvedValue(context);
   h.get.mockResolvedValue({ items: [row], nextCursor: null });
   h.post.mockResolvedValue({ ...row, status: "effective", confirmedAt: "2026-10-02T00:00:00Z" });
@@ -314,4 +317,36 @@ it("ignores late success after leaving", async () => {
     resolve({ ...row, status: "effective", confirmedAt: "2026-10-02T00:00:00Z" })
   );
   expect(host.textContent).toBe("");
+});
+
+it("retains amendment inputs through background and retries a failed access read", async () => {
+  await beginProposal();
+  await type("crewAmendments.reason", "Additional shots");
+  await type("crewAmendments.fee", "150.25");
+  h.active = false;
+  await render(true);
+  expect(host.textContent).toBe("");
+  h.context.mockRejectedValueOnce(new Error("Access unavailable"));
+  h.active = true;
+  await render(true);
+  expect(button("crewAmendments.sendProposal")).toBeUndefined();
+  await click("common.retry");
+  expect(
+    host.querySelector<HTMLTextAreaElement>('textarea[aria-label="crewAmendments.reason"]')?.value
+  ).toBe("Additional shots");
+  expect(
+    host.querySelector<HTMLTextAreaElement>('textarea[aria-label="crewAmendments.fee"]')?.value
+  ).toBe("150.25");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("does not expose an amendment decision until foreground access is refreshed", async () => {
+  await render();
+  await click("crewAmendments.confirm");
+  h.active = false;
+  await render();
+  h.context.mockRejectedValueOnce(new Error("Access unavailable"));
+  h.active = true;
+  await render();
+  expect(button("applicationReview.confirm")).toBeUndefined();
+  expect(h.post).not.toHaveBeenCalled();
 });

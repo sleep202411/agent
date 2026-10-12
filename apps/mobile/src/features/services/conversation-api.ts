@@ -98,6 +98,36 @@ function assertMessageScope(message: NativeMessage, conversationId: string) {
     throw new Error("Conversation message scope mismatch");
   return message;
 }
+/** Resolve the official Crew channel; never infer a conversation ID from a Crew ID. */
+export async function fetchCrewConversation(
+  crewId: string,
+  channel: "team" | "community",
+  viewerId: string,
+  signal: AbortSignal
+) {
+  z.string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .parse(crewId);
+  z.enum(["team", "community"]).parse(channel);
+  id.parse(viewerId);
+  if (signal.aborted) throw new Error("Crew conversation request aborted");
+  const result = conversationSchema.parse(
+    await api.get(
+      `/crews/${crewId}/${channel === "team" ? "conversation" : "community-conversation"}`,
+      { service: "aurora", signal, retry: false }
+    )
+  );
+  if (signal.aborted) throw new Error("Crew conversation request aborted");
+  if (
+    result.contextType !== "crew" ||
+    result.contextId !== crewId ||
+    result.crewChannel !== channel ||
+    !result.participants.some((p) => p.userId === viewerId)
+  )
+    throw new Error("Crew conversation is not available to this account");
+  if (result.lastMessage) assertMessageScope(result.lastMessage, result.id);
+  return result;
+}
 export async function fetchConversation(
   conversationId: string,
   viewerId: string,

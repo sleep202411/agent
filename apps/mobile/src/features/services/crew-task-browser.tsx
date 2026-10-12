@@ -1,3 +1,8 @@
+import { CrewSetup } from "./crew-setup";
+import { useRouter } from "expo-router";
+import { toHref } from "@/lib/navigation";
+import { TrustAppeals } from "./trust-appeals";
+import { ProjectActivity } from "./project-activity";
 import { ProjectDocument } from "./project-document";
 import { ProjectResources } from "./project-resources";
 import { ProjectProperties } from "./project-properties";
@@ -28,33 +33,70 @@ export function CrewTaskBrowser({
   userId,
   generation,
   onClose,
+  initialTaskId,
+  initialSection,
 }: {
+  initialTaskId?: string;
+  initialSection?: "members" | "setup" | "studio";
   crewId: string;
   userId: string;
   generation: number;
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showSetup, setShowSetup] = useState(initialSection === "setup");
+  const [showAppeals, setShowAppeals] = useState(false);
+  const [showActivity, setShowActivity] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
   const [showProjectProperties, setShowProjectProperties] = useState(false);
   const [showResources, setShowResources] = useState(false);
-  const [showMembers, setShowMembers] = useState(false);
+  const router = useRouter();
+  const [showMembers, setShowMembers] = useState(initialSection === "members");
   const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [assetOrganization, setAssetOrganization] = useState(false);
   const [studioMedia, setStudioMedia] = useState(false);
-  const [studioWorkspace, setStudioWorkspace] = useState(false);
+  const [studioWorkspace, setStudioWorkspace] = useState(initialSection === "studio");
   const [managingWorkflows, setManagingWorkflows] = useState(false);
   const [managingCycles, setManagingCycles] = useState(false);
   const [managingLabels, setManagingLabels] = useState(false);
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [viewId, setViewId] = useState<string>();
-  const [taskId, setTaskId] = useState<string>();
+  const [taskAction, setTaskAction] = useState<"edit" | "invite" | "recruit">();
+  const [taskId, setTaskId] = useState<string | undefined>(initialTaskId);
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showSetup)
+    return (
+      <CrewSetup
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowSetup(false)}
+        onTasks={() => setShowSetup(false)}
+      />
+    );
+  if (showAppeals)
+    return (
+      <TrustAppeals
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowAppeals(false)}
+      />
+    );
+  if (showActivity)
+    return (
+      <ProjectActivity
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowActivity(false)}
+      />
+    );
   if (showDocument)
     return (
       <ProjectDocument
@@ -151,7 +193,8 @@ export function CrewTaskBrowser({
         crewId={crewId}
         userId={userId}
         generation={generation}
-        onClose={() => setStudioWorkspace(false)}
+        backLabel={initialSection === "studio" ? t("crewStudio.backToCrew") : undefined}
+        onClose={() => (initialSection === "studio" ? onClose() : setStudioWorkspace(false))}
       />
     );
   if (managingWorkflows)
@@ -223,6 +266,7 @@ export function CrewTaskBrowser({
   if (taskId)
     return (
       <TaskDetail
+        initialAction={taskAction}
         crewId={crewId}
         taskId={taskId}
         userId={userId}
@@ -239,6 +283,50 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowSetup(true);
+        }}
+      >
+        <ThemedText>{t("crewSetup.title")}</ThemedText>
+      </Pressable>
+      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+        {(["team", "community"] as const).map((channel) => (
+          <Pressable
+            key={channel}
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => {
+              if (generation === getAuthGeneration())
+                router.push(toHref(`/crew-chat/${encodeURIComponent(crewId)}?channel=${channel}`));
+            }}
+          >
+            <ThemedText>
+              {t(channel === "team" ? "thread.teamChat" : "thread.communityChat")}
+            </ThemedText>
+          </Pressable>
+        ))}
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowAppeals(true);
+        }}
+      >
+        <ThemedText>{t("trustAppeals.queue")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowActivity(true);
+        }}
+      >
+        <ThemedText>{t("projectActivity.title")}</ThemedText>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
@@ -390,8 +478,11 @@ export function CrewTaskBrowser({
         viewId={viewId}
         onViewChange={setViewId}
         onClose={onClose}
-        onSelect={(task) => {
-          if (generation === getAuthGeneration()) setTaskId(task.id);
+        onSelect={(task, action) => {
+          if (generation === getAuthGeneration()) {
+            setTaskAction(action);
+            setTaskId(task.id);
+          }
         }}
       />
     </View>

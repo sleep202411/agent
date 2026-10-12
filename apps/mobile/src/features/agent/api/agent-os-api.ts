@@ -227,6 +227,7 @@ export function normalizePendingUserInput(
     requestId,
     ...(formId ? { formId } : {}),
     questions,
+    formId: typeof raw.formId === "string" ? raw.formId : undefined,
     turnId: typeof raw.turnId === "string" ? raw.turnId : undefined,
   };
 }

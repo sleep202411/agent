@@ -17,8 +17,8 @@ import { useLocale, useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
 import { useTabScreenInsets } from "@/components/tab-screen";
+import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, ScreenHeader } from "@/components/ui";
 import { MaxContentWidth, Spacing } from "@/constants/theme";
 import {
@@ -38,6 +38,7 @@ import {
   saveCoursePercent,
 } from "./course-history";
 import { useCourseRead } from "./use-course-read";
+import { CourseLearning } from "./learning-ui";
 import { CourseCertificate } from "./course-certificate";
 import { appEnv } from "@/config";
 import {
@@ -53,6 +54,7 @@ function useScope() {
   return JSON.stringify([
     locale,
     auth.status,
+    auth.generation,
     auth.user?.id ?? auth.user?.userId,
     auth.session?.region,
     auth.session?.updatedAt,
@@ -161,9 +163,6 @@ function Catalog() {
               </ThemedText>
             )}
             <CourseProgress course={item} />
-            <ThemedText type="small" themeColor="textSecondary">
-              {t("courses.free")}
-            </ThemedText>
           </Pressable>
         )}
       />
@@ -189,10 +188,7 @@ function Detail({ id }: { id: string }) {
   return (
     <ThemedView style={styles.screen}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { padding: Spacing.four, paddingBottom: insets.bottom + Spacing.four },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + Spacing.four }]}
       >
         {read.error ? (
           <Failure message={read.error} retry={read.retry} />
@@ -242,6 +238,7 @@ function SelectedCourseContent({
   const theme = useTheme();
   const lessons = useMemo(() => orderedLessons(course.videos ?? []), [course.videos]);
   const [selected, setSelected] = useState(initialSelection);
+  const [enrollmentVersion, setEnrollmentVersion] = useState(0);
   const active = useScreenActive();
   const progressKeyFor = useProgressKey(course.id);
   const courseKey = progressKeyFor(0);
@@ -293,13 +290,17 @@ function SelectedCourseContent({
       {!!course.description && <ThemedText type="small">{course.description}</ThemedText>}
       {selected != null && active ? (
         <LessonPlayback
-          key={selected}
+          key={`${selected}:${enrollmentVersion}`}
           id={selected}
           progressKey={progressKey}
           onSaved={updatePercent}
         />
       ) : null}
       <CourseCertificate courseId={String(course.id)} />
+      <CourseLearning
+        courseId={String(course.id)}
+        onEnrolled={() => setEnrollmentVersion((value) => value + 1)}
+      />
       <ThemedText type="smallBold">{t("courses.lessons")}</ThemedText>
       {!lessons.length && (
         <EmptyState title={t("courses.noLessons")} detail={t("courses.emptyDetail")} />
@@ -472,6 +473,7 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: MaxContentWidth,
     alignSelf: "center",
+    padding: Spacing.four,
     gap: Spacing.three,
   },
   section: { gap: Spacing.three },

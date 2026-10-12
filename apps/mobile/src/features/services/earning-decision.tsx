@@ -12,22 +12,34 @@ import {
   type EarningDecision as Decision,
 } from "./earning-decision-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-export function EarningDecision({
-  record,
-  userId,
-  generation,
-  onSaved,
-}: {
+type Props = {
   record: DecisionEarning;
   userId: string;
   generation: number;
   onSaved: () => void;
-}) {
+};
+export function EarningDecision(props: Props) {
+  return (
+    <EarningDecisionForm
+      key={JSON.stringify([
+        props.record.crewId,
+        props.record.id,
+        props.record.version,
+        props.userId,
+        props.generation,
+      ])}
+      {...props}
+    />
+  );
+}
+function EarningDecisionForm({ record, userId, generation, onSaved }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`${record.id}:${record.version}`, true);
   const [access, setAccess] = useState<Awaited<ReturnType<typeof fetchEarningDecisionAccess>>>(),
     [error, setError] = useState<string>(),
+    [accessError, setAccessError] = useState<string>(),
+    [revision, setRevision] = useState(0),
     [choice, setChoice] = useState<Decision>(),
     [reason, setReason] = useState(""),
     [attempted, setAttempted] = useState(false);
@@ -41,11 +53,11 @@ export function EarningDecision({
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setAccessError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => controller.abort();
-  }, [record.crewId, userId, generation]);
+  }, [record.crewId, userId, generation, revision]);
   const choices: Decision[] =
     record.status === "pending" && access?.approve
       ? ["approve", "reject"]
@@ -54,6 +66,21 @@ export function EarningDecision({
         : [];
   return (
     <View style={{ gap: 12 }}>
+      {accessError && (
+        <View style={{ gap: 6 }}>
+          <ThemedText accessibilityRole="alert">{accessError}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => {
+              setAccessError(undefined);
+              setRevision((value) => value + 1);
+            }}
+          >
+            <ThemedText>{t("common.retry")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
       {!choice &&
         choices.map((action) => (
           <Pressable

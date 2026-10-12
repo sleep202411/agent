@@ -19,6 +19,7 @@ import type {
   IpAccess,
   IpAccessCode,
   IpDetail,
+  IpPublisherPublic,
   IpDiscovery,
   IpEngagementSnapshot,
   IpEpisode,
@@ -30,7 +31,10 @@ import type {
   TaxonomyTerm,
 } from "./types";
 
-type AssetDto = { url?: string | null; externalUrl?: string | null } | null | undefined;
+type AssetDto =
+  | { kind?: string; url?: string | null; externalUrl?: string | null }
+  | null
+  | undefined;
 
 type ContributorDto = {
   userId?: string | null;
@@ -80,6 +84,7 @@ type IpDto = {
   trailerAsset?: AssetDto;
   contributors?: ContributorDto[];
   episodes?: EpisodeDto[];
+  publishers?: IpPublisherPublic[];
   viewCount?: number | string | null;
   likeCount?: number | string | null;
   viewerHasLiked?: boolean | null;
@@ -227,6 +232,10 @@ function mapDetail(dto: IpDto): IpDetail {
     thumbnailUrl: assetUrl(episode.coverAsset),
     // The episode's playable video is `mediaAsset`; fall back to a trailer preview.
     videoUrl: assetUrl(episode.mediaAsset) ?? assetUrl(episode.trailerAsset),
+    mediaUrl:
+      episode.status === "published" && episode.mediaAsset?.kind === "video"
+        ? (episode.mediaAsset.url ?? undefined)
+        : undefined,
     free: !!episode.isFreePreview,
   }));
   const people = mapPeople(dto);
@@ -240,11 +249,18 @@ function mapDetail(dto: IpDto): IpDetail {
   const aiDisclosure = dto.aiDisclosure ?? {};
   return {
     ...mapSummary(dto),
+    publishers: dto.publishers,
     longSynopsis: dto.description ?? dto.summary ?? "",
     episodes,
     cast,
     creators,
     trailerUrl: assetUrl(dto.trailerAsset),
+    previewVideoUrl:
+      [
+        dto.trailerAsset,
+        ...(dto.episodes ?? []).map((ep) => ep.trailerAsset),
+        ...(dto.episodes ?? []).map((ep) => ep.mediaAsset),
+      ].find((asset) => asset?.kind === "video" && asset.url)?.url ?? undefined,
     tags: [...(dto.genres ?? []), ...(dto.tags ?? [])].filter(Boolean),
     // No server-side room number yet; the detail chip stays hidden when undefined.
     roomCode: undefined,
@@ -375,17 +391,88 @@ export async function fetchIpCatalogPage({
   };
 }
 
+export interface IpTagPage {
+  term: { code: string; label: string; description: string | null };
+  total: number | null;
+  items: IpSummary[];
+  nextCursor: string | null;
+}
+
+/** Dedicated tag scope includes hidden taxonomy tags; ordinary catalog filters do not. */
+export async function fetchIpTagPage(
+  code: string,
+  options: { cursor?: string; signal?: AbortSignal } = {}
+): Promise<IpTagPage> {
+  if (!code.trim() || code.length > 80) throw new Error("Invalid activity tag.");
+  const result = await api.get<{
+    term: IpTagPage["term"];
+    total: number | null;
+    items: IpDto[];
+    nextCursor: string | null;
+  }>(`/ip-commerce/tags/${encodeURIComponent(code)}/ips`, {
+    ...AURORA,
+    signal: options.signal,
+    params: { cursor: options.cursor, limit: 24, locale: locale() },
+  });
+  if (
+    !result ||
+    result.term?.code !== code ||
+    typeof result.term.label !== "string" ||
+    (result.term.description !== null && typeof result.term.description !== "string") ||
+    (result.total !== null && (!Number.isSafeInteger(result.total) || result.total < 0)) ||
+    !Array.isArray(result.items) ||
+    result.items.some(
+      (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+    ) ||
+    new Set(result.items.map((item) => item.id)).size !== result.items.length ||
+    (result.nextCursor !== null &&
+      (typeof result.nextCursor !== "string" ||
+        !result.nextCursor ||
+        result.nextCursor === options.cursor ||
+        !result.items.some((item) => item.id === result.nextCursor)))
+  )
+    throw new Error("Invalid activity response. Please retry.");
+  return { ...result, items: result.items.map((item) => mapSummary(item)) };
+}
+
 /** A creator's published, publicly-listed IPs (Nest `creators/:id/ips`, @Public). */
-export async function fetchCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
-  try {
-    const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {
-      ...AURORA,
-      params: { locale: locale(), limit },
-    });
-    return (res.items ?? []).map((dto) => mapSummary(dto));
-  } catch {
-    return [];
-  }
+export class InvalidCreatorIpPageError extends Error {}
+export async function fetchCreatorIps(
+  creatorId: string,
+  limit = 12,
+  signal?: AbortSignal
+): Promise<IpSummary[]> {
+  const items = new Map<string, IpSummary>();
+  const visited = new Set<string>();
+  const requestLocale = locale();
+  let cursor: string | undefined;
+  do {
+    signal?.throwIfAborted();
+    const res = await api.get<ListResponse>(
+      `/ip-commerce/creators/${encodeURIComponent(creatorId)}/ips`,
+      {
+        ...AURORA,
+        params: { locale: requestLocale, limit, cursor },
+        signal,
+        retry: false,
+      }
+    );
+    signal?.throwIfAborted();
+    if (
+      !res ||
+      !Array.isArray(res.items) ||
+      res.items.some(
+        (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+      ) ||
+      (res.nextCursor != null &&
+        (typeof res.nextCursor !== "string" || !res.nextCursor || visited.has(res.nextCursor)))
+    )
+      throw new InvalidCreatorIpPageError("Invalid creator IP page");
+    for (const item of res.items) items.set(item.id, mapSummary(item));
+    cursor = res.nextCursor ?? undefined;
+    if (cursor) visited.add(cursor);
+  } while (cursor);
+  return [...items.values()];
 }
 
 // Legacy default-avatar PNG baked into the user OSS bucket — treat as "no
@@ -419,6 +506,25 @@ async function fetchUserDisplays(userIds: string[]): Promise<Map<string, LookupU
     }
   }
   return map;
+}
+
+/** Resolve only the official public preview; never infer a full-episode URL. */
+export async function fetchIpPreview(id: string, signal: AbortSignal): Promise<string | undefined> {
+  signal.throwIfAborted();
+  const res = await api.get<DetailResponse>(`/ip-commerce/ips/${encodeURIComponent(id)}`, {
+    ...AURORA,
+    params: { locale: locale() },
+    signal,
+  });
+  signal.throwIfAborted();
+  if (!res?.ip) return undefined;
+  if (res.ip.id !== id) throw new Error("Preview identity mismatch");
+  const url = mapDetail(res.ip).previewVideoUrl;
+  if (!url) return undefined;
+  const parsed = new URL(url);
+  if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password)
+    throw new Error("Invalid preview URL");
+  return url;
 }
 
 export async function fetchIpDetail(id: string): Promise<IpDetail | undefined> {
@@ -492,11 +598,19 @@ export const IP_REPORT_REASONS = [
 
 export type IpReportReason = (typeof IP_REPORT_REASONS)[number];
 
-/** File a content report against an IP (auth'd; admin reviews in ip-commerce). */
-export async function reportIpContent(ipId: string, reason: IpReportReason): Promise<void> {
+export type IpContentReport = {
+  requestId?: string;
+  targetType: "ip" | "episode";
+  targetId: string;
+  reason: IpReportReason;
+  description?: string;
+};
+
+/** Uses the same IP/episode report contract as Web. */
+export async function reportIpContent(report: IpContentReport): Promise<void> {
   await api.post("/ip-commerce/reports", {
     ...AURORA,
-    data: { targetType: "ip", targetId: ipId, reason },
+    data: { ...report, description: report.description?.trim() || undefined },
   });
 }
 
@@ -581,27 +695,27 @@ type WalletDto = {
 /** The signed-in user's spendable community-points balance (whole points, as a
  *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
  *  community_point/consumable account (NOT the withdrawable earnings pool).
- *  Returns null when the wallet cannot be read; a valid empty wallet is zero. */
-export async function fetchCommunityPointBalance(): Promise<string | null> {
-  try {
-    const res = await api.get<WalletDto>("/ip-commerce/wallet", AURORA);
-    if (
-      !Array.isArray(res.accounts) ||
-      res.accounts.some(
-        (account) => !account || typeof account !== "object" || Array.isArray(account)
-      )
+ *  Throws when the wallet cannot be read; a valid empty wallet is zero. */
+export async function fetchCommunityPointBalance(signal?: AbortSignal): Promise<string> {
+  const res = await api.get<WalletDto>("/ip-commerce/wallet", {
+    ...AURORA,
+    signal,
+    cache: "no-store",
+  });
+  if (
+    !Array.isArray(res?.accounts) ||
+    res.accounts.some(
+      (account) => !account || typeof account !== "object" || Array.isArray(account)
     )
-      return null;
-    const account = res.accounts.find(
-      (a) => a?.currency === "community_point" && a.balanceKind === "consumable"
-    );
-    if (!account) return "0";
-    return typeof account.availableBalance === "string" && /^\d+$/.test(account.availableBalance)
-      ? account.availableBalance
-      : null;
-  } catch {
-    return null;
-  }
+  )
+    throw Error("Community balance is unavailable: invalid wallet data.");
+  const account = res.accounts.find(
+    (a) => a.currency === "community_point" && a.balanceKind === "consumable"
+  );
+  if (!account) return "0";
+  if (typeof account.availableBalance !== "string" || !/^\d+$/.test(account.availableBalance))
+    throw Error("Community balance is unavailable: invalid wallet data.");
+  return account.availableBalance;
 }
 
 export type PurchaseResult = { alreadyOwned: boolean; alreadyProcessed: boolean };
@@ -664,19 +778,36 @@ export function isMemberOnlyError(error: unknown): boolean {
 export type MyIp = IpSummary & { published: boolean };
 
 /** The signed-in user's own IPs (auth'd; `/aurora/ip-commerce/me/ips`). */
-export async function fetchMyIps(): Promise<MyIp[]> {
-  try {
-    const res = await api.get<ListResponse>("/ip-commerce/me/ips", {
-      ...AURORA,
-      params: { limit: 50, locale: locale() },
-    });
-    return (res.items ?? []).map((dto) => ({
+export async function fetchMyIpsPage(
+  cursor: string | null = null,
+  signal?: AbortSignal
+): Promise<{ items: MyIp[]; nextCursor: string | null }> {
+  const res = await api.get<ListResponse>("/ip-commerce/me/ips", {
+    ...AURORA,
+    signal,
+    params: { cursor: cursor ?? undefined, limit: 50, locale: locale() },
+  });
+  if (
+    !res ||
+    !Array.isArray(res.items) ||
+    res.items.some(
+      (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+    ) ||
+    (res.nextCursor !== null &&
+      (typeof res.nextCursor !== "string" ||
+        !res.nextCursor ||
+        res.nextCursor === cursor ||
+        !res.items.some((item) => item.id === res.nextCursor)))
+  ) {
+    throw new Error("Invalid owned IP response. Please retry.");
+  }
+  return {
+    items: res.items.map((dto) => ({
       ...mapSummary(dto),
       published:
         (dto.status === "published" || dto.status === "scheduled") &&
         (dto.listingVisibility === "public" || dto.listingVisibility === "unlisted"),
-    }));
-  } catch {
-    return [];
-  }
+    })),
+    nextCursor: res.nextCursor,
+  };
 }

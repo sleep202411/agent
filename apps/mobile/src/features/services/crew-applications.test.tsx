@@ -1,10 +1,30 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api-client";
 import { CrewApplications } from "./crew-applications";
+vi.mock("@/lib/api-client", () => ({
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: string,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
+}));
+vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
+vi.mock("./application-review", () => ({
+  ApplicationReview: ({ initialApplicationId }: { initialApplicationId?: string }) => (
+    <span>Review:{initialApplicationId}</span>
+  ),
+}));
 vi.mock("./application-amendments", () => ({
-  ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>Amendments</button>
+  ApplicationAmendments: ({ onClose, taskId }: { onClose: () => void; taskId: string }) => (
+    <button data-task-id={taskId} onClick={onClose}>
+      Amendments
+    </button>
   ),
 }));
 vi.mock("./application-interview", () => ({ ApplicationInterview: () => <span>Interview</span> }));
@@ -14,13 +34,17 @@ const h = vi.hoisted(() => ({
   active: true,
   list: vi.fn(),
   terms: vi.fn(),
+  thread: vi.fn(),
   confirm: vi.fn(),
   web: vi.fn(),
+  push: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => true, useRouter: () => ({ push: h.push }) }));
 vi.mock("./application-terms-api", () => ({
   fetchMyApplications: h.list,
   fetchApplicationTerms: h.terms,
-  confirmApplicationTerms: h.confirm,
+  acceptApplicationOffer: h.confirm,
+  fetchApplicationThread: h.thread,
 }));
 vi.mock("@/hooks/use-theme", () => ({
   useTheme: () => ({ border: "gray", brand: "red", backgroundElement: "black" }),
@@ -38,6 +62,9 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
+  TextInput: ({ value, onChangeText }: { value: string; onChangeText: (s: string) => void }) => (
+    <input value={value} onChange={(e) => onChangeText(e.target.value)} />
+  ),
   Pressable: ({
     children,
     onPress,
@@ -97,6 +124,7 @@ beforeEach(() => {
   h.generation = 1;
   h.active = true;
   h.list.mockResolvedValue({ items: [app], nextCursor: null });
+  h.thread.mockResolvedValue(app);
   h.terms.mockResolvedValue({ currentVersion: 2, items: [row], nextBeforeVersion: null });
   h.confirm.mockResolvedValue({ ...row, confirmedAt: "2026-09-30T01:00:00Z" });
   host = document.createElement("div");
@@ -111,9 +139,9 @@ it("shows terms before explicit applicant confirmation", async () => {
   await open();
   expect(host.textContent).toContain("Storyboards");
   expect(host.textContent).toContain("2.50%");
-  expect(host.textContent).toContain("crewTerms.noPayment");
+  expect(host.textContent).toContain("crewOffers.effect");
   expect(h.confirm).not.toHaveBeenCalled();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(h.confirm).toHaveBeenCalledWith(app, row, "creator", 1);
   expect(host.textContent).toContain("crewTerms.confirmed");
   expect(button("nativeApplications.retry")).toBeUndefined();
@@ -128,8 +156,8 @@ it("blocks duplicate confirmation and navigation while pending", async () => {
   );
   await open();
   await act(async () => {
-    button("crewTerms.confirm").click();
-    button("crewTerms.confirm").click();
+    button("crewOffers.accept").click();
+    button("crewOffers.accept").click();
   });
   expect(h.confirm).toHaveBeenCalledTimes(1);
   expect(button("crewTerms.refresh").disabled).toBe(true);
@@ -140,7 +168,7 @@ it("blocks duplicate confirmation and navigation while pending", async () => {
 it("retries identical reviewed terms after a network error", async () => {
   h.confirm.mockRejectedValueOnce(new Error("Network"));
   await open();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(host.textContent).toContain("Network");
   await click("nativeApplications.retry");
   expect(h.confirm.mock.calls[0]).toEqual(h.confirm.mock.calls[1]);
@@ -149,7 +177,7 @@ it("retries identical reviewed terms after a network error", async () => {
 it("requires refresh after a version conflict", async () => {
   h.confirm.mockRejectedValue(Object.assign(new Error("Terms changed"), { status: 409 }));
   await open();
-  await click("crewTerms.confirm");
+  await click("crewOffers.accept");
   expect(button("nativeApplications.retry").disabled).toBe(true);
   h.terms.mockResolvedValue({
     currentVersion: 3,
@@ -159,7 +187,7 @@ it("requires refresh after a version conflict", async () => {
   await click("crewTerms.refresh");
   expect(host.textContent).toContain("Revised scope");
   expect(h.confirm).toHaveBeenCalledTimes(1);
-  expect(button("crewTerms.confirm").disabled).toBe(false);
+  expect(button("crewOffers.accept").disabled).toBe(false);
 });
 it("never confirms an older history version", async () => {
   h.terms
@@ -172,13 +200,14 @@ it("never confirms an older history version", async () => {
   await open();
   await click("nativeApplications.history");
   expect(h.terms).toHaveBeenLastCalledWith("app", 2, expect.any(AbortSignal));
-  expect(button("crewTerms.confirm")).toBeUndefined();
+  expect(button("crewOffers.accept")).toBeUndefined();
 });
 it.each(["approved", "rejected"])("does not confirm a %s application", async (status) => {
   h.list.mockResolvedValue({ items: [{ ...app, status }], nextCursor: null });
+  h.thread.mockResolvedValue({ ...app, status });
   await render();
   await click(`Crew · Director · 2026-09-30 · crewTerms.${status}`);
-  expect(button("crewTerms.confirm")).toBeUndefined();
+  expect(button("crewOffers.accept")).toBeUndefined();
 });
 it("preserves access to existing Web workflows", async () => {
   await render();
@@ -250,6 +279,11 @@ it("opens native invitation inbox", async () => {
 });
 
 it("opens approved task amendments and reloads terms on return", async () => {
+  h.thread.mockResolvedValue({
+    ...app,
+    status: "approved",
+    taskId: "00000000-0000-4000-8000-000000000002",
+  });
   h.list.mockResolvedValue({
     items: [{ ...app, status: "approved", taskId: "00000000-0000-4000-8000-000000000002" }],
     nextCursor: null,
@@ -260,4 +294,193 @@ it("opens approved task amendments and reloads terms on return", async () => {
   expect(host.textContent).toBe("Amendments");
   await click("Amendments");
   expect(h.terms).toHaveBeenCalledTimes(2);
+});
+
+it("uses the exact current thread status instead of stale inbox status", async () => {
+  h.thread.mockResolvedValue({ ...app, status: "approved" });
+  await open();
+  expect(button("crewOffers.accept")).toBeUndefined();
+});
+it("permits acceptance of a pending offer whose terms were already confirmed", async () => {
+  h.terms.mockResolvedValue({
+    currentVersion: 2,
+    items: [{ ...row, confirmedAt: app.createdAt }],
+    nextBeforeVersion: null,
+  });
+  await open();
+  await click("crewOffers.accept");
+  expect(h.confirm).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("crewOffers.accepted");
+});
+it("does not expose acceptance when the thread lookup fails", async () => {
+  h.thread.mockRejectedValue(new Error("Application unavailable"));
+  await open();
+  expect(button("crewOffers.accept")).toBeUndefined();
+  expect(host.textContent).toContain("Application unavailable");
+});
+
+it("opens a requested application outside the loaded inbox page", async () => {
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(h.list).not.toHaveBeenCalled();
+  expect(h.thread).toHaveBeenCalledWith("exact", "creator", 1, expect.any(AbortSignal), "either");
+  expect(host.textContent).toContain("Storyboards");
+});
+it("routes a server-authorized reviewer to the exact review screen", async () => {
+  h.thread.mockResolvedValue({ ...app, id: "exact", applicantId: "other" });
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(host.textContent).toBe("Review:exact");
+  expect(h.confirm).not.toHaveBeenCalled();
+});
+it("keeps denied exact threads out of the list until the user returns", async () => {
+  h.thread.mockRejectedValue(new Error("Access denied"));
+  await act(async () =>
+    root.render(
+      <CrewApplications
+        userId="creator"
+        generation={1}
+        onWeb={h.web}
+        initialApplicationId="exact"
+      />
+    )
+  );
+  expect(host.textContent).toContain("Access denied");
+  expect(h.list).not.toHaveBeenCalled();
+  await click("nativeApplications.back");
+  expect(h.list).toHaveBeenCalledTimes(1);
+});
+
+it("switches to received without retaining sent records and opens exact reviewer thread", async () => {
+  await render();
+  h.list.mockResolvedValue({
+    items: [{ ...app, id: "received", applicantId: "other", ownerUserId: "creator" }],
+    nextCursor: null,
+  });
+  h.thread.mockResolvedValue({ ...app, id: "received", applicantId: "other" });
+  await click("crewRecruitment.received");
+  expect(h.list).toHaveBeenLastCalledWith("creator", null, expect.any(AbortSignal), "received");
+  await click("Crew · Director · 2026-09-30 · crewTerms.pending");
+  expect(host.textContent).toBe("Review:received");
+});
+it("aborts the previous scope and ignores its late list response", async () => {
+  let resolve!: (value: unknown) => void;
+  h.list.mockReturnValueOnce(
+    new Promise((r) => {
+      resolve = r;
+    })
+  );
+  await render();
+  const signal = h.list.mock.calls[0]![2];
+  h.list.mockResolvedValue({ items: [], nextCursor: null });
+  await click("crewRecruitment.received");
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolve({ items: [app], nextCursor: null }));
+  expect(host.textContent).not.toContain("Crew · Director");
+});
+
+for (const status of [0, 429, 503]) {
+  it(`retains applications and retries the failed cursor after temporary ${status}`, async () => {
+    h.list
+      .mockResolvedValueOnce({ items: [app], nextCursor: "app" })
+      .mockRejectedValueOnce(new ApiRequestError("TEMPORARY", "Please try again", status))
+      .mockResolvedValueOnce({
+        items: [{ ...app, id: "older", crewName: "Older Crew" }],
+        nextCursor: null,
+      });
+    await render();
+    await click("crewTerms.more");
+    expect(host.textContent).toContain("Please try again");
+    expect(host.textContent).toContain("Director");
+    expect(button("crewTerms.more")).toBeUndefined();
+    await click("common.retry");
+    expect(h.list.mock.calls.map((call) => call[1])).toEqual([null, "app", "app"]);
+    expect(host.textContent).toContain("Older Crew");
+    expect(host.textContent).not.toContain("Please try again");
+  });
+}
+it("clears applications after access loss and refreshes from page one", async () => {
+  h.list
+    .mockResolvedValueOnce({ items: [app], nextCursor: "app" })
+    .mockRejectedValueOnce(new ApiRequestError("FORBIDDEN", "Access revoked", 403))
+    .mockResolvedValueOnce({ items: [], nextCursor: null });
+  await render();
+  await click("crewTerms.more");
+  expect(host.textContent).not.toContain("Director");
+  expect(button("common.retry")).toBeUndefined();
+  await click("crewTerms.refresh");
+  expect(h.list.mock.calls.map((call) => call[1])).toEqual([null, "app", null]);
+});
+
+it("returns to the selected application with fresh terms after foregrounding", async () => {
+  await open();
+  expect(host.textContent).toContain("Storyboards");
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  h.terms.mockResolvedValue({
+    currentVersion: 3,
+    items: [{ ...row, version: 3, scope: "Updated terms" }],
+    nextBeforeVersion: null,
+  });
+  h.active = true;
+  await render();
+  expect(host.textContent).toContain("Updated terms");
+  expect(h.list).toHaveBeenCalledTimes(1);
+  expect(h.terms).toHaveBeenCalledTimes(2);
+});
+it("preserves the received applications tab across foreground refresh", async () => {
+  await render();
+  await click("crewRecruitment.received");
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(h.list).toHaveBeenLastCalledWith("creator", null, expect.any(AbortSignal), "received");
+});
+
+it("opens amendments using the refreshed task instead of the inbox snapshot", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId });
+  await open();
+  await click("crewAmendments.title");
+  expect(button("Amendments").dataset.taskId).toBe(taskId);
+});
+it("hides amendments when the refreshed thread no longer has a task", async () => {
+  h.list.mockResolvedValue({
+    items: [{ ...app, taskId: "00000000-0000-4000-8000-000000000002" }],
+    nextCursor: null,
+  });
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId: null });
+  await open();
+  expect(button("crewAmendments.title")).toBeUndefined();
+});
+
+it("opens the current approved task directly", async () => {
+  const taskId = "00000000-0000-4000-8000-000000000003";
+  h.thread.mockResolvedValue({ ...app, status: "approved", taskId });
+  await open();
+  await click("crewFinance.openTask");
+  expect(h.push).toHaveBeenCalledWith(`/crew-tasks/crew?task=${taskId}`);
+});
+it("does not expose a task route before approval", async () => {
+  h.thread.mockResolvedValue({ ...app, taskId: "00000000-0000-4000-8000-000000000003" });
+  await open();
+  expect(button("crewFinance.openTask")).toBeUndefined();
 });

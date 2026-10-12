@@ -1,3 +1,7 @@
+import { ServiceEditorNavigation } from "@/features/services/service-editor-navigation";
+import { SERVICE_TIERS } from "@repo/shared/creator-service";
+import { ServiceEditorDrafts } from "@/features/services/service-editor-drafts";
+import { ServiceIntentProvider } from "@/features/services/service-intent";
 import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
 import { ServiceQuestionsEditor } from "@/features/services/service-questions-editor";
 import { ServiceDetailsEditor } from "@/features/services/service-details-editor";
@@ -15,18 +19,35 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import type { CreatorServicePackage } from "@/data/types";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 
 export default function CreatorServiceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const auth = useAuth();
+  return (
+    <ServiceIntentProvider key={id}>
+      <ServiceEditorDrafts
+        key={JSON.stringify([id, auth.generation, auth.status, auth.user?.userId ?? auth.user?.id])}
+      >
+        <ServiceEditorNavigation />
+        <ServiceDetailContent id={id} />
+      </ServiceEditorDrafts>
+    </ServiceIntentProvider>
+  );
+}
+function ServiceDetailContent({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const locale = useLocale();
   const t = useTranslations();
   const auth = useAuth();
-  const { service, loading, error, retry } = useServiceDetail(id, auth.generation);
+  const active = useScreenActive();
+  const { service, loading, error, retry } = useServiceDetail(id, auth.generation, active);
+
+  if (!active) return null;
 
   if (error)
     return (
@@ -91,9 +112,11 @@ export default function CreatorServiceDetailScreen() {
               <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
                 {service.title}
               </ThemedText>
-              <ThemedText type="smallBold" style={{ color: theme.brand }}>
-                {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
-              </ThemedText>
+              {service.packages.length > 0 && (
+                <ThemedText type="smallBold" style={{ color: theme.brand }}>
+                  {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
+                </ThemedText>
+              )}
             </View>
           </View>
         ) : (
@@ -105,9 +128,11 @@ export default function CreatorServiceDetailScreen() {
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {service.title}
             </ThemedText>
-            <ThemedText type="smallBold" style={{ color: theme.brand }}>
-              {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
-            </ThemedText>
+            {service.packages.length > 0 && (
+              <ThemedText type="smallBold" style={{ color: theme.brand }}>
+                {t("creatorService.fromPrice")} {formatServicePrice(service, locale)}
+              </ThemedText>
+            )}
           </View>
         )}
 
@@ -119,6 +144,7 @@ export default function CreatorServiceDetailScreen() {
             id={service.id}
             creatorId={service.creatorId}
             status={service.status}
+            packageCount={service.packages.length}
             refresh={retry}
           />
           <ServiceContact
@@ -144,6 +170,11 @@ export default function CreatorServiceDetailScreen() {
           <ServiceOrder key={`${service.id}-${service.version}`} service={service} />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.packagesTitle")} />
+            {service.packages.length === 0 && (
+              <ThemedText type="small" themeColor="textSecondary">
+                {t("serviceDetail.noPackages")}
+              </ThemedText>
+            )}
             <View style={styles.packageList}>
               {service.packages.map((pkg) => (
                 <PackageCard key={pkg.id} pkg={pkg} locale={locale} />
@@ -178,13 +209,14 @@ function PackageCard({ pkg, locale }: { pkg: CreatorServicePackage; locale: stri
   const t = useTranslations();
   const theme = useTheme();
   const price = formatServicePrice({ currency: pkg.currency, startingPrice: pkg.price }, locale);
+  const tier = SERVICE_TIERS.find((value) => value === pkg.tier);
   const revisions = pkg.revisions < 0 ? t("serviceDetail.unlimitedRevisions") : `${pkg.revisions}`;
 
   return (
     <ThemedView type="backgroundElement" style={styles.packageCard}>
       <View style={styles.packageTop}>
         <View style={styles.packageCopy}>
-          <Tag label={pkg.tier} tone="brand" />
+          <Tag label={tier ? t(`servicePackages.tier.${tier}`) : pkg.tier} tone="brand" />
           <ThemedText type="smallBold" numberOfLines={2}>
             {pkg.title}
           </ThemedText>
@@ -204,8 +236,8 @@ function PackageCard({ pkg, locale }: { pkg: CreatorServicePackage; locale: stri
       </View>
       {pkg.scope.length ? (
         <View style={styles.scopeList}>
-          {pkg.scope.slice(0, 6).map((item) => (
-            <ThemedText key={item} type="code" themeColor="textSecondary">
+          {pkg.scope.map((item, index) => (
+            <ThemedText key={index} type="code" themeColor="textSecondary">
               {`• ${item}`}
             </ThemedText>
           ))}

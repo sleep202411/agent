@@ -1,0 +1,353 @@
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { PlatformProjectSections } from "./platform-project-sections";
+import { SectionWriteError } from "./api/platform-sections-api";
+const h = vi.hoisted(() => ({
+  prevent: false,
+  removeRoute: undefined as undefined | ((event: { data: { action: { type: string } } }) => void),
+  hardwareBack: undefined as undefined | (() => boolean),
+  dispatch: vi.fn(),
+  generation: 1,
+  active: true,
+  list: vi.fn(),
+  write: vi.fn(),
+  open: vi.fn(),
+  close: vi.fn(),
+  canvas: vi.fn(),
+}));
+vi.mock("./components/platform-canvas-panel", () => ({
+  PlatformCanvasPanel: (props: { close(): void }) => {
+    h.canvas(props);
+    return <button onClick={props.close}>Close canvas</button>;
+  },
+}));
+vi.mock("expo-router", () => ({ useNavigation: () => ({ dispatch: h.dispatch }) }));
+vi.mock("expo-router/build/react-navigation/core/usePreventRemove", () => ({
+  usePreventRemove: (prevent: boolean, callback: typeof h.removeRoute) => {
+    h.prevent = prevent;
+    h.removeRoute = callback;
+  },
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
+vi.mock("@/lib/api-client", () => ({ api: {} }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s, getLocale: () => "en-US" }));
+vi.mock("./api/platform-sections-api", async (original) => ({
+  ...(await original<typeof import("./api/platform-sections-api")>()),
+  fetchPlatformSections: h.list,
+  changePlatformSection: h.write,
+}));
+vi.mock("@/components/themed-text", () => ({
+  ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ActivityIndicator: () => <span>Loading</span>,
+  Linking: { openURL: h.open },
+  BackHandler: {
+    addEventListener: (_: string, callback: () => boolean) => {
+      h.hardwareBack = callback;
+      return { remove: vi.fn() };
+    },
+  },
+  Pressable: ({
+    children,
+    disabled,
+    onPress,
+  }: {
+    children: ReactNode;
+    disabled: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {children}
+    </button>
+  ),
+  TextInput: ({
+    value,
+    onChangeText,
+    editable,
+  }: {
+    value: string;
+    onChangeText: (s: string) => void;
+    editable: boolean;
+  }) => <input value={value} disabled={!editable} onChange={(e) => onChangeText(e.target.value)} />,
+}));
+
+const projectId = "11111111-1111-4111-8111-111111111111",
+  workspaceId = "22222222-2222-4222-8222-222222222222";
+const rows = [3, 4].map((n) => ({
+  id: `${n}1111111-1111-4111-8111-111111111111`,
+  projectId,
+  title: `Chapter ${n}`,
+  rank: n,
+  version: 1,
+  canvasDocumentId: `${n}2222222-2222-4222-8222-222222222222`,
+}));
+const data = { projectId, workspaceId, canEdit: true, projectVersion: 7, sections: rows };
+let host: HTMLDivElement, root: Root;
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+const render = () =>
+  act(async () => {
+    root.render(
+      <PlatformProjectSections
+        projectId={projectId}
+        workspaceId={workspaceId}
+        name="Film"
+        generation={1}
+        onClose={h.close}
+      />
+    );
+  });
+const buttons = (label: string) =>
+  [...host.querySelectorAll("button")].filter((b) => b.textContent === label);
+const button = (label: string) => buttons(label)[0];
+const click = (label: string) =>
+  act(async () => {
+    button(label)!.click();
+  });
+const input = (value: string) =>
+  act(async () => {
+    const el = host.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.generation = 1;
+  h.active = true;
+  h.list.mockResolvedValue(data);
+  h.write.mockResolvedValue({ ...data, projectVersion: 8 });
+  h.open.mockResolvedValue(undefined);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+});
+it("validates the title and serializes repeated submit taps", async () => {
+  await render();
+  await click("studioChapters.create");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await input("New");
+  await act(async () => {
+    button("studioChapters.confirm").click();
+    button("studioChapters.confirm").click();
+  });
+  expect(h.write).toHaveBeenCalledTimes(1);
+  expect(h.write).toHaveBeenCalledWith(
+    data,
+    { kind: "create", title: "New" },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("requires confirmation to archive and disables archiving the final chapter", async () => {
+  await render();
+  await click("studioChapters.archive");
+  expect(h.write).not.toHaveBeenCalled();
+  expect(host.textContent).toContain(rows[0].title);
+  await click("studioChapters.confirm");
+  expect(h.write).toHaveBeenCalledWith(
+    data,
+    { kind: "archive", id: rows[0].id },
+    1,
+    expect.any(AbortSignal)
+  );
+  h.list.mockResolvedValue({ ...data, sections: [rows[0]] });
+  await click("studioChapters.refresh");
+  expect(button("studioChapters.archive").disabled).toBe(true);
+});
+it("moves chapters with the complete ordered ID set", async () => {
+  await render();
+  expect(button("studioChapters.up").disabled).toBe(true);
+  await click("studioChapters.down");
+  expect(h.write).toHaveBeenCalledWith(
+    data,
+    { kind: "reorder", ids: [rows[1].id, rows[0].id] },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("viewers can open a chapter but cannot mutate", async () => {
+  h.list.mockResolvedValue({ ...data, canEdit: false });
+  await render();
+  expect(button("studioChapters.create")).toBeUndefined();
+  expect(button("studioChapters.rename")).toBeUndefined();
+  await click("platformCanvas.openWeb");
+  expect(h.open).toHaveBeenCalledWith(
+    `https://studio.fizzdragon.com/project/${projectId}/canvas?ws=${workspaceId}&section=${rows[0].id}`
+  );
+});
+it("opens the selected chapter in Mobile and returns without leaving the app", async () => {
+  await render();
+  await click("studioChapters.open");
+  expect(h.canvas.mock.lastCall?.[0].scope).toMatchObject({
+    kind: "platform",
+    projectId,
+    workspaceId,
+    sectionId: rows[0].id,
+    documentId: rows[0].canvasDocumentId,
+    generation: 1,
+  });
+  expect(h.open).not.toHaveBeenCalled();
+  await click("Close canvas");
+  expect(button("studioChapters.open")).toBeDefined();
+});
+it("retains failed edits and blocks retries until reload and explicit review", async () => {
+  h.write.mockRejectedValue(new SectionWriteError("Lost response"));
+  await render();
+  await click("studioChapters.rename");
+  await input("Draft");
+  await click("studioChapters.confirm");
+  expect(host.querySelector("input")!.value).toBe("Draft");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("Draft");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await click("studioProjects.reviewed");
+  expect(button("studioChapters.confirm").disabled).toBe(false);
+  expect(h.write).toHaveBeenCalledTimes(1);
+});
+it("preserves edits across backgrounding and clears on account change", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("Draft");
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Draft");
+  h.generation++;
+  await render();
+  expect(host.textContent).toBe("");
+});
+
+it("keeps the draft but blocks confirmation while refreshing and after an access downgrade", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  let resolve!: (value: typeof data) => void;
+  h.list.mockReturnValue(
+    new Promise((r) => {
+      resolve = r;
+    })
+  );
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await act(async () => resolve({ ...data, canEdit: false }));
+  expect(host.textContent).toContain("studioChapters.readOnly");
+  await click("studioChapters.confirm");
+  expect(h.write).not.toHaveBeenCalled();
+  h.list.mockResolvedValue(data);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(button("studioChapters.confirm").disabled).toBe(false);
+});
+it("requires review of changed chapters before rebasing a retained draft", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  const fresh = {
+    ...data,
+    projectVersion: 8,
+    sections: [{ ...rows[0], title: "Remote edit", version: 2 }, rows[1]],
+  };
+  h.list.mockResolvedValue(fresh);
+  await click("studioChapters.refresh");
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  expect(host.textContent).toContain("Remote edit");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  await click("studioProjects.reviewed");
+  expect(h.write).not.toHaveBeenCalled();
+  await click("studioChapters.confirm");
+  expect(h.write).toHaveBeenCalledWith(
+    fresh,
+    { kind: "rename", id: rows[0].id, title: "My retained title" },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("retains drafts on failed refresh and does not revive a removed chapter", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("My retained title");
+  h.list.mockRejectedValue(new Error("Access unavailable"));
+  await click("studioChapters.refresh");
+  expect(host.textContent).toContain("Access unavailable");
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+  h.list.mockResolvedValue({ ...data, projectVersion: 8, sections: [rows[1]] });
+  await click("studioChapters.refresh");
+  expect(host.textContent).toContain("studioChapters.missing");
+  expect(button("studioProjects.reviewed")).toBeUndefined();
+  expect(button("studioChapters.confirm").disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("My retained title");
+});
+
+it("retains a renamed chapter after cancelled exits and returns to chapters after discard", async () => {
+  await render();
+  await click("studioChapters.rename");
+  await input("Retained name");
+  await click("common.back");
+  expect(h.close).not.toHaveBeenCalled();
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("Retained name");
+  await act(async () => {
+    h.hardwareBack!();
+  });
+  await click("documentEditor.discard");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.close).not.toHaveBeenCalled();
+  await click("common.back");
+  expect(h.close).toHaveBeenCalledOnce();
+});
+it("protects new chapter titles from route removal and explicit discard", async () => {
+  await render();
+  await click("studioChapters.create");
+  await input("New chapter draft");
+  expect(h.prevent).toBe(true);
+  const action = { type: "GO_BACK" };
+  await act(async () => h.removeRoute!({ data: { action } }));
+  await click("documentEditor.keepEditing");
+  expect(host.querySelector("input")!.value).toBe("New chapter draft");
+  await click("studioProjects.discard");
+  await click("documentEditor.keepEditing");
+  expect(h.dispatch).not.toHaveBeenCalled();
+  await act(async () => h.removeRoute!({ data: { action } }));
+  await click("documentEditor.discard");
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  expect(h.write).not.toHaveBeenCalled();
+});
+it("blocks leaving during chapter writes but allows account retirement", async () => {
+  let finish!: (value: typeof data) => void;
+  h.write.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await click("studioChapters.create");
+  await input("Saving chapter");
+  await click("studioChapters.confirm");
+  const action = { type: "GO_BACK" };
+  await act(async () => h.removeRoute!({ data: { action } }));
+  expect(button("documentEditor.discard")).toBeUndefined();
+  expect(h.dispatch).not.toHaveBeenCalled();
+  h.generation++;
+  await act(async () => h.removeRoute!({ data: { action } }));
+  expect(h.dispatch).toHaveBeenCalledWith(action);
+  await act(async () => finish(data));
+});
