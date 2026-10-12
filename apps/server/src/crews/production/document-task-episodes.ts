@@ -23,7 +23,7 @@ export function documentEpisodeSections(source: string) {
   const text = source.normalize('NFKC');
   const headings = [
     ...text.matchAll(
-      /^(?:[ \t]*(?:第[一二三四五六七八九十百千零〇两\d]+季[·\s:：-]*)?)(第([一二三四五六七八九十百千零〇两\d]+)集|Episode\s+(\d+))(?=[\s:：·—-]|$)([^\n]*)/gim,
+      /^(?:[ \t]*(?:第[一二三四五六七八九十百千零〇两\d]+季[·\s:：-]*)?)(第([一二三四五六七八九十百千零〇两\d]+)集|Episode\s+(\d+))(?=[\s:：·—《(-]|$)([^\n]*)/gim,
     ),
   ];
   const sections: { text: string; episode?: DocumentEpisode }[] = [];
@@ -40,6 +40,9 @@ export function documentEpisodeSections(source: string) {
       h[4]
         .replace(/^[\s:：·—-]+/, '')
         .replace(/\s*[（(](?:时长|時長|duration).*$/i, '')
+        .trim()
+        .replace(/^《(.*)》$/, '$1')
+        .replace(/^\((.*)\)$/, '$1')
         .trim()
         .slice(0, 180) || label;
     sections.push({

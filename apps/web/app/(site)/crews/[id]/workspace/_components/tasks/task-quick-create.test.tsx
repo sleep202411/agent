@@ -1236,3 +1236,17 @@ it("preserves the chosen Art subtype when editing a task", async () => {
     expect.objectContaining({ taskKind: "art", assetCategory: "scenes" })
   );
 });
+
+it("saves a revenue-share-only task without inventing a cash amount", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
+  act(() => {
+    fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Revenue-share film");
+    fill(document.querySelector<HTMLInputElement>('input[aria-label="Reward (USD)"]')!, "");
+    fill(document.querySelector<HTMLInputElement>('input[aria-label="Profit share (%)"]')!, "1");
+  });
+  await act(async () => click(exactButton("Add task")));
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ rewardUsdMinor: null, profitShareBps: 100 })
+  );
+});

@@ -396,6 +396,7 @@ export function TaskQuickCreate({
       workflowStateId: resolvedWorkflowStateId ?? undefined,
       rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
       rewardUsdMinor: rewardUsd.trim() ? Number(rewardUsd) * 100 : null,
+      profitShareBps: profitShare.trim() ? Math.round(Number(profitShare) * 100) : null,
       dueAt: dueDate || null,
     });
     if (missing.length) {

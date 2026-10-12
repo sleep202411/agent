@@ -120,3 +120,23 @@ it('does not accept an AI invented episode field', () => {
     ),
   ).toThrow();
 });
+
+it.each([
+  '第三集-风雪',
+  '第三集《风雪》',
+  '第三集（风雪）',
+  '第三集 (风雪)',
+  '第三集《风雪》（时长4分钟）',
+])('preserves episode identity for bracketed heading %s', (heading) => {
+  const source = `${heading}\n雪地里觉如举起石牌。\n第四集 黎明\n觉如走进王城。`;
+  const result = resolveDocumentTasks(
+    { tasks: [{ ...task, title: '石牌', category: 'props', sourceId: 0 }] },
+    source,
+    documentTaskSources(source),
+  );
+  expect(result.tasks[0]).toMatchObject({
+    title: '第三集-石牌',
+    episode: { number: 3, title: '风雪', label: '第三集' },
+  });
+  expect(documentTaskSources(source)).toHaveLength(2);
+});
