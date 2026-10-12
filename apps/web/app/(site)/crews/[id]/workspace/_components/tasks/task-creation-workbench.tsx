@@ -1,4 +1,6 @@
 "use client";
+import { TaskRequestHistory } from "@/app/(site)/crews/_components/task-request-history";
+import { isTaskRequestReceipt } from "@/app/(site)/crews/_hooks/task-request-receipt";
 import { createPortal } from "react-dom";
 import { taskLocalDate } from "./task-local-date";
 import { TaskCardPoints, taskRequestedPoints } from "./task-card-points";
@@ -83,8 +85,9 @@ const STAGED_CATEGORY_BARS = [
 export type Draft = {
   id: number;
   input: CreateCrewTaskInput;
-  state: "staged" | "creating" | "created" | "uncertain";
+  state: "staged" | "creating" | "created" | "uncertain" | "submitted";
   taskId?: string;
+  requestId?: string;
   isRecruiting?: boolean;
 };
 
@@ -148,6 +151,7 @@ function TaskCreationSession({
     user!.id,
     crewId
   );
+  // Empty string opens the assigned-task picker independently of the selected category.
   const [creditTaskId, setCreditTaskId] = useState<string | null>(null);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [productionOpen, setProductionOpen] = useState(false);
@@ -207,7 +211,9 @@ function TaskCreationSession({
         assignees: task.assignees ?? [],
       },
     })),
-    ...drafts.filter((draft) => canManage && draft.state !== "created"),
+    ...drafts.filter(
+      (draft) => canManage && draft.state !== "created" && draft.state !== "submitted"
+    ),
   ];
   useEffect(() => {
     alive.current = true;
@@ -216,7 +222,7 @@ function TaskCreationSession({
     };
   }, []);
   const pending = drafts.filter((draft) => draft.state === "staged");
-  const pendingBatches = batches.filter((batch) => !batch.created);
+  const pendingBatches = batches.filter((batch) => !batch.created && !batch.requestId);
   const pendingCount =
     pending.length + pendingBatches.reduce((total, batch) => total + batch.items.length, 0);
   const editing = drafts.find((draft) => draft.id === editingId);
@@ -231,8 +237,8 @@ function TaskCreationSession({
   useEffect(() => {
     if (!busy && !storageError) return;
     if (
-      !drafts.some((draft) => draft.state !== "created") &&
-      !batches.some((batch) => !batch.created)
+      !drafts.some((draft) => draft.state !== "created" && draft.state !== "submitted") &&
+      !batches.some((batch) => !batch.created && !batch.requestId)
     )
       return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -275,7 +281,11 @@ function TaskCreationSession({
           if (!alive.current) break;
           setDrafts((current) =>
             current.map((item) =>
-              item.id === draft.id ? { ...item, state: "created", taskId: result.id } : item
+              item.id === draft.id
+                ? isTaskRequestReceipt(result)
+                  ? { ...item, state: "submitted", requestId: result.requestId }
+                  : { ...item, state: "created", taskId: result.id }
+                : item
             )
           );
         } catch (cause) {
@@ -294,7 +304,7 @@ function TaskCreationSession({
           setBatches((current) =>
             current.map((item) => (item.key === batch.key ? { ...item, attempted: true } : item))
           );
-          await crewApi.post(batch.path, { body: batch.body });
+          const receipt = await crewApi.post<unknown>(batch.path, { body: batch.body });
           // Refresh all Crew views for the submitting account, even if the
           // workbench unmounts while the server finishes the committed batch.
           void Promise.allSettled([
@@ -310,7 +320,13 @@ function TaskCreationSession({
           ]);
           if (!alive.current) break;
           setBatches((current) =>
-            current.map((item) => (item.key === batch.key ? { ...item, created: true } : item))
+            current.map((item) =>
+              item.key === batch.key
+                ? isTaskRequestReceipt(receipt)
+                  ? { ...item, requestId: receipt.requestId }
+                  : { ...item, created: true }
+                : item
+            )
           );
         } catch (cause) {
           // Both batch APIs persist receipts: retrying this exact command is safe.
@@ -358,6 +374,9 @@ function TaskCreationSession({
   ) : null;
   const toolbar = (
     <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" onClick={() => setCreditTaskId("")}>
+        {t("applyPoints")}
+      </Button>
       <Button variant="ghost" size="sm" onClick={() => setShowEpisodes(true)}>
         {t("episodes")}
       </Button>
@@ -407,6 +426,7 @@ function TaskCreationSession({
   );
   return (
     <div hidden={!active} className="min-h-0 min-w-0 flex-1 overflow-auto @container">
+      {active && <TaskRequestHistory crewId={crewId} />}
       {active && canvasActionTarget ? createPortal(canvasAction, canvasActionTarget) : canvasAction}
       {batchMode ? (
         <WorkbenchBatchActions
@@ -528,7 +548,7 @@ function TaskCreationSession({
                 {t("episodeUncertain")}
               </p>
             ) : null}
-            {canManage && batches.some((batch) => !batch.created) ? (
+            {canManage && batches.some((batch) => !batch.created && !batch.requestId) ? (
               <section className="rounded-lg bg-white/5 p-3 text-xs">
                 <div className="cursor-pointer">
                   {t("recoverTemplates", { count: pendingBatches.length })}
@@ -1162,12 +1182,12 @@ function TaskCreationSession({
                   <DialogTitle>{t("addCredit")}</DialogTitle>
                 </DialogHeader>
                 <DialogBody>
-                  {creditTaskId && (
+                  {creditTaskId !== null && (
                     <CrewComputeTopUpForm
                       key={creditTaskId}
                       crewId={crewId}
                       crewName={crewName}
-                      initialTaskId={creditTaskId}
+                      initialTaskId={creditTaskId || undefined}
                       onClose={() => setCreditTaskId(null)}
                     />
                   )}
@@ -1408,7 +1428,9 @@ function TaskCreationSession({
                       setDrafts((current) =>
                         current.map((item) =>
                           item.id === editingId
-                            ? { ...item, input, state: "created", taskId: task.id }
+                            ? isTaskRequestReceipt(task)
+                              ? { ...item, input, state: "submitted", requestId: task.requestId }
+                              : { ...item, input, state: "created", taskId: task.id }
                             : item
                         )
                       );

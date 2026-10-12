@@ -1,3 +1,8 @@
+import {
+  admitTaskCreation,
+  taskCreationTransaction,
+  afterTaskCreationCommit,
+} from '../task-requests/task-request-admission';
 import { bindNewTaskDeliveryTemplate } from './task-delivery-binding';
 import { groupedTaskAmount } from '../task-recruitment';
 import { grantInitialTaskAllowance } from '../compute-requests/initial-allowance';
@@ -2153,7 +2158,14 @@ export class CrewTasksService {
 
   async create(crewId: string, userId: string, input: CreateCrewTaskInput) {
     if (input.rewardCurrency) assertNewCrewCurrency(input.rewardCurrency);
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await admitTaskCreation(
+      this.prisma,
+      this.authorization,
+      crewId,
+      userId,
+      'manual',
+      input,
+    );
     if (input.dueAt && new Date(input.dueAt).getTime() < Date.now()) {
       throw new BadRequestException('Choose today or a future deadline.');
     }
@@ -2166,7 +2178,8 @@ export class CrewTasksService {
       });
     }
 
-    const task = await this.manageTaskWrite(crewId, userId, async (tx) => {
+    const task = await taskCreationTransaction(this.prisma, async (tx) => {
+      await this.authorization.requireMembership(crewId, userId, tx);
       await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-create:${crewId}`})::bigint)
@@ -2350,18 +2363,21 @@ export class CrewTasksService {
           tx,
         );
       }
+      await this.authorization.requireMembership(crewId, userId, tx);
       // Include the folder inserted after task creation in the returned DTO.
       return tx.crewTask.findUniqueOrThrow({
         where: { id: created.id },
         include: taskInclude,
       });
     });
-    await this.conversations.broadcastCrewTaskChange(
-      crewId,
-      task.id,
-      'created',
-      userId,
-    );
+    await afterTaskCreationCommit(async () => {
+      await this.conversations.broadcastCrewTaskChange(
+        crewId,
+        task.id,
+        'created',
+        userId,
+      );
+    });
 
     return this.toDtoWithUsage(task);
   }

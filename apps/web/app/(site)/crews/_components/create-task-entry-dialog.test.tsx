@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CreateTaskEntryDialog } from "./create-task-entry-dialog";
 const h = vi.hoisted(() => ({
   id: "alice" as string | null,
-  permissions: ["tasks.manage"],
+  permissions: ["tasks.view"],
   fetching: false,
   failed: false,
   auth: vi.fn(),
@@ -55,7 +55,7 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   h.id = "alice";
-  h.permissions = ["tasks.manage"];
+  h.permissions = ["tasks.view"];
   h.fetching = false;
   h.failed = false;
   container = document.createElement("div");
@@ -117,7 +117,7 @@ it("blocks members without task management and clears selection on account chang
   expect(document.body.textContent).toContain("cannotManage");
   expect(document.querySelector("a")).toBeNull();
   h.id = "bob";
-  h.permissions = ["tasks.manage"];
+  h.permissions = ["tasks.view"];
   render();
   expect(document.querySelector("select")?.value).toBe("");
   expect(document.querySelector("a")).toBeNull();

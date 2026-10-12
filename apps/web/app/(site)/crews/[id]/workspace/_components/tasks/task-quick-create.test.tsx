@@ -1250,3 +1250,33 @@ it("saves a revenue-share-only task without inventing a cash amount", async () =
     expect.objectContaining({ rewardUsdMinor: null, profitShareBps: 100 })
   );
 });
+
+it("does not open recruitment or invitations for a pending task proposal", async () => {
+  const invite = vi.fn(),
+    publish = vi.fn(),
+    created = vi.fn();
+  state.create.mockResolvedValueOnce({
+    code: "TASK_APPROVAL_REQUIRED",
+    requestId: "11111111-1111-4111-8111-111111111111",
+    status: "pending",
+    message: "Submitted for approval",
+  });
+  renderQuickCreate(created, vi.fn(), project, {
+    onInviteTask: invite,
+    onPublishTask: publish,
+    initialInput: {
+      title: "Pending proposal",
+      description: "Edit the scene",
+      taskKind: "script",
+      priority: "normal",
+      assignees: [],
+      rewardUsdMinor: 0,
+      dueAt: "2099-10-03T00:00:00Z",
+    } as CreateCrewTaskInput,
+  });
+  await act(async () => click(exactButton("Create & invite")));
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(invite).not.toHaveBeenCalled();
+  expect(publish).not.toHaveBeenCalled();
+  expect(created).not.toHaveBeenCalled();
+});

@@ -11454,3 +11454,23 @@ model AppStoryAttachment {
   @@index([projectId, actorId, chapterId, hash])
   @@map("app_story_attachments")
 }
+
+/// An immutable task-creation submission. No active task or allowance exists until approval.
+model CrewTaskCreationRequest {
+  id String @id @default(uuid()) @db.Uuid
+  crewId String @map("crew_id") @db.VarChar(64)
+  requesterId String @map("requester_id") @db.VarChar(64)
+  kind String @db.VarChar(32)
+  input Json @db.JsonB
+  requestKey String @map("request_key") @db.VarChar(128)
+  status String @default("pending") @db.VarChar(16)
+  result Json? @db.JsonB
+  decisionNote String? @map("decision_note")
+  decidedByAdminId String? @map("decided_by_admin_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)
+
+  @@unique([crewId, requesterId, requestKey])
+  @@index([status, createdAt, id])
+  @@map("crew_task_creation_requests")
+}

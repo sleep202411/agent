@@ -1,3 +1,9 @@
+import { taskRequestExecution } from '../task-requests/task-request-context';
+import {
+  admitTaskCreation,
+  taskCreationTransaction,
+  afterTaskCreationCommit,
+} from '../task-requests/task-request-admission';
 import {
   classifyDocumentAnalysisFailure,
   documentAnalysisProviderDiagnostic,
@@ -109,12 +115,31 @@ export class CrewPdfTaskImportService
     private readonly conversations: ConversationsService,
   ) {}
   async get(crewId: string, userId: string, id: string) {
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const row = await this.prisma.crewPdfTaskImport.findFirst({
       where: { id, crewId, userId },
     });
     if (!row) throw new NotFoundException('PDF analysis not found.');
+    const approval = ['ready', 'applied'].includes(row.status)
+      ? await this.prisma.crewTaskCreationRequest.findFirst({
+          where: {
+            crewId,
+            requesterId: userId,
+            kind: 'pdf',
+            input: { path: ['id'], equals: id },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        })
+      : null;
     return {
+      approval: approval
+        ? {
+            code: 'TASK_APPROVAL_REQUIRED',
+            requestId: approval.id,
+            status: approval.status,
+            message: `Task request ${approval.status}.`,
+          }
+        : null,
       id: row.id,
       createdAt: row.createdAt.toISOString(),
       updatedAt: (row.updatedAt ?? row.createdAt).toISOString(),
@@ -137,7 +162,7 @@ export class CrewPdfTaskImportService
     };
   }
   async analyze(crewId: string, userId: string, id: string, file?: Upload) {
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await this.authorization.require(crewId, userId, 'tasks.view');
     if (
       !file ||
       file.buffer.length > MAX_BYTES ||
@@ -242,7 +267,7 @@ export class CrewPdfTaskImportService
     let stage: 'access' | 'configuration' | 'generation' | 'persistence' =
       'access';
     try {
-      await this.authorization.require(crewId, userId, 'tasks.manage');
+      await this.authorization.require(crewId, userId, 'tasks.view');
       stage = 'configuration';
       const apiKey = process.env.ALIBABA_API_KEY?.trim();
       if (!apiKey) throw new Error('Provider is not configured');
@@ -262,7 +287,7 @@ export class CrewPdfTaskImportService
         ),
       );
       stage = 'access';
-      await this.authorization.require(crewId, userId, 'tasks.manage');
+      await this.authorization.require(crewId, userId, 'tasks.view');
       stage = 'persistence';
       await this.prisma.crewPdfTaskImport.updateMany({
         where: { id, status: 'analyzing' },
@@ -293,13 +318,49 @@ export class CrewPdfTaskImportService
     id: string,
     input: z.infer<typeof ApplyPdfTasksSchema>,
   ) {
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await this.authorization.requireMembership(crewId, userId);
+    if (!taskRequestExecution.getStore()) {
+      const preview = await this.prisma.crewPdfTaskImport.findFirst({
+        where: { id, crewId, userId },
+      });
+      if (!preview) throw new NotFoundException('PDF analysis not found.');
+      if (!['ready', 'applied'].includes(preview.status))
+        throw new ConflictException(
+          'Wait for a successful document analysis before submitting tasks.',
+        );
+      if (
+        preview.status === 'ready' &&
+        preview.createdAt.getTime() <
+          (taskRequestExecution.getStore()?.requestedAt.getTime() ??
+            Date.now()) -
+            86400_000
+      )
+        throw new ConflictException({
+          code: 'PREVIEW_EXPIRED',
+          message: 'This preview has expired. Analyze the document again.',
+        });
+      const proposals = PdfTasksSchema.parse(preview.proposals).tasks;
+      if (input.indices.some((index) => !proposals[index]))
+        throw new BadRequestException(
+          'A selected task does not exist in this preview.',
+        );
+    }
+    await admitTaskCreation(
+      this.prisma,
+      this.authorization,
+      crewId,
+      userId,
+      'pdf',
+      { id, input },
+    );
+    await this.authorization.requireMembership(crewId, userId);
     const indices = [...input.indices].sort((a, b) => a - b);
-    const result = await this.prisma.$transaction(
+    const result = await taskCreationTransaction(
+      this.prisma,
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         await tx.$queryRaw`SELECT id FROM crews WHERE id = ${crewId} FOR UPDATE`;
-        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        await this.authorization.requireMembership(crewId, userId, tx);
         const preview = await tx.crewPdfTaskImport.findFirst({
           where: { id, crewId, userId },
         });
@@ -315,7 +376,12 @@ export class CrewPdfTaskImportService
           throw new ConflictException(
             'Wait for a successful PDF analysis before creating tasks.',
           );
-        if (preview.createdAt.getTime() < Date.now() - 86400_000)
+        if (
+          preview.createdAt.getTime() <
+          (taskRequestExecution.getStore()?.requestedAt.getTime() ??
+            Date.now()) -
+            86400_000
+        )
           throw new ConflictException({
             code: 'PREVIEW_EXPIRED',
             message: 'This preview has expired. Analyze the PDF again.',
@@ -390,7 +456,7 @@ export class CrewPdfTaskImportService
               await this.authorization.require(
                 crewId,
                 userId,
-                'production.manage',
+                'tasks.view',
                 tx,
               );
               const aggregate = await tx.crewEpisode.aggregate({
@@ -469,40 +535,37 @@ export class CrewPdfTaskImportService
             },
           },
         });
-        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        await this.authorization.requireMembership(crewId, userId, tx);
         if (createdEpisodes.length)
-          await this.authorization.require(
-            crewId,
-            userId,
-            'production.manage',
-            tx,
-          );
+          await this.authorization.require(crewId, userId, 'tasks.view', tx);
         return { taskIds, replayed: false, createdEpisodes };
       },
       { timeout: 30_000 },
     );
-    if (result.createdEpisodes)
+    await afterTaskCreationCommit(async () => {
+      if (result.createdEpisodes)
+        await Promise.allSettled(
+          result.createdEpisodes.map((episodeId) =>
+            this.conversations.broadcastCrewTaskProjectChange(
+              crewId,
+              'episode',
+              episodeId,
+              'created',
+              userId,
+            ),
+          ),
+        );
       await Promise.allSettled(
-        result.createdEpisodes.map((episodeId) =>
-          this.conversations.broadcastCrewTaskProjectChange(
+        result.taskIds.map((taskId) =>
+          this.conversations.broadcastCrewTaskChange(
             crewId,
-            'episode',
-            episodeId,
-            'created',
+            taskId,
+            'updated',
             userId,
           ),
         ),
       );
-    await Promise.allSettled(
-      result.taskIds.map((taskId) =>
-        this.conversations.broadcastCrewTaskChange(
-          crewId,
-          taskId,
-          'updated',
-          userId,
-        ),
-      ),
-    );
+    });
     return { taskIds: result.taskIds, replayed: result.replayed };
   }
 }

@@ -1,3 +1,4 @@
+import { approvedExecution } from '../task-requests/__tests__/approved-execution';
 jest.mock('../tasks/task-delivery-folder', () => ({
   provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
 }));
@@ -48,7 +49,10 @@ function setup() {
       run(tx),
     ),
   };
-  const auth = { require: jest.fn().mockResolvedValue({}) };
+  const auth = {
+    requireMembership: jest.fn().mockResolvedValue({}),
+    require: jest.fn().mockResolvedValue({}),
+  };
   const templates = {
     resolveActiveTemplate: jest.fn().mockResolvedValue(template),
     instantiateTasks: jest.fn().mockResolvedValue([{ id: 'task' }]),
@@ -62,6 +66,7 @@ function setup() {
       broadcastCrewTaskChange: jest.fn().mockResolvedValue(undefined),
     } as never,
   );
+  approvedExecution(service, 'apply', () => tx, 2);
   return { service, tx, auth, templates, template };
 }
 describe('Episode task templates', () => {
@@ -71,7 +76,7 @@ describe('Episode task templates', () => {
     expect(result.items).toHaveLength(12);
     expect(result).toMatchObject(input);
     expect(templates.instantiateTasks).not.toHaveBeenCalled();
-    expect(auth.require).toHaveBeenCalledTimes(2);
+    expect(auth.requireMembership).toHaveBeenCalled();
   });
   it('applies an episode-scoped batch under task/episode/template locks and stores a durable receipt', async () => {
     const { service, templates, tx, auth } = setup();
@@ -96,7 +101,7 @@ describe('Episode task templates', () => {
         }[][]
       )[0][0].data.payload,
     ).toMatchObject({ templateApplication: 'episode', taskIds: ['task'] });
-    expect(auth.require).toHaveBeenCalledTimes(2);
+    expect(auth.requireMembership).toHaveBeenCalled();
   });
   it('replays a receipt even after tasks move or the published template changes', async () => {
     const { service, templates, tx } = setup();
@@ -231,7 +236,7 @@ describe('Episode task templates', () => {
   });
   it('rechecks permission before commit', async () => {
     const { service, auth } = setup();
-    auth.require
+    auth.requireMembership
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce(new Error('revoked'));
     await expect(

@@ -1,3 +1,4 @@
+import { approvedExecution } from '../task-requests/__tests__/approved-execution';
 jest.mock('../tasks/task-delivery-folder', () => ({
   provisionTaskDeliveryFolderTx: jest.fn().mockResolvedValue('folder'),
 }));
@@ -27,7 +28,10 @@ function fixture() {
       }),
     },
   };
-  const auth = { require: jest.fn().mockResolvedValue(undefined) };
+  const auth = {
+    requireMembership: jest.fn().mockResolvedValue({}),
+    require: jest.fn().mockResolvedValue(undefined),
+  };
   const stories = {
     requireProjectInTransaction: jest.fn().mockResolvedValue(undefined),
     requireProject: jest.fn().mockResolvedValue({
@@ -184,6 +188,7 @@ function applyFixture() {
   Object.assign(base.db, {
     $transaction: (run: (tx: unknown) => unknown) => run(tx),
   });
+  approvedExecution(base.service, 'apply', () => tx, 2);
   return {
     ...base,
     previewSpy,

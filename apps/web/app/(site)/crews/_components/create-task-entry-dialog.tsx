@@ -62,7 +62,7 @@ function EntrySession({
     validSelection &&
     !membership.isFetching &&
     !membership.isError &&
-    membership.data?.permissions.includes(mode === "position" ? "openings.manage" : "tasks.manage");
+    membership.data?.permissions.includes(mode === "position" ? "openings.manage" : "tasks.view");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined}>

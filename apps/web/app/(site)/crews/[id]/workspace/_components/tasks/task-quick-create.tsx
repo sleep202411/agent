@@ -1,4 +1,9 @@
 "use client";
+import { v4 as submissionUuid } from "uuid";
+import {
+  isTaskRequestReceipt,
+  type TaskRequestReceipt,
+} from "@/app/(site)/crews/_hooks/task-request-receipt";
 import { taskLocalDate } from "./task-local-date";
 import { Input } from "@/components/ui/input";
 import { TaskPaymentHelp } from "../../../../_components/task-payment-help";
@@ -76,7 +81,7 @@ interface TaskQuickCreateProps {
   onPublishTask?: (taskId: string) => void;
   onInviteTask?: (task: CrewTaskDTO) => void;
   onStage?: (input: CreateCrewTaskInput) => void;
-  onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
+  onCreateStaged?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO | TaskRequestReceipt>;
   keyboardShortcut?: boolean;
   initialInput?: CreateCrewTaskInput;
   onSave?: (input: CreateCrewTaskInput) => Promise<CrewTaskDTO>;
@@ -120,6 +125,7 @@ export function TaskQuickCreate({
   const [positionRole, setPositionRole] = useState(initialInput?.positionRole ?? "");
   const locale = useLocale() as "en-US" | "zh-CN" | "zh-HK";
   const create = useCreateCrewTask(crewId);
+  const submission = useRef<{ fingerprint: string; key: string } | null>(null);
   const episodes = useCrewEpisodes(crewId);
   const templates = useCrewTaskKindTemplates(crewId, open);
   const draftTask = useDraftCrewTask(crewId);
@@ -496,6 +502,12 @@ export function TaskQuickCreate({
               : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
             : [],
       };
+      if (!onSave) {
+        const fingerprint = JSON.stringify(input);
+        if (!submission.current || submission.current.fingerprint !== fingerprint)
+          submission.current = { fingerprint, key: submissionUuid() };
+        input.submissionKey = submission.current.key;
+      }
       if (onStage && !recruit && !invite) {
         staged = true;
         onStage(input);
@@ -508,6 +520,12 @@ export function TaskQuickCreate({
           ? await onCreateStaged(input)
           : await create.mutateAsync(input);
       if (session.current !== requestedSession) return;
+      if (isTaskRequestReceipt(task)) {
+        toast.success(t(`approval.${task.status}`));
+        submission.current = null;
+        setOpen(false);
+        return;
+      }
       toast.success(t(onSave ? "saved" : "created"));
       onCreated?.(task);
       if (invite) {
@@ -937,6 +955,7 @@ export function TaskQuickCreate({
           </div>
         </div>
 
+        {!onSave && <p className="px-6 text-sm text-muted-foreground">{t("approval.help")}</p>}
         <footer className="flex min-h-16 shrink-0 items-center justify-end border-t border-white/10 px-5 py-4 sm:px-8">
           {!onStage && !onSave ? (
             <button

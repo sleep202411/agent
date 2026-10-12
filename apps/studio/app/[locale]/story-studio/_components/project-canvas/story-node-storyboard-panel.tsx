@@ -151,7 +151,11 @@ function StoryboardPanelSession({
     creatingRef.current = true;
     setCreatingTask(true);
     try {
-      await createStoryboardChild(projectId, nodeId, {});
+      const result = await createStoryboardChild(projectId, nodeId, {});
+      if ("code" in result && result.code === "TASK_APPROVAL_REQUIRED") {
+        if (alive.current) toast.success(result.message);
+        return;
+      }
       await queryClient.invalidateQueries({
         queryKey: ["storyboard-children", projectId],
       });

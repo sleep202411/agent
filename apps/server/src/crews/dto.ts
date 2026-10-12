@@ -644,6 +644,7 @@ export const TaskCustomFieldValueSchema = z
 
 export const CreateCrewTaskSchema = z
   .object({
+    submissionKey: z.string().uuid().optional(),
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().max(10_000).default(''),
     workflowStateId: z.string().uuid().optional(),

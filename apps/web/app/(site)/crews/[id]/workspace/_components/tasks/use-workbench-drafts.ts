@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Draft } from "./task-creation-workbench";
 import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 
-type Batch = WorkbenchTaskBatch & { created?: boolean; attempted?: boolean };
+type Batch = WorkbenchTaskBatch & { created?: boolean; attempted?: boolean; requestId?: string };
 type Snapshot = { drafts: Draft[]; batches: Batch[] };
 const empty = (): Snapshot => ({ drafts: [], batches: [] });
 const savedSchema = z.object({
@@ -13,8 +13,9 @@ const savedSchema = z.object({
   drafts: z.array(
     z.object({
       id: z.number().int().nonnegative(),
-      state: z.enum(["staged", "creating", "created", "uncertain"]),
+      state: z.enum(["staged", "creating", "created", "uncertain", "submitted"]),
       taskId: z.string().optional(),
+      requestId: z.string().optional(),
       input: z
         .object({
           title: z.string(),
@@ -68,6 +69,7 @@ const savedSchema = z.object({
         })
       ),
       created: z.boolean().optional(),
+      requestId: z.string().optional(),
       attempted: z.boolean().optional(),
     })
   ),

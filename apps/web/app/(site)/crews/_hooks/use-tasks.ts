@@ -1,4 +1,5 @@
 "use client";
+import { isTaskRequestReceipt, type TaskRequestReceipt } from "./task-request-receipt";
 import { useEffect } from "react";
 import type { CrewProfessionalDeliveryInput } from "./types";
 
@@ -722,9 +723,17 @@ export function useCreateCrewTask(crewId: string) {
   return useMutation({
     onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: CreateCrewTaskInput) =>
-      crewApi.post<CrewTaskDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, { body: input }),
+      crewApi.post<CrewTaskDTO | TaskRequestReceipt>(`/crews/${encodeURIComponent(crewId)}/tasks`, {
+        body: input,
+      }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;
+      if (isTaskRequestReceipt(task)) {
+        void qc.invalidateQueries({
+          queryKey: ["crew-task-requests", origin.crewId, origin.accountUserId],
+        });
+        return;
+      }
       const { accountUserId, crewId } = origin;
       qc.invalidateQueries(crewAccountQueries(crewKeys.assets(crewId), accountUserId));
       qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);

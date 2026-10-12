@@ -1,3 +1,11 @@
+vi.mock("@/app/(site)/crews/_components/task-request-history", () => ({
+  TaskRequestHistory: () => null,
+}));
+vi.mock("@/app/(site)/crews/_components/crew-compute-top-up-form", () => ({
+  CrewComputeTopUpForm: ({ initialTaskId }: { initialTaskId?: string }) => (
+    <div data-points-picker={initialTaskId ?? "all-assigned"} />
+  ),
+}));
 vi.mock("@/components/ui/native-select", () => ({
   NativeSelect: ({
     onChange,
@@ -1121,4 +1129,23 @@ it("selects only eligible tasks in an art subgroup and preserves other subgroup 
   expect(check("Props").checked).toBe(true);
   expect(check("Scenes").checked).toBe(false);
   expect(check("Other Art")).not.toBeNull();
+});
+
+it("opens the points task picker for a member while Scripts is empty", async () => {
+  state.tasks = [
+    {
+      id: "art",
+      parentId: null,
+      status: "open",
+      assetCategory: "characters",
+      assignees: [{ userId: "user" }],
+    },
+  ];
+  await render(false);
+  const button = [...host.querySelectorAll("button")].find(
+    (row) => row.textContent === "Apply for points"
+  );
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
+  expect(host.querySelector('[data-points-picker="all-assigned"]')).not.toBeNull();
 });

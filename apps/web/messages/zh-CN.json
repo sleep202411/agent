@@ -5412,6 +5412,7 @@
       "editTask": "编辑任务",
       "inviteLink": "生成邀请链接",
       "openRecruitment": "开放招募",
+      "applyPoints": "申请积分",
       "addCredit": "申请积分",
       "requestedPoints": "已申请积分",
       "myRequestedPoints": "我的已申请积分",
@@ -5483,7 +5484,8 @@
       "documentAnalyzing": "分析中 · 已用时 {seconds} 秒。状态自动更新，处理可能需要几分钟。",
       "statusLegend": "任务状态",
       "inviteAvailability": "邀请链接仅适用于未分配且未招聘的任务。已分配或招聘中的任务已有创作者或招聘渠道。",
-      "statusOverdue": "已逾期"
+      "statusOverdue": "已逾期",
+      "submitted": "等待 YH 审批"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -6060,7 +6062,17 @@
     "assetCategory_characters": "角色",
     "assetCategory_scenes": "场景",
     "assetCategory_props": "道具",
-    "assetCategory_art": "其他美术"
+    "assetCategory_art": "其他美术",
+    "approval": {
+      "help": "提交任务后由 YH 审批。审批通过后才会创建任务并分配初始积分。",
+      "pending": "等待 YH 审批",
+      "approved": "已批准",
+      "rejected": "已拒绝",
+      "title": "我的任务申请",
+      "loadFailed": "无法加载任务申请",
+      "retry": "重试",
+      "empty": "暂无任务申请"
+    }
   },
   "crewInvitations": {
     "signIn": "登录",

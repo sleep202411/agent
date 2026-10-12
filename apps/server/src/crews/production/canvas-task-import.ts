@@ -1,3 +1,8 @@
+import {
+  admitTaskCreation,
+  taskCreationTransaction,
+  afterTaskCreationCommit,
+} from '../task-requests/task-request-admission';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import { randomUUID } from 'node:crypto';
 import {
@@ -50,12 +55,21 @@ export class CrewCanvasTaskImportService {
     userId: string,
     input: ApplyCanvasInput,
   ) {
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await admitTaskCreation(
+      this.prisma,
+      this.authorization,
+      crewId,
+      userId,
+      'canvas',
+      { projectId, input },
+    );
+    await this.authorization.requireMembership(crewId, userId);
     await this.stories.requireProject(userId, projectId, 'story.read');
-    const result = await this.prisma.$transaction(
+    const result = await taskCreationTransaction(
+      this.prisma,
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
-        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        await this.authorization.requireMembership(crewId, userId, tx);
         // Match Story writes: project/workspace before crew. Besides preventing
         // inverted row locks, this holds the live Studio grant through commit.
         await this.stories.requireProjectInTransaction(
@@ -232,28 +246,30 @@ export class CrewCanvasTaskImportService {
             },
           },
         });
-        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        await this.authorization.requireMembership(crewId, userId, tx);
         await this.stories.requireProject(userId, projectId, 'story.read');
         return { taskIds, replayed: false };
       },
       { timeout: 30_000 },
     );
     // Notification failure must never turn a committed import into a failed write.
-    await Promise.allSettled(
-      result.taskIds.map((taskId) =>
-        this.conversations.broadcastCrewTaskChange(
-          crewId,
-          taskId,
-          'updated',
-          userId,
+    await afterTaskCreationCommit(async () => {
+      await Promise.allSettled(
+        result.taskIds.map((taskId) =>
+          this.conversations.broadcastCrewTaskChange(
+            crewId,
+            taskId,
+            'updated',
+            userId,
+          ),
         ),
-      ),
-    );
+      );
+    });
     return result;
   }
 
   async preview(crewId: string, projectId: string, userId: string) {
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const { project } = await this.stories.requireProject(
       userId,
       projectId,
@@ -316,7 +332,7 @@ export class CrewCanvasTaskImportService {
       return typeof id === 'string' ? [id] : [];
     });
     // Recheck access before returning private story content.
-    await this.authorization.require(crewId, userId, 'tasks.manage');
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const { project: currentProject } = await this.stories.requireProject(
       userId,
       projectId,

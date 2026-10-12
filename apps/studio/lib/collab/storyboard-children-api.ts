@@ -43,14 +43,19 @@ export function createStoryboardChild(
   input: { title?: string },
   signal?: AbortSignal
 ) {
-  return api.post<{ taskId: string }>(
-    `${storyboardChildrenPath(projectId)}/${encodeURIComponent(nodeId)}/create`,
-    {
-      data: input,
-      signal,
-      requestScope: "project",
-    }
-  );
+  return api.post<
+    | { taskId: string }
+    | {
+        code: "TASK_APPROVAL_REQUIRED";
+        requestId: string;
+        status: "pending" | "approved" | "rejected";
+        message: string;
+      }
+  >(`${storyboardChildrenPath(projectId)}/${encodeURIComponent(nodeId)}/create`, {
+    data: input,
+    signal,
+    requestScope: "project",
+  });
 }
 
 export interface StoryboardTaskCandidates {

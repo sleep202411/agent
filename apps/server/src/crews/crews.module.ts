@@ -1,3 +1,8 @@
+import { CrewTaskRequestsService } from './task-requests/task-requests.service';
+import {
+  CrewTaskRequestsController,
+  CrewTaskRequestsAdminController,
+} from './task-requests/task-requests.controller';
 import {
   CrewPdfTaskImportController,
   CrewPdfTaskImportService,
@@ -177,6 +182,8 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewTaskRequestsController,
+    CrewTaskRequestsAdminController,
     TaskPaymentsController,
     CrewQualificationCatalogController,
     EpisodeTaskTemplateController,
@@ -230,6 +237,7 @@ import { CrewProductionService } from './production/production.service';
     StoryStoryboardChildrenController,
   ],
   providers: [
+    CrewTaskRequestsService,
     TaskPaymentsService,
     CrewStudioRevocationService,
     EpisodeTaskTemplateService,

@@ -1,3 +1,4 @@
+import { approvedExecution } from '../task-requests/__tests__/approved-execution';
 import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -395,13 +396,18 @@ function build() {
     roles,
     notifications,
     conversations,
-    service: new CrewTasksService(
-      prisma as never,
-      roles as never,
-      assetAccess as never,
-      notifications as never,
-      conversations as never,
-      earnings as never,
+    service: approvedExecution(
+      new CrewTasksService(
+        prisma as never,
+        roles as never,
+        assetAccess as never,
+        notifications as never,
+        conversations as never,
+        earnings as never,
+      ),
+      'create',
+      () => tx,
+      1,
     ),
     assetAccess,
     earnings,

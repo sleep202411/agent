@@ -1,3 +1,7 @@
+import {
+  admitTaskCreation,
+  taskCreationTransaction,
+} from '../task-requests/task-request-admission';
 import { provisionTaskDeliveryFolderTx } from '../tasks/task-delivery-folder';
 import {
   BadRequestException,
@@ -490,7 +494,17 @@ export class StoryboardChildrenService {
     input: CreateStoryboardChildInput,
   ): Promise<{ taskId: string }> {
     const crewId = await this.resolveCrew(projectId, userId);
-    return this.withTaskWrite(crewId, userId, async (tx) => {
+    await admitTaskCreation(
+      this.prisma,
+      this.authorization,
+      crewId,
+      userId,
+      'storyboard_child',
+      { projectId, nodeId, input },
+    );
+    return taskCreationTransaction(this.prisma, async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+      await this.authorization.requireMembership(crewId, userId, tx);
       const imported = await this.importedTask(tx, crewId, projectId, nodeId);
       if (imported) return { taskId: imported.id };
       const plotTree = await this.resolvePlotTree(crewId, tx);

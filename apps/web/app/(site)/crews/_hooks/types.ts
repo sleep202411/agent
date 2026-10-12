@@ -729,6 +729,7 @@ export interface UpdateCrewTaskCommentInput {
 }
 
 export interface CreateCrewTaskInput {
+  submissionKey?: string;
   title: string;
   description: string;
   workflowStateId?: string;

@@ -481,7 +481,7 @@ export function CrewWorkspace({
                 crewVersion={crewDetail.version}
                 members={members}
                 isOwner={viewer.can("tasks.manage")}
-                canCreate={viewer.can("tasks.manage")}
+                canCreate={viewer.can("tasks.view")}
                 canInvite={viewer.can("tasks.manage") && viewer.can("members.invite")}
                 onPublishTask={
                   viewer.can("openings.manage")

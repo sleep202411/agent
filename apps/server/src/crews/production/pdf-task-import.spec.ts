@@ -1,3 +1,4 @@
+import { approvedExecution } from '../task-requests/__tests__/approved-execution';
 jest.mock('./document-task-review', () => ({
   ...jest.requireActual<typeof import('./document-task-review')>(
     './document-task-review',
@@ -101,11 +102,15 @@ function fixture() {
   };
   const database = {
     ...db,
+    crewTaskCreationRequest: { findFirst: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn((run: (tx: typeof db) => Promise<unknown>) =>
       run(db),
     ),
   };
-  const auth = { require: jest.fn() };
+  const auth = {
+    requireMembership: jest.fn().mockResolvedValue({}),
+    require: jest.fn(),
+  };
   const conversations = {
     broadcastCrewTaskChange: jest.fn(),
     broadcastCrewTaskProjectChange: jest.fn(),
@@ -115,6 +120,7 @@ function fixture() {
     auth as never,
     conversations as never,
   );
+  approvedExecution(service, 'apply', () => db, 1);
   return { service, db: database, auth, row, conversations };
 }
 beforeEach(() => {
@@ -122,7 +128,7 @@ beforeEach(() => {
 });
 it('denies access before reading or writing analysis', async () => {
   const { service, db, auth } = fixture();
-  auth.require.mockRejectedValue(new Error('denied'));
+  auth.requireMembership.mockRejectedValue(new Error('denied'));
   await expect(
     service.apply('crew', 'user', 'id', { indices: [0] }),
   ).rejects.toThrow('denied');
@@ -142,7 +148,7 @@ it('creates selected source-grounded tasks, folders and an idempotent receipt', 
   expect(data.metadata.assetCategory).toBe('scenes');
   expect(data.metadata.sourceEvidence).toBe(proposals.tasks[0].evidence);
   expect(provisionTaskDeliveryFolderTx).toHaveBeenCalledTimes(1);
-  expect(auth.require).toHaveBeenCalledTimes(3);
+  expect(auth.requireMembership).toHaveBeenCalledTimes(5);
   expect(row.status).toBe('applied');
   await expect(
     service.apply('crew', 'user', 'id', { indices: [0] }),
@@ -475,7 +481,7 @@ it('creates an authorized episode and links imported tasks within the same trans
   expect(auth.require).toHaveBeenCalledWith(
     'crew',
     'user',
-    'production.manage',
+    'tasks.view',
     expect.anything(),
   );
   expect(db.crewEpisode.create.mock.calls[0]?.[0]).toMatchObject({
@@ -540,11 +546,11 @@ it('does not overwrite a conflicting existing episode', async () => {
   ).rejects.toThrow('different title');
   expect(db.crewTask.create).not.toHaveBeenCalled();
 });
-it('does not create an episode without production management authority', async () => {
+it('does not create an approved episode after task access is revoked', async () => {
   const { service, db, auth } = episodeFixture();
   auth.require.mockImplementation(
     (_crew: string, _user: string, permission: string) => {
-      if (permission === 'production.manage') throw new Error('denied');
+      if (permission === 'tasks.view') throw new Error('denied');
     },
   );
   await expect(
@@ -552,4 +558,25 @@ it('does not create an episode without production management authority', async (
   ).rejects.toThrow('denied');
   expect(db.crewEpisode.create).not.toHaveBeenCalled();
   expect(db.crewTask.create).not.toHaveBeenCalled();
+});
+
+it('recovers the current task approval after reopening a ready analysis', async () => {
+  const { service, db } = fixture();
+  db.crewTaskCreationRequest.findFirst.mockResolvedValue({
+    id: 'request',
+    status: 'pending',
+  } as never);
+  await expect(service.get('crew', 'user', 'id')).resolves.toMatchObject({
+    approval: { requestId: 'request', status: 'pending' },
+  });
+  expect(db.crewTaskCreationRequest.findFirst).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        crewId: 'crew',
+        requesterId: 'user',
+        kind: 'pdf',
+        input: { path: ['id'], equals: 'id' },
+      },
+    }),
+  );
 });

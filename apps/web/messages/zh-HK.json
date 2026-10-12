@@ -5412,6 +5412,7 @@
       "editTask": "編輯任務",
       "inviteLink": "產生邀請連結",
       "openRecruitment": "開放招募",
+      "applyPoints": "申請積分",
       "addCredit": "申請積分",
       "requestedPoints": "已申請積分",
       "myRequestedPoints": "我的已申請積分",
@@ -5483,7 +5484,8 @@
       "documentAnalyzing": "分析中 · 已用時 {seconds} 秒。狀態自動更新，處理可能需要幾分鐘。",
       "statusLegend": "任務狀態",
       "inviteAvailability": "邀請連結僅適用於未分配且未招聘的任務。已分配或招聘中的任務已有創作者或招聘渠道。",
-      "statusOverdue": "已逾期"
+      "statusOverdue": "已逾期",
+      "submitted": "等待 YH 審批"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -6060,7 +6062,17 @@
     "assetCategory_characters": "角色",
     "assetCategory_scenes": "場景",
     "assetCategory_props": "道具",
-    "assetCategory_art": "其他美術"
+    "assetCategory_art": "其他美術",
+    "approval": {
+      "help": "提交任務後由 YH 審批。審批通過後才會建立任務並分配初始積分。",
+      "pending": "等待 YH 審批",
+      "approved": "已批准",
+      "rejected": "已拒絕",
+      "title": "我的任務申請",
+      "loadFailed": "無法載入任務申請",
+      "retry": "重試",
+      "empty": "暫無任務申請"
+    }
   },
   "crewInvitations": {
     "signIn": "登入",

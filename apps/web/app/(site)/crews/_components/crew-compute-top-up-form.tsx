@@ -40,6 +40,8 @@ export function CrewComputeTopUpForm({
   const requestKey = useRef<string | undefined>(undefined);
   const task = data?.tasks.find((row) => row.id === taskId);
   const assignees = task?.assignees ?? [];
+  const assignedTasks =
+    data?.tasks.filter((row) => row.assignees?.some((a) => a.userId === user?.id)) ?? [];
   const recipient = user?.id ?? "";
   const displays = useUserDisplays(assignees.map((a) => a.userId));
   const edit = () => {
@@ -104,6 +106,7 @@ export function CrewComputeTopUpForm({
       }}
     >
       <p className="text-sm text-muted-foreground">{t("topUpPolicy")}</p>
+      {!assignedTasks.length && <p role="status">{t("noTasks")}</p>}
       <label className="block space-y-1 text-sm">
         {t("project")} <span aria-hidden="true">*</span>
         <Input readOnly value={crewName} />

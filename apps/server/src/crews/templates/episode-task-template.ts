@@ -1,3 +1,8 @@
+import {
+  admitTaskCreation,
+  taskCreationTransaction,
+  afterTaskCreationCommit,
+} from '../task-requests/task-request-admission';
 import { isDeepStrictEqual } from 'node:util';
 import { TaskCustomFieldValueSchema } from '../dto';
 import { validateTaskCustomFieldValues } from '../tasks/task-custom-field-values';
@@ -67,7 +72,7 @@ export class EpisodeTaskTemplateService {
     episodeId: string,
     userId: string,
   ) {
-    await this.authorization.require(crewId, userId, 'tasks.manage', db);
+    await this.authorization.requireMembership(crewId, userId, db);
     const episode = await db.crewEpisode.findFirst({
       where: { id: episodeId, crewId },
       select: { id: true, version: true, status: true },
@@ -110,7 +115,7 @@ export class EpisodeTaskTemplateService {
         userId,
       );
       const { template, items } = await this.plan(tx, crew.productionKind);
-      await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+      await this.authorization.require(crewId, userId, 'tasks.view', tx);
       return {
         templateId: template.id,
         templateVersion: template.version,
@@ -127,7 +132,16 @@ export class EpisodeTaskTemplateService {
     userId: string,
     input: ApplyInput,
   ) {
-    const result = await this.prisma.$transaction(
+    await admitTaskCreation(
+      this.prisma,
+      this.authorization,
+      crewId,
+      userId,
+      'episode_template',
+      { episodeId, input },
+    );
+    const result = await taskCreationTransaction(
+      this.prisma,
       async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         // Episode updates use a row lock; hold it through validation and creation.
@@ -174,7 +188,7 @@ export class EpisodeTaskTemplateService {
             throw new ConflictException(
               'This episode already has template tasks. Existing work will not be replaced.',
             );
-          await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+          await this.authorization.requireMembership(crewId, userId, tx);
           return { taskIds: saved.taskIds, replayed: true };
         }
         const existing = await tx.crewTask.findMany({
@@ -203,7 +217,7 @@ export class EpisodeTaskTemplateService {
             throw new ConflictException(
               'This episode already has template tasks. Existing work will not be replaced.',
             );
-          await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+          await this.authorization.requireMembership(crewId, userId, tx);
           return { taskIds: existing.map((task) => task.id), replayed: true };
         }
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:project-task-template:${crew.productionKind}`}, 0))`;
@@ -284,28 +298,30 @@ export class EpisodeTaskTemplateService {
             },
           },
         });
-        await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+        await this.authorization.requireMembership(crewId, userId, tx);
         return { taskIds: tasks.map((task) => task.id), replayed: false };
       },
       { timeout: 30_000 },
     );
-    await this.conversations.broadcastCrewTaskProjectChange(
-      crewId,
-      'episode',
-      episodeId,
-      'updated',
-      userId,
-    );
-    await Promise.all(
-      result.taskIds.map((taskId) =>
-        this.conversations.broadcastCrewTaskChange(
-          crewId,
-          taskId,
-          'updated',
-          userId,
+    await afterTaskCreationCommit(async () => {
+      await this.conversations.broadcastCrewTaskProjectChange(
+        crewId,
+        'episode',
+        episodeId,
+        'updated',
+        userId,
+      );
+      await Promise.all(
+        result.taskIds.map((taskId) =>
+          this.conversations.broadcastCrewTaskChange(
+            crewId,
+            taskId,
+            'updated',
+            userId,
+          ),
         ),
-      ),
-    );
+      );
+    });
     return result;
   }
 }

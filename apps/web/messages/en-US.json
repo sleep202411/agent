@@ -5412,6 +5412,7 @@
       "editTask": "Edit Task",
       "inviteLink": "Generate Invitation Link",
       "openRecruitment": "Open Recruitment",
+      "applyPoints": "Apply for points",
       "addCredit": "Apply for credit",
       "requestedPoints": "Requested points",
       "myRequestedPoints": "My requested points",
@@ -5483,7 +5484,8 @@
       "documentAnalyzing": "Analyzing · {seconds}s elapsed. Status updates automatically; processing may take a few minutes.",
       "statusLegend": "Task status",
       "inviteAvailability": "Invitation links require an unassigned task without active recruitment. Assigned or recruiting tasks already have a creator or recruitment route.",
-      "statusOverdue": "Overdue"
+      "statusOverdue": "Overdue",
+      "submitted": "Awaiting YH approval"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -6060,7 +6062,17 @@
     "assetCategory_characters": "Characters",
     "assetCategory_scenes": "Scenes",
     "assetCategory_props": "Props",
-    "assetCategory_art": "Other Art"
+    "assetCategory_art": "Other Art",
+    "approval": {
+      "help": "Submit your task for YH’s approval. Tasks and initial point allowances are created only after approval.",
+      "pending": "Awaiting YH approval",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "title": "My task requests",
+      "loadFailed": "Could not load task requests",
+      "retry": "Retry",
+      "empty": "No task requests yet"
+    }
   },
   "crewInvitations": {
     "signIn": "Sign in",

@@ -1,4 +1,8 @@
 "use client";
+import {
+  isTaskRequestReceipt,
+  type TaskRequestReceipt,
+} from "@/app/(site)/crews/_hooks/task-request-receipt";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -13,6 +17,8 @@ type Preview = {
   createdAt?: string;
   tasks: Array<{ title: string; description: string; category: string; evidence: string }>;
   taskIds: string[];
+  requestId?: string;
+  approval?: TaskRequestReceipt | null;
   failure?: { code: string; message: string } | null;
 };
 export function WorkbenchPdfImport({
@@ -36,6 +42,7 @@ function PdfSession({
   userId: string;
   onStatus?: (status: string) => void;
 }) {
+  const approvalT = useTranslations("crewTasks.approval");
   const t = useTranslations("crewTaskProject.workbench");
   const client = useQueryClient();
   const [now, setNow] = useState(() => Date.now());
@@ -112,7 +119,9 @@ function PdfSession({
     );
   }
   function receive(value: Preview) {
-    setPreview(value);
+    setPreview(
+      value.approval && value.status === "ready" ? { ...value, status: "submitted" } : value
+    );
     if (value.status === "ready") setSelection(value.tasks.map((_, index) => index));
   }
   async function analyze(check = false) {
@@ -179,6 +188,7 @@ function PdfSession({
       uncertain ||
       preview?.status === "ready" ||
       preview?.status === "applied" ||
+      preview?.status === "submitted" ||
       preview?.status === "failed" ||
       preview?.status === "expired"
     )
@@ -236,10 +246,17 @@ function PdfSession({
     setUncertain(true);
     persist(preview.id, selection);
     try {
-      const result = await crewApi.post<{ taskIds: string[] }>(`${base}/${preview.id}/apply`, {
-        body: { indices: selection },
-      });
-      setPreview({ ...preview, status: "applied", taskIds: result.taskIds });
+      const result = await crewApi.post<{ taskIds: string[] } | TaskRequestReceipt>(
+        `${base}/${preview.id}/apply`,
+        {
+          body: { indices: selection },
+        }
+      );
+      setPreview(
+        isTaskRequestReceipt(result)
+          ? { ...preview, status: "submitted", requestId: result.requestId, approval: result }
+          : { ...preview, status: "applied", taskIds: result.taskIds }
+      );
       setUncertain(false);
       persist(preview.id);
       await refresh();
@@ -298,13 +315,13 @@ function PdfSession({
             !file ||
             busy ||
             uncertain ||
-            ["queued", "analyzing", "ready", "applied"].includes(preview?.status ?? "")
+            ["queued", "analyzing", "ready", "applied", "submitted"].includes(preview?.status ?? "")
           }
           onClick={() => void analyze()}
         >
           {busy ? t("pdfWorking") : t("pdfAnalyze")}
         </Button>
-        {(preview?.status === "failed" || expired) && (
+        {(preview?.status === "failed" || preview?.approval?.status === "rejected" || expired) && (
           <Button variant="outline" disabled={busy} onClick={newAnalysis}>
             {t("pdfNewAnalysis")}
           </Button>
@@ -330,6 +347,11 @@ function PdfSession({
           <p>{preview.failure?.message || t("pdfFailed")}</p>
           <p>{t("pdfAnalysisId", { id: preview.id })}</p>
         </div>
+      )}
+      {preview?.status === "submitted" && (
+        <p role="status">
+          {preview.approval ? approvalT(preview.approval.status) : t("submitted")}
+        </p>
       )}
       {preview?.status === "applied" && (
         <p role="status">{t("pdfCreated", { count: preview.taskIds.length })}</p>
