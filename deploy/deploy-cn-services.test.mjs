@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
-function run(t, scenario, phase = "all", pinned = false) {
+function run(t, scenario, phase = "all", pinned = false, services = ["server"]) {
   const root = mkdtempSync(join(tmpdir(), "cn-release-test-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const repo = join(root, "repo");
@@ -121,7 +121,7 @@ if(cmd==='aliyun') {
   if(fs.readFileSync(args[2]+'/values.yaml','utf8')!=='revision: A\\n') process.exit(52);
  }
 } else if(cmd==='kubectl') {
- if(args[0]==='get') console.log('registry/image:existing');
+ if(args[0]==='get') console.log(args[2]==='fizzdragon-app-story-agent' && scenario==='app-not-provisioned' ? '' : 'registry/image:existing');
  if(args[0]==='diff' && scenario==='edit') fs.appendFileSync(repo+'/source.txt','local edit');
  if(args[0]==='diff') process.exit(scenario==='already-applied' ? 0 : 1);
 } else if(cmd==='sleep') {
@@ -139,7 +139,7 @@ if(cmd==='aliyun') {
       ...(pinned ? ["--tag", revision] : []),
       "--allow-chart-update",
       ...(phase === "all" ? [] : [`--${phase}-only`]),
-      "server",
+      ...services,
     ],
     {
       cwd: repo,
@@ -187,6 +187,19 @@ test("normal selective release uses committed source, build script and chart", (
   assert.equal(upgrades.length, 1);
   assert.ok(upgrades[0].args.includes("server.image.tag=" + revision));
   assert.ok(upgrades[0].args.includes("web.image.tag=existing"));
+  assert.ok(upgrades[0].args.includes("appStoryAgent.image.tag=existing"));
+  assert.ok(!upgrades[0].args.includes("appStoryAgent.enabled=false"));
+});
+test("unrelated release keeps an unprovisioned App worker disabled", (t) => {
+  const { result, upgrades } = run(t, "app-not-provisioned", "deploy");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(upgrades[0].args.includes("appStoryAgent.enabled=false"));
+});
+test("explicit App worker release uses its verified image without disabling it", (t) => {
+  const { result, upgrades, revision } = run(t, "app-not-provisioned", "deploy", false, ["server", "app-story-agent"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.ok(upgrades[0].args.includes("appStoryAgent.image.tag=" + revision));
+  assert.ok(!upgrades[0].args.includes("appStoryAgent.enabled=false"));
 });
 test("HEAD advance during startup cannot change build-only source", (t) => {
   const { result, upgrades } = run(t, "advance", "build");
