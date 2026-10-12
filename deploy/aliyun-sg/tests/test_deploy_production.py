@@ -380,10 +380,10 @@ class DeployProductionTest(unittest.TestCase):
     def main(self, arguments, identity_error=None, wrong_uid=False, build_error=None, after_build=None):
         with tempfile.NamedTemporaryFile() as kubeconfig:
             verify = Mock(side_effect=identity_error, return_value={"namespaceUid": "wrong" if wrong_uid else deploy.NS_UID})
-            def build_images(*_, **__):
+            def build_images(_root, services, *_args, **_kwargs):
                 if build_error: raise build_error
                 if after_build: after_build()
-                return {"web": deploy.pinned_image("web", NEXT_DIGEST)}
+                return {service: deploy.pinned_image(service, NEXT_DIGEST) for service in services}
             build = Mock(side_effect=build_images)
             def command(args, data=None, timeout=45):
                 prefix = ["kubectl", "--kubeconfig", kubeconfig.name, "-n", "fizzdragon", "--request-timeout=30s"]
@@ -455,6 +455,39 @@ class DeployProductionTest(unittest.TestCase):
         self.assertEqual([args[2] for args in self.kube.patches()], ["fizzdragon-web"])
         for service in set(deploy.SERVICES) - {"web"}:
             self.assertEqual(self.kube.deployments[service], original[service])
+
+    def test_all_updates_the_provisioned_inventory_without_enabling_an_absent_app_worker(self):
+        for provisioned in (True, False):
+            with self.subTest(provisioned=provisioned):
+                self.kube = FakeKube()
+                if not provisioned:
+                    del self.kube.deployments['app-story-agent']
+                original = copy.deepcopy(self.kube.deployments)
+                result, _, build = self.main(['all'])
+                self.assertEqual(result, 0)
+                selected = [service for service in deploy.SERVICES if service in original]
+                self.assertEqual(build.call_args.args[1], list(deploy.SERVICES))
+                self.assertEqual({args[2] for args in self.kube.patches()},
+                                 {'fizzdragon-' + service for service in selected})
+                self.assertEqual(self.kube.deployments.keys(), original.keys())
+                if not provisioned:
+                    self.assertNotIn('app-story-agent', build.call_args.args[2])
+                    self.assertIn('provisioning and activation still required', self.output.getvalue())
+                    self.assertIn(deploy.pinned_image('app-story-agent', NEXT_DIGEST), self.output.getvalue())
+
+    def test_absent_app_worker_release_requires_separate_provisioning(self):
+        del self.kube.deployments['app-story-agent']
+        result, _, build = self.main(['app-story-agent'])
+        self.assertEqual(result, 1)
+        build.assert_not_called()
+        self.assertFalse(self.kube.patches())
+
+    def test_all_check_accepts_unprovisioned_app_worker_without_building_or_writing(self):
+        del self.kube.deployments['app-story-agent']
+        result, _, build = self.main(['all', '--check'])
+        self.assertEqual(result, 0)
+        build.assert_not_called()
+        self.assertTrue(all(args[0] in ('get', 'auth') for args, _, _ in self.kube.calls))
 
     def test_nonproduction_source_stops_before_cloud_and_prebuilt_publication(self):
         for selection in (["web"], ["--image", "web=" + NEXT_DIGEST]):

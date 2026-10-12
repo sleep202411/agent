@@ -1,0 +1,61 @@
+# Additive App-only connectivity; preserve all existing service policies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fizzdragon-server-app-story
+  namespace: fizzdragon
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fizzdragon
+      app.kubernetes.io/instance: fizzdragon
+      app.kubernetes.io/component: server
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fizzdragon
+              app.kubernetes.io/instance: fizzdragon
+              app.kubernetes.io/component: app-story-agent
+      ports:
+        - { protocol: TCP, port: 4397 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fizzdragon-app-story-isolation
+  namespace: fizzdragon
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: fizzdragon
+      app.kubernetes.io/instance: fizzdragon
+      app.kubernetes.io/component: app-story-agent
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fizzdragon
+              app.kubernetes.io/instance: fizzdragon
+              app.kubernetes.io/component: server
+      ports:
+        - { protocol: TCP, port: 4397 }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - { protocol: TCP, port: 443 }
