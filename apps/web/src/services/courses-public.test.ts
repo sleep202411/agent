@@ -3,6 +3,7 @@ import {
   matchesPublicCoursePriceRange,
   publicCourseCertificateId,
   publicCoursePriceCredits,
+  publicCourseType,
   resolveCertificateIconUrl,
   toPublicCertificate,
 } from "./courses-public";
@@ -25,6 +26,13 @@ it("filters catalog rows by free versus credit ranges", () => {
   expect(matchesPublicCoursePriceRange(200, "100-300")).toBe(true);
   expect(matchesPublicCoursePriceRange(500, "500+")).toBe(true);
   expect(matchesPublicCoursePriceRange(40, "100-300")).toBe(false);
+});
+
+it("defaults missing public course type to master class", () => {
+  expect(publicCourseType(undefined)).toBe(2);
+  expect(publicCourseType("1")).toBe(1);
+  expect(publicCourseType(3)).toBe(3);
+  expect(publicCourseType(9)).toBe(2);
 });
 
 it("reads a skill certificate id only when it is a positive integer", () => {

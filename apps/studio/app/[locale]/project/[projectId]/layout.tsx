@@ -34,6 +34,7 @@ import {
 import { ProjectSectionsPanel } from "@/app/[locale]/project/_components/project-sections-panel";
 import { ProjectOverviewPanel } from "@/app/[locale]/project/_components/project-overview-panel";
 import { WorkbenchPanelContent } from "@/app/[locale]/project/_components/workbench-panel-content";
+import { DirectorDeskHost } from "@/components/canvas/authoring/director-desk-host";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
@@ -214,6 +215,7 @@ function ProjectSession({ project }: { project: ProjectRef }) {
                   crewAssetsEnabled
                 />
               </div>
+              <DirectorDeskHost />
               {projectHeader}
               {!copilotOpen && (
                 <AgentToggle className="pointer-events-auto absolute right-4 bottom-4 z-30" />

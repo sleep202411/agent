@@ -117,6 +117,7 @@ async function render(view: ReactNode, session = "alice") {
 const course = (id: string): Course => ({
   id,
   published: false,
+  type: 2,
   localized: emptyLocalizedCourse(),
   videos: [],
   instructors: [],
@@ -138,6 +139,7 @@ const courses = () => (
     loadError={null}
     initialQ="search"
     initialPublished="all"
+    initialType="all"
     initialPage={1}
     pageSize={20}
   />

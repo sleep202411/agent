@@ -22,6 +22,20 @@ export interface PublicCourseVideo {
 }
 
 /** Published list item (flattened locale fields + instructors). */
+export type PublicCourseType = 1 | 2 | 3;
+
+export const PUBLIC_COURSE_TYPE = {
+  required: 1,
+  master: 2,
+  skill: 3,
+} as const;
+
+export function publicCourseType(value: unknown): PublicCourseType {
+  const n = Number(value);
+  if (n === 1 || n === 2 || n === 3) return n;
+  return PUBLIC_COURSE_TYPE.master;
+}
+
 export interface PublicCourseSummary {
   id: number;
   updateTime: string;
@@ -34,6 +48,7 @@ export interface PublicCourseSummary {
   priceCredits?: number | string | null;
   enrollmentEnabled?: boolean | number | null;
   certificateId?: number | string | null;
+  type?: number | string | null;
 }
 
 export interface PublicCourseDetail {

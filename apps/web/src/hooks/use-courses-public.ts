@@ -17,10 +17,12 @@ import {
   matchesPublicCoursePriceRange,
   publicCourseCertificateId,
   publicCoursePriceCredits,
+  publicCourseType,
   resolveCourseCoverUrl,
   type PublicCourseDetail,
   type PublicCourseInstructor,
   type PublicCourseSummary,
+  type PublicCourseType,
   type PublicCourseVideo,
 } from "@/src/services/courses-public";
 
@@ -37,6 +39,7 @@ export interface PublicCourseCardModel {
   priceCredits: number | null;
   /** Null when no skill certificate is assigned. */
   certificateId: number | null;
+  type: PublicCourseType;
 }
 
 export interface PublicCourseDetailView {
@@ -65,6 +68,7 @@ function toCard(summary: PublicCourseSummary): PublicCourseCardModel {
     instructors: summary.instructors ?? [],
     priceCredits: publicCoursePriceCredits(summary),
     certificateId: publicCourseCertificateId(summary),
+    type: publicCourseType(summary.type),
   };
 }
 

@@ -175,6 +175,42 @@ export class LegacyPointsService {
   }
 
   /**
+   * Emails for accounts in 正常 status (`account_status = 0`).
+   * Blank emails are skipped; duplicates are collapsed case-insensitively.
+   */
+  async exportActiveEmails(): Promise<{
+    emails: string[];
+    workbook: string;
+    filename: string;
+    count: number;
+  }> {
+    const rows = await this.mysql.query<LegacyPointsRow>(
+      `SELECT email
+         FROM client_user
+        WHERE account_status = 0
+          AND email IS NOT NULL
+          AND TRIM(email) <> ''
+        ORDER BY id DESC`,
+    );
+    const seen = new Set<string>();
+    const emails: string[] = [];
+    for (const row of rows) {
+      const email = row.email?.trim() ?? '';
+      if (!email) continue;
+      const key = email.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      emails.push(email);
+    }
+    return {
+      emails,
+      workbook: buildEmailWorkbook(emails),
+      filename: `active-user-emails-${new Date().toISOString().slice(0, 10)}.xls`,
+      count: emails.length,
+    };
+  }
+
+  /**
    * Resolve legacy user ids to their display identity, in one round trip.
    *
    * Workspaces carry only an external `ownerUserId` (no user table on our side
@@ -413,6 +449,32 @@ export class LegacyPointsService {
       scoreBalance: Number(row.score_balance ?? 0),
     };
   }
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Excel 2003 SpreadsheetML — opens natively in Excel as a workbook. */
+function buildEmailWorkbook(emails: string[]): string {
+  const rows = ['email', ...emails]
+    .map(
+      (value) =>
+        `<Row><Cell><Data ss:Type="String">${xmlEscape(value)}</Data></Cell></Row>`,
+    )
+    .join('');
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<?mso-application progid="Excel.Sheet"?>` +
+    `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"` +
+    ` xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">` +
+    `<Worksheet ss:Name="emails"><Table>${rows}</Table></Worksheet>` +
+    `</Workbook>`
+  );
 }
 
 /** String columns returned by the legacy ledger/user queries. */

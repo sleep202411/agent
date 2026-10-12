@@ -29,6 +29,8 @@ vi.mock("@/src/services/courses-public", () => ({
   resolveCourseCoverUrl: (url: string) => url,
   publicCoursePriceCredits: () => null,
   publicCourseCertificateId: () => null,
+  publicCourseType: () => 2,
+  PUBLIC_COURSE_TYPE: { required: 1, master: 2, skill: 3 },
   matchesPublicCoursePriceRange: () => true,
   getAssignedCourseCertificate: async () => null,
 }));

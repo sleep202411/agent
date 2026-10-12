@@ -30,7 +30,7 @@
 
 | #   | 操作             | 方法   | 路径                                  | 说明                                              |
 | --- | ---------------- | ------ | ------------------------------------- | ------------------------------------------------- |
-| 1   | 列表             | GET    | `/api/admin/courses`                  | 分页 / 搜索 / 发布状态                            |
+| 1   | 列表             | GET    | `/api/admin/courses`                  | 分页 / 搜索 / 发布状态 / 分类                     |
 | 2   | 详情             | GET    | `/api/admin/courses/{id}`             | 含 videos、instructors                            |
 | 3   | 创建草稿         | POST   | `/api/admin/courses`                  | `published=0`，返回 `id`                          |
 | 4   | 保存内容         | PUT    | `/api/admin/courses/{id}`             | **不改**发布状态；locales / videos / 讲师全量替换 |
@@ -48,14 +48,17 @@
 
 ## 1. 课程列表
 
-`GET /api/admin/courses?q=&published=all&page=1&pageSize=20`
+`GET /api/admin/courses?q=&published=all&type=&page=1&pageSize=20`
 
-| 参数        | 说明                        |
-| ----------- | --------------------------- |
-| `q`         | 可选，按各语言 title 模糊搜 |
-| `published` | `all` / `true` / `false`    |
-| `page`      | 默认 1                      |
-| `pageSize`  | 默认 20                     |
+| 参数        | 说明                              |
+| ----------- | --------------------------------- |
+| `q`         | 可选，按各语言 title 模糊搜       |
+| `published` | `all` / `true` / `false`          |
+| `type`      | 可选，`1` / `2` / `3`；不传为全部 |
+| `page`      | 默认 1                            |
+| `pageSize`  | 默认 20                           |
+
+`type`：`1` 推荐必修课，`2` 大师课，`3` 技能课。主表字段，默认 `2`。`data.list[]` 含 `type`。
 
 `data.list[]` 项含完整 `localized`、`instructors`、`videoCount`（不返回完整 `videos[]`）；管理端顶层文案字段为 `null`。
 
@@ -130,23 +133,25 @@
   "certificateId": 13,
   "priceCredits": 100,
   "enrollmentEnabled": true,
-  "instructorShares": [{ "userId": 15, "shareBps": 5000 }]
+  "instructorShares": [{ "userId": 15, "shareBps": 5000 }],
+  "type": 2
 }
 ```
 
-| 字段                         | 说明                                            |
-| ---------------------------- | ----------------------------------------------- |
-| `localized`                  | 课程文案，key 如 `zh-CN` / `en-US` / `zh-HK`    |
-| `videos[].videoKey`          | 各语言共用同一片源 key（OSS object key）        |
-| `videos[].coverUrl`          | 视频封面，**各语言共用**（不在 localized 里）   |
-| `videos[].localized.*.title` | 视频标题，按语言                                |
-| `videos[].sectionId`         | 预留章节，一期恒为 `null`                       |
-| `instructors`                | 由保存时的 `instructorUserIds` 展开             |
-| `instructors[].shareBps`     | 该讲师分润，万分比（50% = 5000）；未设为 `null` |
-| `certificateId`              | 认证等级 id，未指定为 `null`                    |
-| `priceCredits`               | 报名总费用（社区积分），未售为 `0`              |
-| `enrollmentEnabled`          | 是否开启报名                                    |
-| `instructorShares`           | 与讲师分润相同，便于按 userId 对齐              |
+| 字段                         | 说明                                               |
+| ---------------------------- | -------------------------------------------------- |
+| `localized`                  | 课程文案，key 如 `zh-CN` / `en-US` / `zh-HK`       |
+| `videos[].videoKey`          | 各语言共用同一片源 key（OSS object key）           |
+| `videos[].coverUrl`          | 视频封面，**各语言共用**（不在 localized 里）      |
+| `videos[].localized.*.title` | 视频标题，按语言                                   |
+| `videos[].sectionId`         | 预留章节，一期恒为 `null`                          |
+| `instructors`                | 由保存时的 `instructorUserIds` 展开                |
+| `instructors[].shareBps`     | 该讲师分润，万分比（50% = 5000）；未设为 `null`    |
+| `certificateId`              | 认证等级 id，未指定为 `null`                       |
+| `priceCredits`               | 报名总费用（社区积分），未售为 `0`                 |
+| `enrollmentEnabled`          | 是否开启报名                                       |
+| `instructorShares`           | 与讲师分润相同，便于按 userId 对齐                 |
+| `type`                       | `1` 推荐必修课 / `2` 大师课 / `3` 技能课；默认 `2` |
 
 ---
 
@@ -203,7 +208,8 @@ Body 可空。
   "certificateId": 13,
   "priceCredits": 100,
   "enrollmentEnabled": true,
-  "instructorShares": [{ "userId": 15, "shareBps": 5000 }]
+  "instructorShares": [{ "userId": 15, "shareBps": 5000 }],
+  "type": 2
 }
 ```
 
@@ -213,7 +219,8 @@ Body 可空。
 - `videos[].videoKey` 必填；`videos[].coverUrl` 可选（视频封面共用）
 - `videos[].id` 可不传（每次保存会重建视频行，id 可能变化）
 - `instructorUserIds`：全量替换；传 `[]` 或 `null` 会清空讲师
-- `certificateId` / `priceCredits` / `enrollmentEnabled` / `instructorShares` 与课程内容一起落 Java 库；`instructorShares[].shareBps` 合计不得超过 10000（100%）
+- `certificateId` / `priceCredits` / `enrollmentEnabled` / `instructorShares` / `type` 与课程内容一起落 Java 库；`instructorShares[].shareBps` 合计不得超过 10000（100%）
+- `type` 必填，仅 `1` / `2` / `3`；缺省按 `2`（大师课）
 - `instructorShares` 只含填写了分润的讲师；`userId` 必须出现在 `instructorUserIds` 中
 
 ---
@@ -303,21 +310,24 @@ Body 可空。
 
 签发用公网 OSS endpoint（`oss.endpoint_upload_public`），禁止 `*-internal*`。
 
+公开目录 `GET /project/courses` 每条已发布课同样返回 `type`，供 Web `/courses` 按必修课 / 技能课 / 大师课分段。
+
 视频桶 CORS 需允许管理端 Origin 的 `PUT` / `OPTIONS`（你们桶上已有 `*` + PUT 即可）。
 
 ---
 
 ## 相关 DDL / 迁移（运维）
 
-| 文件                                                                 | 用途                                          |
-| -------------------------------------------------------------------- | --------------------------------------------- |
-| `src/main/resources/db/course_module.sql`                            | 新环境建表                                    |
-| `src/main/resources/db/course_commerce.sql`                          | 已有库加认证 / 费用 / 报名 / 讲师分润列       |
-| `src/main/resources/db/course_i18n.sql`                              | 已有无 locale 表时升级                        |
-| `src/main/resources/db/course_video_cover_shared.sql`                | 视频封面从 locale 迁到 `course_video`（共用） |
-| `src/main/resources/db/course_migrate_from_legacy.sql`               | 从旧 `course` 表迁移                          |
-| `src/main/resources/db/course_auto_merge_same_videos.sql`            | 同片源多语言课自动合并                        |
-| `src/main/resources/db/course_backfill_video_locale_from_legacy.sql` | 从旧表回填视频多语言标题 + 共用封面           |
+| 文件                                                                 | 用途                                                  |
+| -------------------------------------------------------------------- | ----------------------------------------------------- |
+| `src/main/resources/db/course_module.sql`                            | 新环境建表                                            |
+| `src/main/resources/db/course_commerce.sql`                          | 已有库加认证 / 费用 / 报名 / 讲师分润列               |
+| `src/main/resources/db/course_type.sql`                              | 已有库加 `type`（1 推荐必修课 / 2 大师课 / 3 技能课） |
+| `src/main/resources/db/course_i18n.sql`                              | 已有无 locale 表时升级                                |
+| `src/main/resources/db/course_video_cover_shared.sql`                | 视频封面从 locale 迁到 `course_video`（共用）         |
+| `src/main/resources/db/course_migrate_from_legacy.sql`               | 从旧 `course` 表迁移                                  |
+| `src/main/resources/db/course_auto_merge_same_videos.sql`            | 同片源多语言课自动合并                                |
+| `src/main/resources/db/course_backfill_video_locale_from_legacy.sql` | 从旧表回填视频多语言标题 + 共用封面                   |
 
 ---
 

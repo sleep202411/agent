@@ -70,7 +70,29 @@ export class LegacyPointsAdminController {
     };
   }
 
-  // Declared BEFORE `users/:identifier`, or that param route would swallow it.
+  // Flat path, same reason as `users-by-ids`: `users/:identifier` swallows
+  // `users/emails` and `findUser('emails')` returns null (HTTP 200).
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.UserRead)
+  @Get('users-emails')
+  async exportEmails(
+    @CurrentAdmin() admin: AdminActor,
+    @Req() request: Request,
+  ) {
+    const data = await this.legacyPoints.exportActiveEmails();
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.legacy_points.export_active_emails',
+      resourceType: 'legacy_client_user',
+      resourceId: 'active-emails',
+      metadata: { count: data.count },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
+  }
+
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.UserRead)
   @Get('users-by-ids')
   async byIds(

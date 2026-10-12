@@ -15,10 +15,11 @@ import type {
   CourseInstructor,
   CourseLocaleCode,
   CourseLocaleContent,
+  CourseType,
   CourseVideo,
   CourseVideoLocaleContent,
 } from "@/components/admin/courses/types";
-import { emptyLocalizedCourse } from "@/components/admin/courses/types";
+import { emptyLocalizedCourse, parseCourseType } from "@/components/admin/courses/types";
 import { javaAdminAuthHeaders } from "@/lib/java-admin-auth";
 
 function coursesApiBaseUrl(): string {
@@ -159,6 +160,7 @@ interface JavaInstructorShare {
 interface JavaCourse {
   id: number;
   published?: boolean | number | null;
+  type?: number | string | null;
   createTime?: string | null;
   updateTime?: string | null;
   localized?: Record<string, JavaCourseLocale> | null;
@@ -219,6 +221,7 @@ export interface AdminCourseSaveInput {
   priceCredits: number;
   enrollmentEnabled: boolean;
   instructorShares: Array<{ userId: number; shareBps: number }>;
+  type: CourseType;
 }
 
 function toLocaleContent(java?: JavaCourseLocale | null): CourseLocaleContent {
@@ -290,6 +293,7 @@ function toCourse(java: JavaCourse): Course {
   return {
     id: String(java.id),
     published: java.published === true || java.published === 1,
+    type: parseCourseType(java.type),
     localized: {
       "zh-CN": toLocaleContent(localized["zh-CN"]),
       "en-US": toLocaleContent(localized["en-US"]),
@@ -450,6 +454,7 @@ export function emptyDraftCourse(id = ""): Course {
   return {
     id,
     published: false,
+    type: 2,
     localized: emptyLocalizedCourse(),
     videos: [],
     instructors: [],

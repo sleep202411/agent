@@ -7,9 +7,6 @@ import {
   STORYBOARD_ADD_NODE_ACTIONS,
 } from "@/components/canvas/add-node-menu";
 import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
-import { DirectorDeskDialog } from "@/components/canvas/authoring/director-desk-dialog";
-import { useDirectorDeskImport } from "@/components/canvas/authoring/use-director-desk-import";
-import { useProjectContext } from "./project-context";
 import { ProjectCrewAssetsPanel } from "@/components/canvas/authoring/project-crew-asset-library";
 import { AiActorsPanel } from "@/components/canvas/authoring/ai-actors-panel";
 import { NodesPanel } from "@/components/canvas/nodes-panel";
@@ -74,8 +71,7 @@ export function WorkbenchPanelContent({
   const selectedSlot = useProjectUIStore((s) => s.selectedSlot);
   const closeShotDrawer = useProjectUIStore((s) => s.closeShotDrawer);
   const { documentId, provider } = useCanvasConnection();
-  const { projectId, workspaceId } = useProjectContext();
-  const directorDesk = useDirectorDeskImport({ workspaceId, projectId, canEdit });
+  const openDirectorDesk = useProjectUIStore((s) => s.openDirectorDesk);
   const storyboard = useStoryboard();
 
   const drawerActions = useMemo<ShotPictureDrawerActions>(
@@ -134,8 +130,7 @@ export function WorkbenchPanelContent({
   const handleNodeAction = useCallback(
     (action: AddNodeAction) => {
       if (action === "director-desk") {
-        directorDesk.open();
-        closeNodes();
+        openDirectorDesk();
         return;
       }
       if (activeMode === "storyboard") {
@@ -145,7 +140,7 @@ export function WorkbenchPanelContent({
       }
       requestNodeInsert(action);
     },
-    [activeMode, closeNodes, directorDesk.open, requestNodeInsert, storyboard]
+    [activeMode, closeNodes, openDirectorDesk, requestNodeInsert, storyboard]
   );
 
   const panel =
@@ -162,7 +157,7 @@ export function WorkbenchPanelContent({
         open
         onClose={closeAssets}
         customTab={assetTab}
-        onOpenDirectorDesk={canEdit ? directorDesk.open : undefined}
+        onOpenDirectorDesk={canEdit ? openDirectorDesk : undefined}
       />
     ) : renderedPanel === "crew-assets" && crewProjectId ? (
       <ProjectCrewAssetsPanel projectId={crewProjectId} onClose={closeCrewAssets} />
@@ -191,16 +186,5 @@ export function WorkbenchPanelContent({
       )
     ) : null;
 
-  return (
-    <>
-      {panel}
-      <DirectorDeskDialog
-        open={directorDesk.isOpen}
-        projectId={projectId}
-        busy={directorDesk.busy}
-        onCapture={directorDesk.capture}
-        onOpenChange={directorDesk.setOpen}
-      />
-    </>
-  );
+  return panel;
 }

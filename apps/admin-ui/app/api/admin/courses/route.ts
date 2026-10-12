@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const result = await fetchAdminCoursesList({
     q: sp.get("q") ?? undefined,
     published: sp.get("published") ?? undefined,
+    type: sp.get("type") ?? undefined,
     page: sp.get("page") ?? undefined,
     pageSize: sp.get("pageSize") ?? undefined,
   });

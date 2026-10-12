@@ -12,9 +12,11 @@ import { PublicCourseCard } from "./PublicCourseCard";
 export interface PublicCourseListProps {
   courses: PublicCourseCardModel[];
   viewMode: "grid" | "list";
+  /** Horizontal rail for required courses — no wrap. */
+  layout?: "grid" | "rail";
 }
 
-export function PublicCourseList({ courses, viewMode }: PublicCourseListProps) {
+export function PublicCourseList({ courses, viewMode, layout = "grid" }: PublicCourseListProps) {
   const t = useTranslations("courses");
   const [progressTick, setProgressTick] = useState(0);
 
@@ -42,25 +44,48 @@ export function PublicCourseList({ courses, viewMode }: PublicCourseListProps) {
     );
   }
 
+  const cards = courses.map((course) => (
+    <PublicCourseCard
+      key={course.id}
+      course={course}
+      progress={progressTick >= 0 ? readPublicCourseProgress(course.id, course.episodeCount) : 0}
+      variant={viewMode}
+    />
+  ));
+
+  if (layout === "rail") {
+    return (
+      <div className="-mx-1 overflow-x-auto pb-1 [scrollbar-width:thin]">
+        <div className="flex min-w-full snap-x snap-mandatory gap-4 px-1">
+          {courses.map((course) => (
+            <div
+              key={course.id}
+              className="w-[min(100%,320px)] min-w-[260px] shrink-0 snap-start sm:w-[calc((100%-2rem)/3)]"
+            >
+              <PublicCourseCard
+                course={course}
+                progress={
+                  progressTick >= 0 ? readPublicCourseProgress(course.id, course.episodeCount) : 0
+                }
+                variant="grid"
+                compact
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section
       className={cn(
         viewMode === "grid"
-          ? "grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-4"
+          ? "grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4"
           : "flex flex-col gap-3.5"
       )}
     >
-      {courses.map((course) => (
-        <PublicCourseCard
-          key={course.id}
-          course={course}
-          // progressTick forces a re-read after returning from a detail page.
-          progress={
-            progressTick >= 0 ? readPublicCourseProgress(course.id, course.episodeCount) : 0
-          }
-          variant={viewMode}
-        />
-      ))}
+      {cards}
     </section>
   );
 }

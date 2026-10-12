@@ -172,20 +172,9 @@ export const useProjectUIStore = create<ProjectUIState>()(
         }),
       clearNodeInsertRequest: (id) =>
         set((state) => (state.nodeInsertRequest?.id === id ? { nodeInsertRequest: null } : {})),
-      openDirectorDesk: () =>
-        set({
-          directorDeskOpen: true,
-          nodesOpen: false,
-          assetsOpen: false,
-          crewAssetsOpen: false,
-          actorsOpen: false,
-          historyOpen: false,
-          overviewOpen: false,
-          sectionsOpen: false,
-          skillsOpen: false,
-          selectedSkillId: null,
-          selectedShotId: null,
-        }),
+      // Overlay, not a left-drawer occupant. Closing the rail here unmounts
+      // the panel after its close animation and used to destroy the dialog.
+      openDirectorDesk: () => set({ directorDeskOpen: true }),
       closeDirectorDesk: () => set({ directorDeskOpen: false }),
       toggleOverview: () =>
         set((state) => ({

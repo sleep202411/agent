@@ -27,8 +27,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { ErrorBanner, Metric, StatusPill, formatDateTime } from "@/components/admin/news/shared";
 import {
+  COURSE_TYPES,
   courseDisplayCover,
   courseDisplayTitle,
+  courseTypeLabel,
+  parseCourseType,
   resolveCertificateImageUrl,
   resolveCourseCoverUrl,
   type Course,
@@ -36,6 +39,7 @@ import {
 import type { AdminCoursesListData, AdminCoursesStats } from "@/lib/admin-courses";
 
 type PublishedFilter = "all" | "true" | "false";
+type TypeFilter = "all" | "1" | "2" | "3";
 
 const INSTRUCTOR_CHIP_TONES = [
   "border-indigo-200 bg-indigo-50 text-indigo-800",
@@ -56,6 +60,7 @@ async function fetchCoursesList(
   params: {
     q: string;
     published: PublishedFilter;
+    type: TypeFilter;
     page: number;
     pageSize: number;
   },
@@ -64,6 +69,7 @@ async function fetchCoursesList(
   const search = new URLSearchParams();
   if (params.q) search.set("q", params.q);
   if (params.published !== "all") search.set("published", params.published);
+  if (params.type !== "all") search.set("type", params.type);
   search.set("page", String(params.page));
   search.set("pageSize", String(params.pageSize));
   const response = await fetch(`/api/admin/courses?${search.toString()}`, { signal });
@@ -89,6 +95,7 @@ export function CoursesListPage({
   loadError,
   initialQ,
   initialPublished,
+  initialType,
   initialPage,
   pageSize,
 }: {
@@ -100,6 +107,7 @@ export function CoursesListPage({
   loadError: string | null;
   initialQ: string;
   initialPublished: PublishedFilter;
+  initialType: TypeFilter;
   initialPage: number;
   pageSize: number;
 }) {
@@ -109,6 +117,7 @@ export function CoursesListPage({
   const [q, setQ] = useState(initialQ);
   const [searchInput, setSearchInput] = useState(initialQ);
   const [published, setPublished] = useState<PublishedFilter>(initialPublished);
+  const [type, setType] = useState<TypeFilter>(initialType);
   const [page, setPage] = useState(initialPage);
   const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(loadError);
@@ -120,18 +129,22 @@ export function CoursesListPage({
   >({});
 
   const applyData = useCallback(
-    (data: AdminCoursesListData, next: { q: string; published: PublishedFilter; page: number }) => {
+    (
+      data: AdminCoursesListData,
+      next: { q: string; published: PublishedFilter; type: TypeFilter; page: number }
+    ) => {
       setItems(data.items);
       setStats(data.stats);
       setTotal(data.total);
       setQ(next.q);
       setPublished(next.published);
+      setType(next.type);
       setPage(next.page);
     },
     []
   );
   const reload = useCallback(
-    async (next: { q: string; published: PublishedFilter; page: number }) => {
+    async (next: { q: string; published: PublishedFilter; type: TypeFilter; page: number }) => {
       const operation = begin("read");
       if (!operation) return;
       setError(null);
@@ -177,10 +190,10 @@ export function CoursesListPage({
   useEffect(() => {
     if (busyId !== null || searchInput === q) return;
     const timer = setTimeout(() => {
-      void reload({ q: searchInput, published, page: 1 });
+      void reload({ q: searchInput, published, type, page: 1 });
     }, 400);
     return () => clearTimeout(timer);
-  }, [searchInput, q, published, reload, busyId]);
+  }, [searchInput, q, published, type, reload, busyId]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
@@ -200,7 +213,7 @@ export function CoursesListPage({
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
         if (!operation.current()) return;
         if (!response.ok) throw new Error(body?.error ?? `操作失败：${response.status}`);
-        const next = { q, published, page };
+        const next = { q, published, type, page };
         const data = await fetchCoursesList({ ...next, pageSize }, operation.signal);
         if (operation.current()) applyData(data, next);
       } catch (err) {
@@ -211,7 +224,7 @@ export function CoursesListPage({
         operation.finish();
       }
     },
-    [begin, q, published, page, pageSize, applyData]
+    [begin, q, published, type, page, pageSize, applyData]
   );
 
   async function confirmDelete() {
@@ -229,7 +242,7 @@ export function CoursesListPage({
       if (!operation.current()) return;
       if (!response.ok) throw new Error(body?.error ?? `删除失败：${response.status}`);
       setDeleteTarget(null);
-      const next = { q, published, page };
+      const next = { q, published, type, page };
       const data = await fetchCoursesList({ ...next, pageSize }, operation.signal);
       if (operation.current()) applyData(data, next);
     } catch (err) {
@@ -270,6 +283,16 @@ export function CoursesListPage({
             </div>
           );
         },
+      },
+      {
+        id: "type",
+        header: "分类",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="text-sm text-slate-700">
+            {courseTypeLabel(parseCourseType(row.original.type))}
+          </span>
+        ),
       },
       {
         id: "certificate",
@@ -457,7 +480,7 @@ export function CoursesListPage({
             value={published}
             onValueChange={(value) => {
               const next = value as PublishedFilter;
-              void reload({ q: searchInput, published: next, page: 1 });
+              void reload({ q: searchInput, published: next, type, page: 1 });
             }}
           >
             <SelectTrigger className="w-[140px]">
@@ -469,13 +492,33 @@ export function CoursesListPage({
               <SelectItem value="false">未上架</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            disabled={busyId !== null}
+            value={type}
+            onValueChange={(value) => {
+              const next = value as TypeFilter;
+              void reload({ q: searchInput, published, type: next, page: 1 });
+            }}
+          >
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="课程分类" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部分类</SelectItem>
+              {COURSE_TYPES.map((item) => (
+                <SelectItem key={item.value} value={String(item.value)}>
+                  {item.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <DataTable
           columns={columns}
           data={items}
           loading={loading}
-          minWidth={960}
+          minWidth={1040}
           emptyLabel="暂无课程"
         />
 
@@ -488,7 +531,7 @@ export function CoursesListPage({
               variant="outline"
               size="sm"
               disabled={loading || page <= 1}
-              onClick={() => void reload({ q, published, page: page - 1 })}
+              onClick={() => void reload({ q, published, type, page: page - 1 })}
             >
               上一页
             </Button>
@@ -496,7 +539,7 @@ export function CoursesListPage({
               variant="outline"
               size="sm"
               disabled={loading || page >= pageCount}
-              onClick={() => void reload({ q, published, page: page + 1 })}
+              onClick={() => void reload({ q, published, type, page: page + 1 })}
             >
               下一页
             </Button>
