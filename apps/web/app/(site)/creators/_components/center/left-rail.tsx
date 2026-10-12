@@ -19,7 +19,7 @@
  * concern in practice.
  */
 import { CertificationGuide } from "./certification-guide";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconCertificate,
@@ -40,6 +40,7 @@ import { type Creator, type CreatorLevel } from "@/app/(site)/creators/_hooks/us
 import { useCreatorCertificates } from "@/app/(site)/creators/_hooks/use-certificates";
 import { CreatorExperience } from "./creator-experience";
 import { LevelApplyDialog } from "@/app/(site)/creators/_components/center/dialogs/level-apply-dialog";
+import { userLevelDisplayCopy } from "@/src/lib/user-level-catalog";
 import { IpPublisherLogos } from "@/components/ip-commerce/ip-publisher-logos";
 import type { IpPublisherPublic } from "@/src/lib/ip-commerce/api";
 import { useAllMyIpCommerceIps, usePublicCreatorIps } from "@/src/lib/ip-commerce/hooks";
@@ -268,17 +269,22 @@ export function CreatorLeftRail({
 
 function RailCard({
   title,
+  titleExtra,
   action,
   children,
 }: {
   title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
+  titleExtra?: ReactNode;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="rounded-2xl bg-card px-5 py-4">
-      <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">{title}</h2>
+      <header className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">{title}</h2>
+          {titleExtra}
+        </div>
         {action}
       </header>
       {children}
@@ -303,9 +309,11 @@ export function LevelBadge({ level }: { level: CreatorLevel }) {
   // Image-first: render the resolved imagePath when present, fall back
   // to a generic check chip when the badge graphic is missing or 404s
   // so the cell never collapses to a broken-image glyph.
+  const t = useTranslations("creatorCenter");
+  const copy = userLevelDisplayCopy(level, t);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const imageOk = Boolean(level.iconUrl) && failedUrl !== level.iconUrl;
-  const tooltipBody = level.description?.trim() || level.name;
+  const tooltipBody = copy.description || copy.name;
 
   return (
     <li>
@@ -313,7 +321,7 @@ export function LevelBadge({ level }: { level: CreatorLevel }) {
         <TooltipTrigger asChild>
           <button
             type="button"
-            aria-label={level.name}
+            aria-label={copy.name}
             className="flex w-full flex-col items-center gap-2 rounded-xl p-2 outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
@@ -328,7 +336,7 @@ export function LevelBadge({ level }: { level: CreatorLevel }) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={level.iconUrl}
-                  alt={level.name}
+                  alt={copy.name}
                   className="size-full object-contain"
                   loading="lazy"
                   onError={() => setFailedUrl(level.iconUrl)}
@@ -338,13 +346,13 @@ export function LevelBadge({ level }: { level: CreatorLevel }) {
               )}
             </span>
             <span className="line-clamp-1 text-[11px] font-medium text-muted-foreground">
-              {level.name}
+              {copy.name}
             </span>
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-[200px] text-xs">
-          <div className="font-semibold">{level.name}</div>
-          {level.description?.trim() && level.description !== level.name ? (
+          <div className="font-semibold">{copy.name}</div>
+          {copy.description && copy.description !== copy.name ? (
             <div className="mt-0.5 text-muted-foreground">{tooltipBody}</div>
           ) : null}
         </TooltipContent>

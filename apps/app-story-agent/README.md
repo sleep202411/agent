@@ -89,10 +89,12 @@ Implementation: `ui/bridge.ts`; validated messages/types are exported by
 business API. H5 owns conversation, uploads, quotes, media previews, choices and
 playback. App owns its WebView, login, navigation, system save and share.
 
-Host `dist/ui` on the **same regional HTTPS origin** as `/aurora/*`, under an
-App-owned static path such as `/app-story-agent/`. The worker's private port is
-not a static host. The production static route still needs release configuration;
-`localhost:8085` is for local validation. Allow navigation/messages only from
+Server hosts `dist/ui` at `/aurora/app-story-agent/ui/index.html` on the
+**same regional HTTPS origin** as its API. `GET /aurora/app-story-agent/config`
+reports the enabled state and exact path. All shell assets require an existing
+regional session; the authenticated initial request establishes an HttpOnly
+cookie for subsequent assets and API calls. The worker's private port is not a
+static host; `localhost:8085` is for local validation. Allow navigation/messages only from
 that exact regional origin, block untrusted redirects and keep `.com` and `.cn`
 sessions separate. Inject the existing `satoken` cookie before loading, including
 subsequent H5 requests; do not put credentials in URLs or bridge messages.
@@ -204,13 +206,25 @@ outputs. Provider schema defaults, references and clip durations are validated
 by the same resolver at quote and submission. Authoring and media provider
 availability must be qualified separately in `.cn` and `.com` before activation.
 
-The Helm component `appStoryAgent` is disabled by default. Enable it only with a
+The Helm component `appStoryAgent` is disabled in shared defaults. Enable it only with a
 revision-pinned image, regional model values, API-key Secret and internal-token
 Secret. Its private service has no public ingress and receives no shared Secret
-bundle. First activation needs the database migration, the configured deployment
-and a matching native App release together; do not release the changed App ahead
-of its Server API. Existing production release inventories remain unchanged until
-that activation is explicitly assigned.
+bundle. The Server image builds and packages the H5; worker dependencies remain
+outside the API runtime. First activation requires applied schema migrations
+and regional configuration. H5 deployment can precede native integration; do not
+release a changed native App ahead of its Server API.
+
+The CN values pin Qwen Plus for planning and authoring, Wan 2.7 for images and
+MiniMax H3 Max as the initial video model. Provider and internal-token Secrets
+are provisioned separately, without rotating existing regional credentials.
+Use the coordinated CN release from clean `main`, selecting only `server` and
+`app-story-agent`. It verifies immutable images, waits for a manual RDS backup,
+runs the existing migration job and performs an atomic Helm rollout. Set
+`CN_KUBE_CONTEXT` when the operator's context name differs from the default;
+it must still identify the CN ACK cluster. The embedded conversation retains
+official copy, message branching, attachments, Markdown, turn navigation,
+context/cache meters, preferences and product preview panels. It has no separate
+workspace navigation or additional media-spending confirmation.
 
 ## Local validation
 

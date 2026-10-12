@@ -41,3 +41,10 @@ it("groups Instructor as Partner and preserves unknown regional certifications",
   expect(certificationEntry("剪輯師")).toBe("editor");
   expect(certificationGroup("Regional certificate")).toBe("other");
 });
+it("matches live Java user_level names", () => {
+  expect(certificationGroup("分销商")).toBe("partner");
+  expect(certificationEntry("OPC创始人")).toBe("opc");
+  expect(certificationEntry("FD-III·高级创作者-AI短剧")).toBe("fd3");
+  expect(certificationEntry("艺术总监")).toBe("art");
+  expect(certificationEntry("音乐作曲")).toBe("music");
+});

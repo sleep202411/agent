@@ -15,6 +15,7 @@
 import Link from "next/link";
 import { CREATOR_SECTION_ID } from "./tab-bar";
 import { creatorQualificationKind } from "@/src/services/creator-qualification";
+import { userLevelDisplayCopy } from "@/src/lib/user-level-catalog";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useRef } from "react";
@@ -120,7 +121,7 @@ export function CreatorHero({
                   className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-xs font-medium text-foreground/80"
                 >
                   <IconCircleCheck className="size-3" />
-                  {l.name}
+                  {userLevelDisplayCopy(l, t).name}
                 </span>
               ))}
             </div>

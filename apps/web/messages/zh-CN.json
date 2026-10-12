@@ -2308,8 +2308,78 @@
     },
     "levels": {
       "heading": "FizzDragon Passport",
+      "catalogHelp": "查看全部认证等级",
+      "catalogTitle": "FizzDragon 认证目录",
       "emptyOwner": "尚未获得 FD 等级。完成项目并提交评审即可解锁徽章。",
       "emptyVisitor": "尚未获得 FD 等级。",
+      "groups": {
+        "partner": "A-合作伙伴认证",
+        "aiDirector": "B-AI导演认证",
+        "skill": "C-技能认证",
+        "other": "其他"
+      },
+      "items": {
+        "cityPartner": {
+          "name": "城市合伙人",
+          "description": "代理 FizzDragon 商业产品，例如教育、算力、内容发行变现。"
+        },
+        "distributor": {
+          "name": "分销商",
+          "description": "全球认证发行人，辅助 FizzDragon 平台内容进行全球内容发行。"
+        },
+        "instructor": {
+          "name": "讲师",
+          "description": "FizzDragon 认证讲师，可以代表 FizzDragon 进行全球院校授课。"
+        },
+        "opcFounder": {
+          "name": "OPC创始人",
+          "description": "FizzDragon 平台培训认证 OPC，FizzDragon 正在孵化中。"
+        },
+        "affiliateCreator": {
+          "name": "FD-I·入门创作者-抽卡师",
+          "description": "初级创作者，理解基础提示词和平台功能，能够进行多种画风与镜头抽卡。"
+        },
+        "juniorCreator": {
+          "name": "FD-II·初级创作者-粗剪",
+          "description": "初级创作者，在 FD-I 之上进行内容粗剪。"
+        },
+        "seniorCreator": {
+          "name": "FD-III·高级创作者-AI短剧",
+          "description": "中级创作者，在 FD-II 之上进行精剪，可以独立制作短剧。"
+        },
+        "masterCreator": {
+          "name": "FD-IV·大师创作者-AI网络电影",
+          "description": "高级创作者，可以独立制作网络大电影水平的内容。"
+        },
+        "distinguishedCreator": {
+          "name": "FD-V·杰出创作者-AI院线电影",
+          "description": "高级创作者，可以独立制作院线电影水平的内容。"
+        },
+        "aiProducer": {
+          "name": "AI制片人",
+          "description": "AI 制片人，可以调度、统筹剧组各类创作者，并协调与客户、管理层沟通，实现交付。"
+        },
+        "artDirector": {
+          "name": "艺术总监",
+          "description": "艺术总监，可进行美术资产制作。"
+        },
+        "director": {
+          "name": "导演",
+          "description": "导演。不一定拥有 AI 制作能力，拥有多年导演经验、审美与品控，调度全组成员完成艺术项目落地。"
+        },
+        "editor": {
+          "name": "剪辑师",
+          "description": "剪辑师，可将 AI 素材进行剪辑，完成成片。"
+        },
+        "musicComposer": {
+          "name": "音乐作曲",
+          "description": "配乐师，可提供影视配乐素材，或直接配乐。"
+        },
+        "scriptwriter": {
+          "name": "编剧",
+          "description": "编剧。"
+        }
+      },
       "apply": {
         "cta": "申请",
         "emptyCta": "申请认证",

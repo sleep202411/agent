@@ -87,6 +87,17 @@ class LockTests(unittest.TestCase):
     def test_explicit_region_not_current_context(self):
         self.assertIn('218059191361846222-c72d2039c68624a3e8d0dee257a13d451', Lock('cn').command)
 
+    def test_accepts_an_operator_context_for_the_same_cn_cluster(self):
+        context = 'operator-c72d2039c68624a3e8d0dee257a13d451'
+        with patch.dict(os.environ, {'CN_KUBE_CONTEXT': context}):
+            self.assertIn(context, Lock('cn').command)
+
+    def test_rejects_contexts_for_another_cluster(self):
+        for context in ['', 'global-cluster', 'operator-cwrongcluster']:
+            with self.subTest(context=context), patch.dict(os.environ, {'CN_KUBE_CONTEXT': context}):
+                with self.assertRaisesRegex(RuntimeError, 'mainland-China ACK cluster'):
+                    Lock('cn')
+
     def test_retired_com_stops_before_kubernetes_and_child_process(self):
         with patch('release_lock.subprocess.run') as command:
             with self.assertRaisesRegex(RuntimeError, 'retired; use deploy/deploy-com.sh'):

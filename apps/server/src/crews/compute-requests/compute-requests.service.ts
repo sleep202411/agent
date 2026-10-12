@@ -160,6 +160,7 @@ export class CrewComputeRequestsService {
     crewId: string,
     taskId: string,
     userId: string,
+    requireWorkspace = true,
   ) {
     await this.access(crewId, userId, tx);
     const task = await tx.crewTask.findFirst({
@@ -184,9 +185,9 @@ export class CrewComputeRequestsService {
       throw new ForbiddenException(
         'Select an active, non-cancelled task currently assigned to the creator in this Crew',
       );
-    if (!task.crew.workspaceId)
+    if (requireWorkspace && !task.crew.workspaceId)
       throw new BadRequestException(
-        'Ask the project owner to set up the compute workspace, then submit the points request',
+        'The project compute workspace is not ready',
       );
     return task;
   }
@@ -219,6 +220,8 @@ export class CrewComputeRequestsService {
         'Top-ups require 1–3000 points and a valid remaining workload',
       );
     return this.prisma.$transaction(async (tx) => {
+      // Match collaboration provisioning's lock order before taking the crew row.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:collaboration:${crewId}`})::bigint)`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
       await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
       await this.access(crewId, userId, tx);
@@ -236,6 +239,7 @@ export class CrewComputeRequestsService {
         crewId,
         input.taskId,
         beneficiaryUserId,
+        false,
       );
       const existing = await tx.crewComputeRequest.findUnique({
         where: {
@@ -266,13 +270,24 @@ export class CrewComputeRequestsService {
         throw new ConflictException(
           'Only one top-up application is allowed per task, including rejected applications',
         );
+      // Provision only after membership, assignment and duplicate checks succeed.
+      // The Studio link is separate: never repoint it or grant a balance here.
+      if (!task.crew.workspaceId) {
+        const space = await this.collaboration.ensureCrewSpaceTx(crewId, tx);
+        task.crew.workspaceId = space.workspaceId;
+      }
+      await this.walletLedger.ensureDefaultAccounts(
+        'workspace',
+        task.crew.workspaceId,
+        tx,
+      );
       // Serialize the first request against generation admission so its timestamp
       // cleanly separates existing jobs from jobs governed by this allowance.
       const wallet = await tx.walletAccount.findUnique({
         where: {
           ownerType_ownerId_currency_balanceKind: {
             ownerType: 'workspace',
-            ownerId: task.crew.workspaceId!,
+            ownerId: task.crew.workspaceId,
             currency: 'compute_point',
             balanceKind: 'consumable',
           },
@@ -291,7 +306,7 @@ export class CrewComputeRequestsService {
           userId: beneficiaryUserId,
           requestedByUserId: userId,
           taskTitle: task.title,
-          workspaceId: task.crew.workspaceId!,
+          workspaceId: task.crew.workspaceId,
           createdAt: new Date(),
         },
       });

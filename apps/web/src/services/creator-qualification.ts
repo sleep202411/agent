@@ -1,4 +1,4 @@
-export type CreatorQualificationKind = "fd" | "producer" | "skill";
+export type CreatorQualificationKind = "fd" | "producer" | "skill" | "partner";
 
 /** Assigned Java qualifications, not application submissions or account privileges. */
 export function creatorQualificationKind(
@@ -8,6 +8,7 @@ export function creatorQualificationKind(
   if (level.id === 13) return "producer";
   if (level.type === 1) return "fd";
   if (level.type === 4) return "skill";
+  if (level.type === 5) return "partner";
   return null;
 }
 export function isCreatorQualification(

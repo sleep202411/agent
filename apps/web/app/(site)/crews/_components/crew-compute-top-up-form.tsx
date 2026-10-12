@@ -10,11 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useTranslations } from "@/src/i18n/i18n";
 import { computeRequestsPageSchema } from "../_hooks/compute-requests-data";
-import {
-  useComputeRequests,
-  useComputeRequestAction,
-  useComputeWorkspaceSetup,
-} from "../_hooks/use-compute-requests";
+import { useComputeRequests, useComputeRequestAction } from "../_hooks/use-compute-requests";
 import { displayNameOf, useUserDisplays } from "../_hooks/use-users";
 
 const units = ["minutes", "hours", "days", "person_days", "percent"] as const;
@@ -33,7 +29,6 @@ export function CrewComputeTopUpForm({
   const { user } = useCurrentUser();
   const query = useComputeRequests(crewId);
   const action = useComputeRequestAction(crewId);
-  const setup = useComputeWorkspaceSetup(crewId);
   const parsed = computeRequestsPageSchema.safeParse(query.data);
   const data = parsed.success ? parsed.data : undefined;
   const [taskId, setTaskId] = useState(initialTaskId ?? "");
@@ -55,7 +50,6 @@ export function CrewComputeTopUpForm({
   const alreadyApplied = task?.topUpRequested || submittedTask === taskId;
   const valid =
     data &&
-    data.workspaceLinked &&
     task &&
     !alreadyApplied &&
     assignees.some((a) => a.userId === recipient) &&
@@ -72,20 +66,6 @@ export function CrewComputeTopUpForm({
       <div role="alert">
         {query.error?.message ?? t("loadFailed")}
         <Button onClick={() => void query.refetch()}>{t("retry")}</Button>
-      </div>
-    );
-  if (!data.workspaceLinked)
-    return (
-      <div className="space-y-3">
-        <p>{t("workspaceRequired")}</p>
-        {data.isOwner && (
-          <Button
-            disabled={setup.isPending}
-            onClick={() => setup.mutate(undefined, { onError: error })}
-          >
-            {t("setupWorkspace")}
-          </Button>
-        )}
       </div>
     );
 
