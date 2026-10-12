@@ -76,9 +76,16 @@ def latest_source(root, source, branch='main', cn=False):
         raise RuntimeError('Could not compare release inputs')
     changed = result.returncode == 1
     if cn and not changed:
-        changed = cn_chart_changed(root, source, candidate)
+        # The ECS build helper is uploaded from the pinned source archive, unlike
+        # coordinator tooling loaded from HEAD. A helper-only repair must advance
+        # that source too; image reuse is independently decided by build inputs.
+        helper = git(root, 'diff', '--quiet', source, candidate, '--',
+                     'deploy/cn-remote-build-services.sh', check=False)
+        if helper.returncode not in (0, 1):
+            raise RuntimeError('Could not compare pinned CN build helper')
+        changed = helper.returncode == 1 or cn_chart_changed(root, source, candidate)
     if candidate != source:
-        kind = 'application inputs changed; restarting' if changed else 'deployment-only changes accounted for'
+        kind = 'release inputs changed; restarting' if changed else 'deployment-only changes accounted for'
         print(f'==> main checkpoint {candidate}: {kind}', file=sys.stderr)
     return candidate if changed else source
 

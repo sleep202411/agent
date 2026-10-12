@@ -1,10 +1,11 @@
 import os
+import argparse
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from release_revision import latest_source
 import cn_release
 
@@ -53,6 +54,31 @@ class RevisionTests(unittest.TestCase):
     def test_deployment_only_update_reuses_images(self):
         self.commit('deploy/script.sh', 'updated tooling')
         self.assertEqual(latest_source(self.repo, self.source, cn=True), self.source)
+
+    def test_build_helper_only_fix_advances_pinned_archive(self):
+        old = self.commit('deploy/cn-remote-build-services.sh',
+                          'docker system prune --all --force --build\n')
+        new = self.commit('deploy/cn-remote-build-services.sh',
+                          'docker system prune --all --force\n')
+        self.git('push', 'origin', 'main')
+        self.assertEqual(latest_source(self.repo, old, cn=True), new)
+        state = dict(version=1, tag=old, services=['web'], namespace='fizzdragon',
+                     release='fizzdragon', context='cn', clusterServer='https://cn')
+        calls = []
+        def invoke(*args, **kwargs):
+            if '--build-only' in args:
+                calls.append(args[2])
+                helper = self.git('show', args[2] + ':deploy/cn-remote-build-services.sh')
+                self.assertNotIn('--build', helper)
+        with patch.object(cn_release, 'ROOT', self.repo), \
+             patch.object(cn_release, 'revision', side_effect=lambda tag: tag), \
+             patch.object(cn_release, 'find_image', return_value=None), \
+             patch.object(cn_release, 'verify', return_value={'web': 'digest'}), \
+             patch.object(cn_release, 'run', side_effect=invoke):
+            cn_release.run_cycles(state, argparse.Namespace(backup_id=None, allow_chart_update=True), Mock())
+        self.assertEqual(calls, [new])
+        self.assertTrue(state['complete'])
+        self.assertEqual(state['previousCycles'][0]['tag'], old)
 
     def test_cn_chart_updates_require_a_new_cycle(self):
         new = self.commit('deploy/helm/fizzdragon/values.yaml', 'new chart')
