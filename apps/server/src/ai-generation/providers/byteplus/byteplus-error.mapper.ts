@@ -39,11 +39,22 @@ export function bytePlusError(
   });
 }
 
+export function bytePlusAccountOverdue(raw?: unknown): BytePlusProviderError {
+  return bytePlusError(
+    'PROVIDER_NOT_CONFIGURED',
+    'BytePlus ModelArk AccountOverdueError: provider account has an overdue balance.',
+    'The generation provider account has an overdue balance. Contact platform support to restore provider access before retrying.',
+    raw,
+  );
+}
+
 export function mapBytePlusHttpError(
   status: number,
   raw: string,
 ): BytePlusProviderError {
   const parsed = parseBytePlusHttpError(raw);
+  if (parsed?.code === 'AccountOverdueError')
+    return bytePlusAccountOverdue(raw);
   if (parsed?.code === 'ModelNotOpen') {
     const upstreamMessage =
       parsed.message ||

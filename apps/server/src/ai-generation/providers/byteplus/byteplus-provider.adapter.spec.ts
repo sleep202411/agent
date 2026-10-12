@@ -215,3 +215,17 @@ describe('Seedance async task continuity', () => {
       expect(client.getVideoTask).toHaveBeenNthCalledWith(call, {}, 'task-25');
   });
 });
+it('classifies asynchronous overdue-account failures as non-retryable configuration', async () => {
+  const { adapter } = adapterWith({
+    status: 'failed',
+    error: { code: 'AccountOverdueError', message: 'overdue balance' },
+  });
+  expect(
+    await adapter.pollStatus(
+      'dreamina-seedance-2-5-260628::task-25::no-video-input',
+    ),
+  ).toMatchObject({
+    kind: 'failed',
+    error: { code: 'PROVIDER_NOT_CONFIGURED', retryable: false },
+  });
+});

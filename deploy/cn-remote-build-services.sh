@@ -65,10 +65,36 @@ APK_MIRROR="${APK_MIRROR:-mirrors.aliyun.com}"
 
 set -a; source apps/web/.env.production.cn; set +a
 SERVER_URL=http://fizzdragon-server:3001
+# Resolve literal external FROM images before compilation. Retry only image
+# transfer here, never an application build failure or a publishing side effect.
+prepare_base_images() {
+  local df=$1 base attempt status
+  local bases
+  bases=$(awk 'toupper($1)=="FROM" { n=2; if ($n ~ /^--platform=/) n++; image=$n; if (!(image in stages) && image != "scratch") print image; if (toupper($(n+1))=="AS") stages[$(n+2)]=1 }' "$df")
+  while IFS= read -r base; do
+    [ -n "$base" ] || continue
+    if [[ "$base" == *'$'* ]]; then
+      echo "FATAL: unresolved base-image argument in $df: $base" >&2
+      return 1
+    fi
+    if docker image inspect "$base" >/dev/null 2>&1; then continue; fi
+    for attempt in 1 2 3 4; do
+      if docker pull "$base"; then break; else status=$?; fi
+      if [ "$attempt" -eq 4 ]; then
+        echo "FATAL: base-image download failed after 4 attempts: $base" >&2
+        return "$status"
+      fi
+      echo "==> base-image download failed; retry $((attempt + 1))/4: $base" >&2
+      sleep "$((attempt * 5))"
+    done
+  done <<< "$bases"
+}
+
 build() {
   local name=$1 df=$2; shift 2
   local image="$REG/$NS/fizzdragon-$name:$TAG"
   prepare_build_storage
+  prepare_base_images "$df"
   echo "=== [$(date +%T)] BUILD $name (npm=$NPM_REGISTRY) ==="
   docker build --rm --force-rm -f "$df" -t "$image" \
     --build-arg "NPM_REGISTRY=$NPM_REGISTRY" "$@" .

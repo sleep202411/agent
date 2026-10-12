@@ -19,6 +19,7 @@ import {
 import { BytePlusConfigService } from './byteplus-config.service';
 import {
   bytePlusError,
+  bytePlusAccountOverdue,
   mapBytePlusUnknownError,
 } from './byteplus-error.mapper';
 import { BytePlusReferencePreparerService } from './byteplus-reference-preparer.service';
@@ -714,6 +715,8 @@ function videoErrorFromTask(
   }
 
   const providerCode = body.error?.code ?? '';
+  if (providerCode === 'AccountOverdueError')
+    return bytePlusAccountOverdue(body).payload;
   const detail = body.error?.message ?? '';
   // Seedance 2.5 omni-reference classifier verdicts. Both are terminal input
   // mismatches, never auto-requeued: Constraint = parameters incompatible with

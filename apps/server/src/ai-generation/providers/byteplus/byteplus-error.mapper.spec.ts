@@ -54,3 +54,20 @@ describe('mapBytePlusHttpError', () => {
     });
   });
 });
+it.each([403, 429, 503])(
+  'classifies overdue accounts before generic HTTP %s retries',
+  (status) => {
+    expect(
+      mapBytePlusHttpError(
+        status,
+        JSON.stringify({
+          error: { code: 'AccountOverdueError', message: 'overdue balance' },
+        }),
+      ).payload,
+    ).toMatchObject({
+      code: 'PROVIDER_NOT_CONFIGURED',
+      retryable: false,
+      userMessage: expect.stringContaining('provider account'),
+    });
+  },
+);
