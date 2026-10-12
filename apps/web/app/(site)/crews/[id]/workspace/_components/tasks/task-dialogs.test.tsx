@@ -414,12 +414,12 @@ it("does not upload or submit from a read-only delivery preview", async () => {
   await act(async () => clickSubmit());
   expect(submit).not.toHaveBeenCalled();
 });
-it.each(["script", "art", "music"] as const)(
-  "does not show video-specific slots for %s work",
+it.each(["script", "art", "music", "storyboard", "edit", null] as const)(
+  "shows Pax's standard four delivery sections for %s work",
   (taskKind) => {
     render("task-1", true, { taskKind });
-    expect(document.body.textContent).toContain("sourceFiles");
-    expect(document.body.textContent).not.toContain("subtitledVideo");
+    for (const slot of ["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"])
+      expect(document.body.textContent).toContain(slot);
   }
 );
 it("retains video deliverables for final editing", () => {

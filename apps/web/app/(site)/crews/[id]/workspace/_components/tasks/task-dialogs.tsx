@@ -309,69 +309,68 @@ export function SubmitTaskDialog({
                 </p>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
-                {(task?.taskKind === "edit" || task?.taskKind === "storyboard"
-                  ? (["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"] as const)
-                  : (["sourceFiles"] as const)
-                ).map((slot) => (
-                  <div
-                    key={slot}
-                    className="space-y-3 rounded-lg border border-dashed border-border bg-white/[0.025] p-4"
-                  >
-                    <p className="text-sm font-medium">{t(slot)}</p>
-                    <TaskDeliveryUpload
-                      key={`${answerKey}:${slot}`}
-                      crewId={crewId}
-                      taskId={task?.id ?? ""}
-                      parentId={deliveryFolderId || null}
-                      label={t(slot)}
-                      disabled={saving || readOnly}
-                      onBusyChange={(busy) => {
-                        uploadingRef.current = { ...uploadingRef.current, [slot]: busy };
-                        setUploading(uploadingRef.current);
-                      }}
-                      onUploaded={(asset) => {
-                        setUploadedAssets((current) => [
-                          ...current.filter((item) => item.id !== asset.id),
-                          asset,
-                        ]);
-                        setAssetIds((current) => [...new Set([...current, asset.id])]);
-                        setSlotAssets((current) => ({
-                          ...current,
-                          [slot]: [
-                            ...(current[slot] ?? []).filter((item) => item.id !== asset.id),
+                {(["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"] as const).map(
+                  (slot) => (
+                    <div
+                      key={slot}
+                      className="space-y-3 rounded-lg border border-dashed border-border bg-white/[0.025] p-4"
+                    >
+                      <p className="text-sm font-medium">{t(slot)}</p>
+                      <TaskDeliveryUpload
+                        key={`${answerKey}:${slot}`}
+                        crewId={crewId}
+                        taskId={task?.id ?? ""}
+                        parentId={deliveryFolderId || null}
+                        label={t(slot)}
+                        disabled={saving || readOnly}
+                        onBusyChange={(busy) => {
+                          uploadingRef.current = { ...uploadingRef.current, [slot]: busy };
+                          setUploading(uploadingRef.current);
+                        }}
+                        onUploaded={(asset) => {
+                          setUploadedAssets((current) => [
+                            ...current.filter((item) => item.id !== asset.id),
                             asset,
-                          ],
-                        }));
-                      }}
-                    />
-                    {(slotAssets[slot] ?? [])
-                      .filter((asset) => assetIds.includes(asset.id))
-                      .map((asset) => (
-                        <div key={asset.id} className="flex min-w-0 items-center gap-2 text-xs">
-                          <IconFile className="size-4 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1 break-all">{asset.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            color="muted"
-                            disabled={saving || hasUploads}
-                            aria-label={t("removeDeliveryFile", { name: asset.name })}
-                            onClick={() => {
-                              setSlotAssets((current) => ({
-                                ...current,
-                                [slot]: (current[slot] ?? []).filter(
-                                  (item) => item.id !== asset.id
-                                ),
-                              }));
-                              setAssetIds((current) => current.filter((id) => id !== asset.id));
-                            }}
-                          >
-                            {common("remove")}
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
-                ))}
+                          ]);
+                          setAssetIds((current) => [...new Set([...current, asset.id])]);
+                          setSlotAssets((current) => ({
+                            ...current,
+                            [slot]: [
+                              ...(current[slot] ?? []).filter((item) => item.id !== asset.id),
+                              asset,
+                            ],
+                          }));
+                        }}
+                      />
+                      {(slotAssets[slot] ?? [])
+                        .filter((asset) => assetIds.includes(asset.id))
+                        .map((asset) => (
+                          <div key={asset.id} className="flex min-w-0 items-center gap-2 text-xs">
+                            <IconFile className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 break-all">{asset.name}</span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              color="muted"
+                              disabled={saving || hasUploads}
+                              aria-label={t("removeDeliveryFile", { name: asset.name })}
+                              onClick={() => {
+                                setSlotAssets((current) => ({
+                                  ...current,
+                                  [slot]: (current[slot] ?? []).filter(
+                                    (item) => item.id !== asset.id
+                                  ),
+                                }));
+                                setAssetIds((current) => current.filter((id) => id !== asset.id));
+                              }}
+                            >
+                              {common("remove")}
+                            </Button>
+                          </div>
+                        ))}
+                    </div>
+                  )
+                )}
               </div>
             </>
           )}
