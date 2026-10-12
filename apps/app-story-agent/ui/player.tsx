@@ -1,8 +1,33 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { QueryObserver } from "@tanstack/react-query";
-import { ExperiencePlayer, type ExperiencePlayerCopy } from "@repo/experience-player-react";
+import {
+  ExperiencePlayer,
+  loadExperienceTheme,
+  type ExperienceThemeLoader,
+  type ExperiencePlayerCopy,
+} from "@repo/experience-player-react";
 import type { StoryPreview } from "@repo/app-story-protocol";
 import { StoryTransport, playerCopy } from "./transport";
+
+// Only relocate the packaged built-in theme; preserve the server's integrity hash.
+export const loadHostedStoryTheme: ExperienceThemeLoader = (manifest, signal) =>
+  loadExperienceTheme(
+    {
+      ...manifest,
+      assets: manifest.assets.map((asset) =>
+        asset.kind === "data" && asset.uri === "/experience-runtime/themes/core.film-dark.v1.json"
+          ? {
+              ...asset,
+              uri: new URL(
+                "./experience-runtime/themes/core.film-dark.v1.json",
+                window.location.href
+              ).href,
+            }
+          : asset
+      ),
+    },
+    signal
+  );
 
 /** Render the shared interactive-film runtime inside the App conversation. */
 export default function StoryPlayer({ transport }: { transport: StoryTransport }) {
@@ -40,6 +65,7 @@ export default function StoryPlayer({ transport }: { transport: StoryTransport }
         <ExperiencePlayer
           key={result.data.contentHash}
           runtime={result.data.runtime}
+          loadTheme={loadHostedStoryTheme}
           locale={transport.context.locale}
           coverUrl={result.data.coverUrl ?? undefined}
           frameProfile="auto"

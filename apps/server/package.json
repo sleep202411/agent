@@ -10,7 +10,7 @@
     "build": "prisma generate && nest build && tsc -p tsconfig.catalog-update.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "cross-env PORT=4399 nest start",
-    "prestart:dev": "npm run build -w @repo/shared && npm run build -w @repo/app-story-protocol && npm run build -w @repo/game-agent-protocol && npm run build -w @repo/agent-policy && npm run build -w @repo/agent-tools && npm run build -w @repo/agent-capabilities && npm run build -w @repo/agent-protocol && npm run build -w @repo/agent-skills",
+    "prestart:dev": "npm run build -w @repo/shared && npm run build -w @repo/app-story-protocol && npm run build -w @repo/game-agent-protocol && npm run build -w @repo/agent-policy && npm run build -w @repo/agent-tools && npm run build -w @repo/agent-capabilities && npm run build -w @repo/agent-protocol && npm run build -w @repo/agent-skills && npx turbo run build --filter=app-story-agent && node scripts/copy-app-story-ui.mjs",
     "start:dev": "cross-env PORT=4399 nest start --watch",
     "start:debug": "cross-env PORT=4399 nest start --debug --watch",
     "start:prod": "cross-env PORT=4399 node dist/main",
@@ -48,7 +48,8 @@
     "test:integration:audit": "node scripts/test-audit-integration.mjs",
     "test:integration:gps": "node scripts/test-gps.mjs",
     "test:typecheck-runner": "node --test scripts/check-types.test.mjs",
-    "test:integration:platform": "node scripts/test-platform-integration.mjs"
+    "test:integration:platform": "node scripts/test-platform-integration.mjs",
+    "postbuild": "node scripts/copy-app-story-ui.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"
@@ -134,7 +135,8 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "app-story-agent": "*"
   },
   "jest": {
     "moduleFileExtensions": [

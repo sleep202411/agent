@@ -7,7 +7,7 @@ import json
 import re
 import subprocess
 
-SERVICES = ('web', 'server', 'studio', 'admin-ui', 'agent', 'agent-os', 'game-agent')
+SERVICES = ('web', 'server', 'studio', 'admin-ui', 'agent', 'agent-os', 'game-agent', 'app-story-agent')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 
 def git(root, *args):
@@ -129,10 +129,9 @@ def inputs(root, revision, service, region):
             # npm ci consumes every workspace manifest even for a pruned build.
             if not ('/'.join(path.split('/')[:2]) in included or path.endswith('/package.json')):
                 # Studio imports Web's canonical subtitle catalogues at build time.
-                if not (service == 'studio' and (
-                    path == f'apps/web/.env.production.{region}'
-                    or path.startswith('apps/web/messages/')
-                )):
+                if not ((service == 'studio' and path == f'apps/web/.env.production.{region}')
+                        or ((service == 'studio' or 'apps/app-story-agent' in included)
+                            and path.startswith('apps/web/messages/'))):
                     continue
             if path.startswith('apps/web/.env.production.') and path != f'apps/web/.env.production.{region}':
                 continue

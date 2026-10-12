@@ -62,9 +62,11 @@ const StoryPlayer = lazy(() => import("./player"));
 function NativeResourceActions({
   transport,
   media,
+  runId,
 }: {
   transport: StoryTransport;
   media: StoryOutputs[number];
+  runId?: string;
 }) {
   const bridge = transport.bridge;
   const t = copy(transport.context.locale).h5;
@@ -87,6 +89,7 @@ function NativeResourceActions({
       await bridge.resource(action, {
         projectId: transport.context.projectId!,
         chapterId: transport.context.chapterId!,
+        ...(runId ? { runId } : {}),
         resource: {
           id: media.id,
           kind: media.kind,
@@ -390,7 +393,7 @@ function MediaOutputs({
                 </div>
               )}
             </div>
-            <NativeResourceActions transport={transport} media={media} />
+            <NativeResourceActions transport={transport} media={media} runId={runId} />
             {media.error && (
               <details className="story-media-error">
                 <summary>{t.mediaErrorDetails}</summary>
@@ -691,6 +694,11 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     await ctx.plugin(Attachment).await();
     await ctx.plugin(InputTrigger).await();
     await ctx.plugin(Conversation).await();
+    if (initialId && transport.context.initialDraft) {
+      const target = sessions.scope(initialId);
+      if (target)
+        ctx.get("conversation")?.input.for(target).setDraft(transport.context.initialDraft);
+    }
     await ctx.plugin(Commands).await();
     await ctx.plugin(Chat).await();
     await ctx

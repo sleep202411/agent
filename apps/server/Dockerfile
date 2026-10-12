@@ -13,7 +13,13 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 RUN npm install -g turbo@2.9.5 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
-RUN turbo prune server --docker
+RUN turbo prune server app-story-agent --docker
+
+# The H5 is a build dependency only. Keep its worker/Harness dependencies out
+# of the API runtime while retaining the full build graph above.
+FROM pruner AS runtime-pruner
+RUN node -e "const fs=require('node:fs'); const p='apps/server/package.json'; const pkg=JSON.parse(fs.readFileSync(p,'utf8')); delete pkg.devDependencies['app-story-agent']; fs.writeFileSync(p,JSON.stringify(pkg));" && \
+    turbo prune server --docker --out-dir=runtime-out
 
 # ─── Stage 2: Install dependencies ───────────────────────
 FROM base AS deps
@@ -27,13 +33,14 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/ ./
 COPY --from=pruner /app/out/full/ .
+COPY --from=pruner /app/apps/web/messages/ ./apps/web/messages/
 # Pin the heap instead of letting V8 size it from the host's memory. The build
 # build cgroup limit is lower than what Node detects, so tsc can grow past it
 # and get SIGKILLed (exit 137). A fixed ceiling makes the build predictable.
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN node apps/server/scripts/prisma-engine.cjs prepare
 ENV PRISMA_SCHEMA_ENGINE_BINARY=/opt/prisma/schema-engine
-RUN npx turbo run build --filter=server
+RUN npx turbo run build --filter=server --filter=app-story-agent
 
 # ─── Stage 4: Runner ────────────────────────────────────
 FROM base AS runner
@@ -50,7 +57,7 @@ RUN apk add --no-cache ffmpeg && \
 
 # Re-install production-only deps in workspace layout
 ARG NPM_REGISTRY=https://registry.npmjs.org
-COPY --from=pruner /app/out/json/ .
+COPY --from=runtime-pruner /app/runtime-out/json/ .
 RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 
 # Copy every workspace package's built dist — the node_modules symlinks point
@@ -58,6 +65,7 @@ RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 # server crashes at startup with `Cannot find module '@repo/…'`. The imports are
 # static and evaluated at module load, so a missing one crashes the whole API
 # tier even when the feature it belongs to is disabled by flag.
+COPY --from=builder /app/apps/app-story-agent/dist/ui ./apps/server/public/app-story-agent
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/app-story-protocol/dist ./packages/app-story-protocol/dist
 COPY --from=builder /app/packages/game-agent-protocol/dist ./packages/game-agent-protocol/dist

@@ -610,6 +610,7 @@ appStoryAgent:
     tag: ""
     digest: ""
   model:
+    contextWindow: 0
     name: ""
     baseUrl: ""
     author: ""

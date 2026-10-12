@@ -18,7 +18,8 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICES = ('server', 'agent-os', 'game-agent', 'studio', 'web', 'admin-ui')
+BASE_SERVICES = ('server', 'agent-os', 'game-agent', 'studio', 'web', 'admin-ui')
+SERVICES = (*BASE_SERVICES, 'app-story-agent')
 REGISTRY = 'fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com/fizzdragon'
 NS_UID = '249a9075-37f2-4c41-aefc-050edd800e63'
 PVC = 'fizzdragon-game-agent-workspaces'
@@ -75,9 +76,10 @@ def verify_live(kube):
             or namespace.get('status', {}).get('phase') != 'Active'):
         raise DeployError('The existing Singapore production namespace does not match')
     objects = read(kube, 'deployment')['items']
-    expected_names = {f'fizzdragon-{service}' for service in SERVICES}
-    if len(objects) != len(SERVICES) or {x['metadata']['name'] for x in objects} != expected_names:
-        raise DeployError('The six production Deployments do not match; reconcile the inventory first')
+    expected_names = {f'fizzdragon-{service}' for service in BASE_SERVICES}
+    names = {x['metadata']['name'] for x in objects}
+    if len(objects) != len(names) or not expected_names <= names or names - expected_names - {'fizzdragon-app-story-agent'}:
+        raise DeployError('Production Deployments do not match the approved inventory')
     deployments = {}
     for obj in objects:
         service = obj['metadata']['name'].removeprefix('fizzdragon-')
@@ -199,8 +201,8 @@ def migrate(kube, server, image):
 
 
 def unchanged(before, current):
-    if any(before[s]['metadata']['uid'] != current[s]['metadata']['uid']
-           or before[s]['spec'] != current[s]['spec'] for s in SERVICES):
+    if before.keys() != current.keys() or any(before[s]['metadata']['uid'] != current[s]['metadata']['uid']
+           or before[s]['spec'] != current[s]['spec'] for s in before):
         raise DeployError('Production changed during this release; stopped to avoid overwriting another deployment')
 
 
@@ -224,6 +226,8 @@ def verify_permissions(kube, services, migrate_server=False):
 
 def deploy(kube, images, before):
     images = {service: pinned_image(service, image) for service, image in images.items()}
+    if not images.keys() <= before.keys():
+        raise DeployError('Requested optional workload is not provisioned; configure it before deployment')
     changed = [s for s in SERVICES if s in images
                and images[s] != before[s]['spec']['template']['spec']['containers'][0]['image']]
     for service in changed:
@@ -261,7 +265,7 @@ def main(argv=None):
                         help='Opt-in npm registry build-arg; unset keeps the Dockerfile default. '
                              f'Also accepted via {builder.NPM_REGISTRY_ENV}.')
     args = parser.parse_args(argv)
-    services = list(SERVICES) if args.services == ['all'] else args.services
+    services = list(BASE_SERVICES) if args.services == ['all'] else args.services
     if len(set(services)) != len(services) or any(s not in SERVICES for s in services):
         parser.error('Select unique supported services, or all by itself; legacy agent is retired')
     if args.image and services:
@@ -288,12 +292,14 @@ def main(argv=None):
 
         before = verify_live(kube)
         print('Verified Singapore ACK endpoint and existing fizzdragon production namespace', flush=True)
-        selected = services or list(images) or (list(SERVICES) if args.check else [])
+        selected = services or list(images) or (list(before) if args.check else [])
+        if not set(selected) <= before.keys():
+            raise DeployError('App Story requires approved regional provisioning before release')
         migrate_server = 'server' in selected and (
             not images or images.get('server') != before['server']['spec']['template']['spec']['containers'][0]['image'])
         verify_permissions(kube, selected, migrate_server)
         if args.check:
-            print('Read-only checks passed: six ready services, immutable images, canonical database references, '
+            print('Read-only checks passed: ready services, immutable images, canonical database references, '
                   'Harness volume and existing Kubernetes publishing permissions.')
             return 0
         if services:

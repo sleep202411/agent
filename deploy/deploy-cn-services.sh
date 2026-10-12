@@ -27,7 +27,7 @@ while [ "$#" -gt 0 ]; do
     --allow-chart-update) ALLOW_CHART_UPDATE=1; shift ;;
     -h|--help)
       echo "Usage: $0 [--tag <git-sha>] [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
-      echo "Services: web studio admin-ui server agent-os game-agent; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
+      echo "Services: web studio admin-ui server agent-os game-agent app-story-agent (opt-in); legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
       exit 0
       ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -44,7 +44,7 @@ fi
 
 for service in "${SERVICES[@]}"; do
   case "$service" in
-    web|studio|admin-ui|server|agent-os|game-agent) ;;
+    web|studio|admin-ui|server|agent-os|game-agent|app-story-agent) ;;
     agent)
       [ "${ALLOW_LEGACY_AGENT_DEPLOY:-0}" = 1 ] || {
         echo "FATAL: legacy agent is frozen/quarantined; set ALLOW_LEGACY_AGENT_DEPLOY=1 only after its image passes a real boot test" >&2
@@ -303,6 +303,19 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     --set-string "gameAgent.image.tag=$game_agent_tag"
     --set 'server.migrationJob.enabled=false'
   )
+  if contains_service app-story-agent; then
+    helm_sets+=(--set-string "appStoryAgent.image.tag=$(image_tag app-story-agent)" --set-string "appStoryAgent.image.digest=")
+  else
+    # An unrelated release must not roll an already provisioned optional worker
+    # back to the bootstrap tag stored in the chart's regional values.
+    app_story_image="$(kubectl get deploy fizzdragon-app-story-agent -n "$NAMESPACE" --ignore-not-found -o jsonpath='{.spec.template.spec.containers[0].image}')"
+    if [ -n "$app_story_image" ]; then
+      case "$app_story_image" in
+        *@sha256:*) helm_sets+=(--set-string "appStoryAgent.image.digest=${app_story_image##*@}") ;;
+        *) helm_sets+=(--set-string "appStoryAgent.image.tag=${app_story_image##*:}" --set-string "appStoryAgent.image.digest=") ;;
+      esac
+    fi
+  fi
   if contains_service agent; then
     helm_sets+=(--set-string "agent.image.tag=$(image_tag agent)" --set-string "agentWorker.image.tag=$(image_tag agent)")
   fi

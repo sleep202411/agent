@@ -12,7 +12,7 @@ import subprocess
 import sys
 from cn_registry import query, verify, INSTANCE
 
-SERVICES = ('web', 'server', 'studio', 'admin-ui', 'agent', 'agent-os', 'game-agent')
+SERVICES = ('web', 'server', 'studio', 'admin-ui', 'agent', 'agent-os', 'game-agent', 'app-story-agent')
 SHA = re.compile(r'^[0-9a-f]{40}$')
 DIGEST = re.compile(r'^sha256:[0-9a-f]{64}$')
 RETIRED_COM = 'The Azure .com image path has retired; use deploy/deploy-com.sh instead'

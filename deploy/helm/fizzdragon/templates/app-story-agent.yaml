@@ -7,6 +7,7 @@
 {{- $_ := required "appStoryAgent.image.repository is required" $agent.image.repository -}}
 {{- if not (regexMatch "^[a-f0-9]{7,64}$" ($agent.image.tag | toString)) -}}{{- fail "appStoryAgent.image.tag must be an immutable source revision" -}}{{- end -}}
 {{- if not (regexMatch "^https://[^@?#[:space:]]+$" ($agent.model.baseUrl | toString)) -}}{{- fail "appStoryAgent.model.baseUrl must be a credential-free HTTPS compatibility URL" -}}{{- end -}}
+{{- if and (or (ne $agent.model.name "qwen-plus") $agent.model.contextWindow) (or (not (regexMatch "^[0-9]+$" ($agent.model.contextWindow | toString))) (lt (int $agent.model.contextWindow) 8192)) -}}{{- fail "appStoryAgent.model.contextWindow requires the selected model's verified token capacity" -}}{{- end -}}
 {{- range $key := list "name" "author" "image" "video" -}}
 {{- $_ := required (printf "appStoryAgent.model.%s is required" $key) (index $agent.model $key) -}}
 {{- end -}}
@@ -67,6 +68,10 @@ spec:
               value: {{ $agent.model.baseUrl | quote }}
             - name: APP_STORY_AGENT_MODEL
               value: {{ $agent.model.name | quote }}
+            {{- if $agent.model.contextWindow }}
+            - name: APP_STORY_AGENT_CONTEXT_WINDOW
+              value: {{ $agent.model.contextWindow | quote }}
+            {{- end }}
             - name: APP_STORY_AGENT_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -109,3 +109,6 @@ apps/server/outputs/
 
 # ZCode client local state
 .zcode/
+
+# Generated App Story H5 hosted by Server
+/apps/server/public/app-story-agent/

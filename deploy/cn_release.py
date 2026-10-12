@@ -268,7 +268,7 @@ def migration(tag, backup_id=None, state=None, persist=None, render_only=False, 
 def extend_services(state, additions):
     if not additions:
         return
-    allowed = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent"}
+    allowed = {"web", "server", "studio", "admin-ui", "agent-os", "game-agent", "app-story-agent"}
     if not set(additions) <= allowed:
         raise RuntimeError("Invalid added service")
     if set(additions) <= set(state["services"]):
@@ -309,7 +309,7 @@ def release(args):
             if previous and not previous.get("complete"):
                 raise RuntimeError("An unfinished CN release exists. Use --resume; its pinned revision is " + previous["tag"])
             services = args.services or ["web", "server", "studio", "admin-ui"]
-            if any(s not in ("web", "server", "studio", "admin-ui", "agent-os", "game-agent") for s in services):
+            if any(s not in ("web", "server", "studio", "admin-ui", "agent-os", "game-agent", "app-story-agent") for s in services):
                 raise RuntimeError("Invalid service set")
             state = {"version": 1, "tag": revision(args.tag or "HEAD"), "services": sorted(set(services)),
                      "namespace": os.environ.get("CN_NAMESPACE", "fizzdragon"),

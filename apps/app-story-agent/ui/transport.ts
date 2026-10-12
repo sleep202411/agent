@@ -23,6 +23,7 @@ import type { StoryBridge } from "./bridge";
 export const ContextSchema = z
   .object({
     ready: z.boolean(),
+    initialDraft: z.string().max(16000).optional(),
     locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
     projectId: z.uuid().optional(),
     chapterId: z.uuid().optional(),

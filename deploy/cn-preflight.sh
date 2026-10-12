@@ -99,6 +99,17 @@ else
   fail "CN Helm chart render failed"
 fi
 
+if has_service app-story-agent; then
+  if helm template "$RELEASE" "$CHART" -n "$NAMESPACE" \
+    -f "$CHART/values.yaml" -f "$CN_VALUES" \
+    --set-string "appStoryAgent.image.tag=$(git -C "$ROOT" rev-parse "$TARGET")" \
+    --show-only templates/app-story-agent.yaml >/dev/null 2>&1; then
+    ok "App Story is explicitly enabled with regional configuration"
+  else
+    fail "App Story requires approved appStoryAgent settings in CN values before release"
+  fi
+fi
+
 if [ "$PHASE" = build ]; then
   [ -s "${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}" ] && ok "CN build SSH key exists" || fail "CN build SSH key is missing"
   if python3 "$ROOT/deploy/cn_build_credentials.py"; then

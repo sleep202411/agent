@@ -57,6 +57,24 @@ class InputTests(unittest.TestCase):
                 self.assertEqual(inputs(self.root, before, 'server', region),
                                  inputs(self.root, after, 'server', region))
 
+    def test_hosted_app_story_tracks_h5_and_translations(self):
+        from release_inputs import inputs
+        self.write('apps/server/package.json', '{"name":"server","devDependencies":{"app-story-agent":"*"}}')
+        self.write('apps/app-story-agent/package.json', '{"name":"app-story-agent"}')
+        self.write('deploy/aliyun-sg/production-build.py', 'def build_images():\n    command = ["docker", "build"]\n')
+        recipe = 'deploy/cn-remote-build-services.sh'
+        self.write(recipe, (self.root / recipe).read_text() + 'want app-story-agent && build app-story-agent apps/app-story-agent/Dockerfile\n')
+        for path in ('apps/web/messages/en-US.json', 'apps/app-story-agent/ui/runtime.tsx'):
+            self.write(path, 'old')
+            before = self.commit()
+            self.write(path, 'new')
+            after = self.commit()
+            for region in ('cn', 'com'):
+                for service in ('server', 'app-story-agent'):
+                    with self.subTest(path=path, region=region, service=service):
+                        self.assertNotEqual(inputs(self.root, before, service, region),
+                                            inputs(self.root, after, service, region))
+
     def test_removing_mobile_handoff_reports_preserves_all_regional_inputs(self):
         from release_inputs import inputs
         recipe = 'deploy/cn-remote-build-services.sh'

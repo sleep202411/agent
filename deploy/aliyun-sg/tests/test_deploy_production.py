@@ -168,14 +168,14 @@ class DeployProductionTest(unittest.TestCase):
                 with self.assertRaises(deploy.DeployError): deploy.verify_live(fake)
                 self.assertFalse(fake.patches())
 
-    def test_six_workload_inventory_is_exact_including_no_duplicates_or_legacy(self):
+    def test_required_workload_inventory_rejects_duplicates_and_legacy(self):
         for mode in ("missing", "legacy", "duplicate"):
             with self.subTest(mode=mode):
                 fake = FakeKube()
                 if mode == "missing": del fake.deployments["web"]
                 elif mode == "legacy": fake.deployments["web"]["metadata"]["name"] = "fizzdragon-agent"
                 else: fake.deployments["duplicate"] = copy.deepcopy(fake.deployments["web"])
-                with self.assertRaisesRegex(deploy.DeployError, "six production"): deploy.verify_live(fake)
+                with self.assertRaisesRegex(deploy.DeployError, "approved inventory"): deploy.verify_live(fake)
 
     def test_all_live_readiness_fields_and_observed_generation_are_required(self):
         for field in ("replicas", "readyReplicas", "updatedReplicas", "availableReplicas", "observedGeneration"):
@@ -262,6 +262,17 @@ class DeployProductionTest(unittest.TestCase):
             operations = json.loads(args[args.index("-p") + 1])
             self.assertEqual([op["path"] for op in operations[:2]],
                              ["/metadata/uid", "/metadata/resourceVersion"])
+
+    def test_optional_app_story_is_not_required_but_can_be_updated_when_provisioned(self):
+        before = self.baseline()
+        with patch.object(deploy, "migrate") as migrate:
+            self.assertEqual(deploy.deploy(self.kube, {"app-story-agent": NEXT_DIGEST}, before), ['app-story-agent'])
+        migrate.assert_not_called()
+        del self.kube.deployments['app-story-agent']
+        before = self.baseline()
+        self.assertNotIn('app-story-agent', before)
+        with self.assertRaisesRegex(deploy.DeployError, 'not provisioned'):
+            deploy.deploy(self.kube, {'app-story-agent': NEXT_DIGEST}, before)
 
     def test_unchanged_selected_image_performs_no_patch_migration_or_rollout(self):
         before = self.baseline()

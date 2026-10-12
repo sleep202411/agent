@@ -8,6 +8,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
 import { AgentUsersModule } from './agent-users';
 import { AgentOsGatewayModule } from './agent-os-gateway';
+import { AppStoryShellController } from './app-story-agent/app-story-shell.controller';
 import { AppStoryAgentModule } from './app-story-agent/app-story-agent.module';
 import { appStoryAgentEnabled } from './app-story-agent/app-story-agent.config';
 import { GameAgentModule } from './game-agent/game-agent.module';
@@ -124,6 +125,7 @@ const agentOsGatewayEnabled = (() => {
     WorldModelModule,
     HealthModule,
   ],
+  controllers: [AppStoryShellController],
   providers: [
     {
       provide: APP_GUARD,

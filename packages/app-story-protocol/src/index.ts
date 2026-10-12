@@ -295,6 +295,7 @@ export type StoryPreview = z.infer<typeof StoryPreviewSchema>;
 export const APP_STORY_BRIDGE_PROTOCOL = "fizz.app-story.bridge.v1" as const;
 export const StoryBridgeInitSchema = z
   .object({
+    initialDraft: z.string().max(16000).optional(),
     projectId: z.uuid(),
     chapterId: z.uuid(),
     locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
@@ -307,6 +308,7 @@ export const StoryBridgeInitSchema = z
 export type StoryBridgeInit = z.infer<typeof StoryBridgeInitSchema>;
 export const StoryBridgeResourceSchema = z
   .object({
+    runId: z.uuid().optional(),
     projectId: z.uuid(),
     chapterId: z.uuid(),
     resource: z

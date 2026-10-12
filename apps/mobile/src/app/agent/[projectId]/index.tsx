@@ -17,6 +17,7 @@ import {
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppStoryEntry } from "@/features/agent/components/app-story-entry";
 import { useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -66,6 +67,10 @@ const COMPOSER_BASE_HEIGHT = 128;
 
 /** Agent OS conversation — HTTP start + event polling. */
 export default function AgentChatScreen() {
+  return <AppStoryEntry legacy={<AgentOsChatScreen />} />;
+}
+
+function AgentOsChatScreen() {
   const t = useTranslations();
   const theme = useTheme();
   const router = useRouter();
