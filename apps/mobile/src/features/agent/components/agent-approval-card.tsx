@@ -61,8 +61,6 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
 
   const hasRows = summary.creates.length + summary.updates.length + summary.deletes.length > 0;
   const hasSummary = hasRows || Boolean(summary.decision);
-  const fallbackTitle = approval.title?.trim();
-  const fallbackDescription = approval.description?.trim();
 
   return (
     <View style={styles.card}>
@@ -120,13 +118,6 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
             }
           />
         </View>
-      ) : null}
-
-      {!hasSummary && fallbackTitle ? (
-        <Text style={styles.fallbackTitle}>{fallbackTitle}</Text>
-      ) : null}
-      {!hasSummary && fallbackDescription ? (
-        <Text style={styles.fallbackBody}>{fallbackDescription}</Text>
       ) : null}
 
       {!hasRows && !summary.recognized && approval.arguments != null ? (
@@ -287,16 +278,6 @@ const styles = StyleSheet.create({
   rowMore: {
     color: "rgba(255,255,255,0.35)",
     fontSize: 11,
-  },
-  fallbackTitle: {
-    color: theme.text,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  fallbackBody: {
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 11,
-    lineHeight: 18,
   },
   detailsLink: {
     paddingVertical: 2,
