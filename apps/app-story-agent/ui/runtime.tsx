@@ -564,46 +564,66 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
     await ctx.plugin(Renderer).await();
     await ctx.plugin(UiSession).await();
     await ctx.plugin(Locale).await();
-    ctx.locale.addLanguage({
-      id: transport.context.locale,
-      label: transport.context.locale,
-      fallback: transport.context.locale === "en-US" ? "en" : "zh",
-    });
-    ctx.locale.register("conversation", transport.context.locale, {
-      "placeholder.default": t.h5.input,
-      "placeholder.hero": t.h5.input,
-      "hero.headline": t.h5.welcomeTitle,
-      "hero.preview": "",
+    const locales = ["en-US", "zh-CN", "zh-HK"] as const;
+    for (const locale of locales) {
+      ctx.locale.addLanguage({
+        id: locale,
+        label: locale,
+        fallback: locale === "en-US" ? "en" : "zh",
+      });
+      const localized = copy(locale);
+      ctx.effect(() =>
+        ctx.locale.register("conversation", locale, {
+          "placeholder.default": localized.h5.input,
+          "placeholder.hero": localized.h5.input,
+          "hero.headline": localized.h5.welcomeTitle,
+          "hero.preview": "",
+        })
+      );
+    }
+    // Harness's built-in language choices must resolve through our product
+    // language packs, including when the page was opened in another language.
+    ctx.on("locale/change", ({ active }) => {
+      if (active === "en" || active === "zh")
+        ctx.locale.setLocale(active === "en" ? "en-US" : "zh-CN");
     });
     // The official status footer presents the current business phase. Keep a
     // single indicator and retain Harness's real running state/stop behavior.
-    const phases: Record<string, string> = {
-      planning: t.app.planning,
-      script: t.app.script,
-      plot: t.app.plot,
-      assets: t.app.assets,
-      asset_media: t.app.assetMedia,
-      storyboard: t.app.storyboard,
-      clip_media: t.app.clipMedia,
-      verify: t.app.verify,
-    };
-    let statusLabel: string | undefined;
+    const phases = {
+      planning: "planning",
+      script: "script",
+      plot: "plot",
+      assets: "assets",
+      asset_media: "assetMedia",
+      storyboard: "storyboard",
+      clip_media: "clipMedia",
+      verify: "verify",
+    } as const;
+    let statusPhase: string | undefined;
     let removeStatus: (() => void) | undefined;
     const updateStatus = () => {
       const active = transport.history.getCurrentResult().data?.runs.find(isActive);
-      const label =
-        active?.status === "cancelling"
-          ? t.app.stopping
-          : (phases[active?.phase ?? ""] ?? t.h5.processing);
-      if (label === statusLabel) return;
+      const phase = active?.status === "cancelling" ? "stopping" : active?.phase;
+      if (phase === statusPhase && removeStatus) return;
       removeStatus?.();
-      removeStatus = ctx.locale.register("chat", transport.context.locale, {
-        "chat.deepDiving": label,
-        "chat.deepDivingFor": t.h5.runningFor.replace("{status}", label),
-        "message.failure.accountSignedOut": t.h5.sessionExpired,
-        "message.failure.accountSignInRequired": t.h5.sessionRequired,
+      const removals = locales.map((locale) => {
+        const localized = copy(locale);
+        const key = phases[phase as keyof typeof phases];
+        const label =
+          phase === "stopping"
+            ? localized.app.stopping
+            : key
+              ? localized.app[key]
+              : localized.h5.processing;
+        return ctx.locale.register("chat", locale, {
+          "chat.deepDiving": label,
+          "chat.deepDivingFor": localized.h5.runningFor.replace("{status}", label),
+          "message.failure.accountSignedOut": localized.h5.sessionExpired,
+          "message.failure.accountSignInRequired": localized.h5.sessionRequired,
+        });
       });
-      statusLabel = label;
+      removeStatus = () => removals.forEach((remove) => remove());
+      statusPhase = phase;
     };
     ctx.effect(() => transport.history.subscribe(updateStatus));
     ctx.effect(() => () => removeStatus?.());
