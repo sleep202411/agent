@@ -257,7 +257,7 @@ def deploy(kube, images, before):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('services', nargs='*', help='web studio admin-ui server agent-os game-agent, or all')
+    parser.add_argument('services', nargs='*', help='web studio admin-ui server agent-os game-agent app-story-agent, or all')
     parser.add_argument('--kubeconfig', default=os.environ.get('KUBECONFIG'), help='One existing Singapore kubeconfig file')
     parser.add_argument('--image', action='append', default=[], metavar='SERVICE=DIGEST', help='Deploy an already reviewed image instead of building')
     parser.add_argument('--check', action='store_true', help='Read-only identity and existing workload checks; no build/deployment')
@@ -265,7 +265,7 @@ def main(argv=None):
                         help='Opt-in npm registry build-arg; unset keeps the Dockerfile default. '
                              f'Also accepted via {builder.NPM_REGISTRY_ENV}.')
     args = parser.parse_args(argv)
-    services = list(BASE_SERVICES) if args.services == ['all'] else args.services
+    services = list(SERVICES) if args.services == ['all'] else args.services
     if len(set(services)) != len(services) or any(s not in SERVICES for s in services):
         parser.error('Select unique supported services, or all by itself; legacy agent is retired')
     if args.image and services:
@@ -293,11 +293,17 @@ def main(argv=None):
         before = verify_live(kube)
         print('Verified Singapore ACK endpoint and existing fizzdragon production namespace', flush=True)
         selected = services or list(images) or (list(before) if args.check else [])
-        if not set(selected) <= before.keys():
+        if args.check and args.services == ['all']:
+            selected = list(before)
+        # First activation builds the optional worker's image before its separately
+        # reviewed regional provisioning. Never create/enable workloads here.
+        first_app_build = args.services == ['all'] and not args.check and 'app-story-agent' not in before
+        publishing = [s for s in selected if not (first_app_build and s == 'app-story-agent')]
+        if not set(publishing) <= before.keys():
             raise DeployError('App Story requires approved regional provisioning before release')
-        migrate_server = 'server' in selected and (
+        migrate_server = 'server' in publishing and (
             not images or images.get('server') != before['server']['spec']['template']['spec']['containers'][0]['image'])
-        verify_permissions(kube, selected, migrate_server)
+        verify_permissions(kube, publishing, migrate_server)
         if args.check:
             print('Read-only checks passed: ready services, immutable images, canonical database references, '
                   'Harness volume and existing Kubernetes publishing permissions.')
@@ -308,6 +314,9 @@ def main(argv=None):
                                           npm_registry=args.npm_registry)
         current = verify_live(kube)
         unchanged(before, current)
+        if first_app_build:
+            staged = images.pop('app-story-agent')
+            print('App Story image built; regional provisioning and activation still required: ' + staged, flush=True)
         changed = deploy(kube, images, current)
         print('Deployment complete: ' + (', '.join(changed) if changed else 'selected images already current'))
         return 0

@@ -205,6 +205,20 @@ class ProductionBuildTest(unittest.TestCase):
         self.assertEqual(len(builds), 1)
         self.assertIn('admin-ui/Dockerfile', builds[0][builds[0].index('--file') + 1])
 
+    def test_first_app_worker_build_needs_no_previous_image_or_registry_lookup(self):
+        commands = FakeCommands(self.root)
+        with patch.object(build, 'find_reusable_image') as reuse, \
+                patch.object(build, 'service_inputs', return_value='f' * 64), \
+                patch.object(build.subprocess, 'run', side_effect=commands):
+            images = build.build_images(self.root, ['app-story-agent'], {}, source=SOURCE)
+        reuse.assert_not_called()
+        self.assertEqual(set(images), {'app-story-agent'})
+        self.assertTrue(images['app-story-agent'].startswith(
+            build.RUNTIME_HOST + '/fizzdragon/fizzdragon-app-story-agent@sha256:'))
+        builds = [c for c, _ in commands.calls if c[:3] == ['docker', 'buildx', 'build']]
+        self.assertEqual(len(builds), 1)
+        self.assertIn('app-story-agent/Dockerfile', builds[0][builds[0].index('--file') + 1])
+
     def test_persistent_push_failure_stops_after_two_attempts(self):
         commands = FakeCommands(self.root)
         pushes = []

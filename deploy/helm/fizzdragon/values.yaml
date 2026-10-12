@@ -605,6 +605,7 @@ server:
 appStoryAgent:
   enabled: false
   replicaCount: 1
+  imagePullSecrets: []
   image:
     repository: fizzdragon-app-story-agent
     tag: ""

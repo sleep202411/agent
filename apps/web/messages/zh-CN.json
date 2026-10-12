@@ -12264,6 +12264,7 @@
       "backendUnavailable": "暂时无法连接本地 Agent 后台，请在后台启动后重试。",
       "completed": "制作完成",
       "processing": "正在处理你的请求…",
+      "runningFor": "{status} · 用时 {duration}",
       "awaitingReceipt": "正在确认请求是否已收到…",
       "backendInvalidResponse": "Agent 后台返回的数据不完整，将先确认请求状态再重试。",
       "scriptUnavailable": "当前章节没有可读取的已保存剧本。",

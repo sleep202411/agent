@@ -12264,6 +12264,7 @@
       "backendUnavailable": "Unable to connect to the local Agent backend. Please retry once it is running.",
       "completed": "Production complete",
       "processing": "Working on your request…",
+      "runningFor": "{status} · {duration} elapsed",
       "awaitingReceipt": "Confirming that your request was received…",
       "backendInvalidResponse": "The Agent backend returned an invalid response. Your request will be checked again before retrying.",
       "scriptUnavailable": "No saved script is available in this chapter.",

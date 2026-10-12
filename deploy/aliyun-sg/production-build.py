@@ -255,7 +255,8 @@ def build_images(root: Path, services: list[str], current_images, source=None, n
     images = {}
     missing = []
     for service in services:
-        existing = find_reusable_image(root, source, service, current_images.get(service), environment, registry)
+        current = current_images.get(service)
+        existing = find_reusable_image(root, source, service, current, environment, registry) if service in current_images else None
         if existing:
             images[service] = existing
         else:

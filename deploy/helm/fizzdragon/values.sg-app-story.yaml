@@ -1,0 +1,22 @@
+# App-only production configuration: Singapore account 5332868355276356.
+# Render only the App worker for first provisioning; do not upgrade the full chart.
+azure:
+  enabled: false
+image:
+  registry: fizzdragon-com-sg-registry-vpc.ap-southeast-1.cr.aliyuncs.com/fizzdragon
+appStoryAgent:
+  enabled: true
+  imagePullSecrets:
+    - name: acr-credential-secret-aggregation
+  model:
+    name: qwen-plus
+    baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+    author: qwen-plus
+    image: wan-image-2.7
+    video: minimax-h3-max
+  authorizationPoints: "1000000"
+  secrets:
+    apiKey:
+      name: fizzdragon-app-story-agent-provider
+    internalToken:
+      name: fizzdragon-app-story-agent-internal

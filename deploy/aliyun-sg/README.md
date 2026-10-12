@@ -1,7 +1,8 @@
 # Singapore .com production deployment
 
-The six `.com` services run on Alibaba Cloud Singapore ACK: `web`, `server`,
-`studio`, `admin-ui`, `agent-os` and `game-agent` (Harness).
+The core `.com` services run on Alibaba Cloud Singapore ACK: `web`, `server`,
+`studio`, `admin-ui`, `agent-os` and `game-agent` (Harness). Once provisioned,
+the independent `app-story-agent` worker is included in `all` releases.
 
 Normal publishing runs in the managed [Deploy COM pipeline](https://fizzdragon-ap-southeast-1.devops.alibabacloudcs.com/flow/pipelines/3998215/current).
 The GitHub push webhook triggers this pipeline for commits merged into `main`.
@@ -50,7 +51,8 @@ account and deployment scripts.
 
 For a read-only check in the same environment, replace `all` with `--check`.
 The check validates the known ACK TLS endpoint, namespace identity, six ready
-Deployments, database Secret references, Harness PVC and publishing permissions.
+core Deployments and any provisioned App worker, database Secret references,
+Harness PVC and publishing permissions.
 It reads metadata only and does not build images, run SQL or deploy.
 
 ## Release behavior
@@ -116,3 +118,25 @@ advisory preview check. These mocked checks do not establish live rollout succes
 
 An ordinary deployment does not change DNS, TLS certificates, edge routing,
 Java services or `.cn` resources.
+
+## App Story first activation
+
+The first managed `all` release builds the optional worker's committed image
+before its separately approved regional provisioning. It prints the immutable
+digest and updates only existing services; it does not create the worker or
+enable the feature. Later `all` releases update the provisioned worker normally.
+
+Render only `templates/app-story-agent.yaml` with the existing Singapore identity
+layer `values.sg-vertex.yaml` and `values.sg-app-story.yaml`,
+the committed source tag and built digest. Retain the existing ACR pull Secret.
+Provision separate provider and internal-token Secrets out of band; the worker
+receives only these two credentials. Reuse the verified Singapore text-provider
+credential, never a `.cn` credential, and never rotate an existing token.
+Apply `app-story-server-networkpolicy.yaml` as an additive policy.
+
+After the Server image and private worker are ready, add only the chart's
+`APP_STORY_AGENT_*` Server entries, referencing the same internal-token Secret.
+Preserve every other Server field. Verify Server → worker health and an
+authenticated H5 conversation. The H5 uses the existing same-origin path
+`https://fizzstudio.fizzdragon.com/aurora/app-story-agent/ui/index.html`;
+no domain, certificate, native App release or public worker ingress is needed.

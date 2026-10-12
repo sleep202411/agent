@@ -289,6 +289,7 @@ export class StoryAgentRunWorkerService
                       'For runtime and other creative requirements, the latest creator request takes precedence, then the source screenplay, then the derived planner brief and project defaults.',
                     ].join('\n\n'),
                     videoClipDurationSeconds: load.job.videoClipDurationSeconds,
+                    appTimingRules: true,
                   }
                 : {}),
               screenplay,

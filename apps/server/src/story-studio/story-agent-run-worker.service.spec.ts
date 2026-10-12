@@ -359,6 +359,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
           ? {
               instructions: expect.stringContaining(job.document.text),
               videoClipDurationSeconds: [5, 10, 15],
+              appTimingRules: true,
             }
           : {}),
         screenplay: APPROVED_SCREENPLAY.screenplay,
