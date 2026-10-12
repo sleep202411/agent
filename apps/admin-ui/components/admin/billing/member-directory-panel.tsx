@@ -11,6 +11,7 @@ import {
   IconUsers,
   IconPencil,
   IconBan,
+  IconDownload,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -77,6 +78,7 @@ export function MemberDirectoryPanel({
     mode: "edit" | "block";
     user: ClientUserTarget;
   } | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const scope = useAdminSessionRequests();
   const pending = useRef<ReturnType<typeof scope.begin>>(null);
@@ -147,6 +149,44 @@ export function MemberDirectoryPanel({
     setMembershipOpen(true);
   }
 
+  function exportActiveEmails() {
+    pending.current?.cancel();
+    const operation = scope.begin();
+    if (!operation) return;
+    pending.current = operation;
+    setExporting(true);
+    setError(null);
+    void requestEnvelope<{ workbook: string; filename: string; count: number }>(
+      "/api/admin/legacy-points/users-emails",
+      operation.signal
+    )
+      .then((data) => {
+        if (!operation.current()) return;
+        if (!data?.workbook || data.count === 0) {
+          setError("没有状态为正常且填写了邮箱的用户");
+          return;
+        }
+        const url = URL.createObjectURL(
+          new Blob([data.workbook], { type: "application/vnd.ms-excel" })
+        );
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = data.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      })
+      .catch((err: unknown) => {
+        if (!operation.current()) return;
+        setError(toErrorMessage(err));
+      })
+      .finally(() => {
+        if (operation.current()) setExporting(false);
+        operation.release();
+      });
+  }
+
   const total = result?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -157,6 +197,16 @@ export function MemberDirectoryPanel({
         description="检索用户资料，查看其参与的工作区。算力积分按工作区管理。"
         actions={
           <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={exportActiveEmails}
+              disabled={exporting}
+            >
+              <IconDownload className="size-4" />
+              {exporting ? "导出中" : "导出邮箱"}
+            </Button>
             <Button
               type="button"
               size="sm"

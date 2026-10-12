@@ -159,6 +159,38 @@ afterEach(async () => {
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });
+it("exports emails for 正常 accounts from the directory", async () => {
+  const createObjectURL = vi.fn(() => "blob:active-emails");
+  const revokeObjectURL = vi.fn();
+  vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+  fetchMock.mockResolvedValueOnce(response(members())).mockResolvedValueOnce(
+    response({
+      workbook: "<Workbook>a@fizzdragon.com</Workbook>",
+      filename: "active-user-emails-2026-10-12.xls",
+      count: 1,
+    })
+  );
+  await render(directory());
+  const button = [...container.querySelectorAll("button")].find((item) =>
+    item.textContent?.includes("导出邮箱")
+  )!;
+  await act(async () => button.click());
+  expect(String(fetchMock.mock.calls[1]![0])).toContain("/legacy-points/users-emails");
+  expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+  expect(container.textContent).not.toContain("没有状态为正常");
+});
+
+it("does not crash when the email export payload is empty", async () => {
+  fetchMock.mockResolvedValueOnce(response(members())).mockResolvedValueOnce(response(null));
+  await render(directory());
+  const button = [...container.querySelectorAll("button")].find((item) =>
+    item.textContent?.includes("导出邮箱")
+  )!;
+  await act(async () => button.click());
+  expect(container.textContent).toContain("没有状态为正常且填写了邮箱的用户");
+  expect(container.textContent).not.toContain("Cannot read properties of null");
+});
+
 it("cancels directory reads after unmount", async () => {
   const pending = deferred<ReturnType<typeof response>>();
   fetchMock.mockReturnValue(pending.promise);

@@ -32,13 +32,16 @@ import { CourseCertificateEditor } from "@/components/admin/courses/course-certi
 import {
   COURSE_LOCALES,
   COURSE_PRIMARY_LOCALE,
+  COURSE_TYPES,
   courseDisplayTitle,
   emptyCourseVideo,
   emptyLocalizedCourse,
   hasAnyCourseTitle,
+  parseCourseType,
   resolveCourseCoverUrl,
   type Course,
   type CourseLocaleCode,
+  type CourseType,
   type CourseVideo,
 } from "@/components/admin/courses/types";
 import { cn } from "@/lib/utils";
@@ -510,6 +513,7 @@ function CourseEditorContent({
               ? Number(course.priceCredits.trim()) > 0
               : false,
             instructorShares: shares,
+            type: parseCourseType(course.type),
           }),
         }
       );
@@ -785,7 +789,29 @@ function CourseEditorContent({
           <CoverThumb url={currentLocale.coverUrl} className="sm:sticky sm:top-4" />
         </div>
 
-        <div className="grid items-start gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2">
+        <div className="grid items-start gap-4 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="min-w-0">
+            <FormLabel label="课程分类">
+              <select
+                aria-label="课程分类"
+                value={String(parseCourseType(course.type))}
+                onChange={(event) =>
+                  setCourse((current) =>
+                    current
+                      ? { ...current, type: Number(event.target.value) as CourseType }
+                      : current
+                  )
+                }
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none focus:border-slate-950 focus:ring-2 focus:ring-slate-950/10"
+              >
+                {COURSE_TYPES.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </FormLabel>
+          </div>
           <div className="min-w-0">
             <CourseCertificateEditor
               value={course.certificateId == null ? "" : String(course.certificateId)}

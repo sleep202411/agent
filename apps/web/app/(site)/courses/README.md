@@ -20,15 +20,17 @@ Legacy list/play helpers remain in `src/services/courses.ts` / `use-courses.ts` 
 
 ```
 courses/
-├─ page.tsx                 ← plaza list
+├─ page.tsx                 ← catalog: required / skill / master
 ├─ [id]/page.tsx            ← detail + player
 └─ _components/
-   ├─ SearchFilter.tsx
+   ├─ CoursesHero.tsx
    ├─ PublicCourseList.tsx
    ├─ PublicCourseCard.tsx
    ├─ PublicCourseDetailPanel.tsx
    └─ CourseVideoPlayer.tsx
 ```
+
+List items include `type` (`1` required, `2` master, `3` skill). Missing `type` is treated as master class so the catalog still renders before Java ships the column.
 
 Default locale `zh-CN` has no URL prefix (`/courses`); other locales are
 prefixed (`/en-US/courses`).

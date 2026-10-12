@@ -109,16 +109,16 @@ export function GlobalNav() {
     { href: "/ips", label: t("ipPlaza") },
     { href: "/games", label: t("games") },
     {
+      href: "/courses",
+      label: t("course"),
+      requiresAuth: true,
+    },
+    {
       href: "/crews",
       linkHref: localizePath("/crews?view=positions", locale),
       label: t("studioHall"),
     },
     { href: "/creators", label: t("creators") },
-    {
-      href: "/courses",
-      label: t("course"),
-      requiresAuth: true,
-    },
     { href: "/news", label: t("news") },
   ];
 

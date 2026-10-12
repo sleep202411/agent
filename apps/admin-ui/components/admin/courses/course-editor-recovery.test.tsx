@@ -31,6 +31,7 @@ localized["zh-CN"].title = "Original course";
 const course: Course = {
   id: "one",
   published: false,
+  type: 2,
   localized,
   videos: [],
   instructors: [],
@@ -186,6 +187,7 @@ it("saves certificate, fee, and shares on the Java course PUT", async () => {
   );
   await act(async () => click("保存"));
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+    type: 2,
     certificateId: 13,
     priceCredits: "100",
     enrollmentEnabled: true,

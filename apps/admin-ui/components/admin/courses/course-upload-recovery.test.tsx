@@ -31,6 +31,7 @@ localized["zh-CN"].title = "Original course";
 const course: Course = {
   id: "one",
   published: false,
+  type: 2,
   localized,
   videos: [
     {

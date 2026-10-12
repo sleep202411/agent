@@ -19,6 +19,8 @@ export interface PublicCourseCardProps {
   course: PublicCourseCardModel;
   progress: number;
   variant: "grid" | "list";
+  /** Tighter first-screen card for required courses. */
+  compact?: boolean;
 }
 
 const MAX_VISIBLE_INSTRUCTORS = 2;
@@ -49,9 +51,11 @@ function CourseProgress({ progress }: { progress: number }) {
 function InstructorChips({
   instructors,
   locale,
+  compact = false,
 }: {
   instructors: PublicCourseCardModel["instructors"];
   locale: Locale;
+  compact?: boolean;
 }) {
   const t = useTranslations("courses");
   if (instructors.length === 0) {
@@ -63,8 +67,10 @@ function InstructorChips({
 
   return (
     <TooltipProvider delayDuration={120}>
-      <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
-        <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
+      <div className="flex min-w-0 flex-col gap-1 overflow-hidden">
+        {compact ? null : (
+          <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
+        )}
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           {visible.map((instructor) => {
             const name = instructor.nickName.trim() || t("unknownInstructor");
@@ -184,27 +190,53 @@ function CardBody({
   course,
   progress,
   locale,
+  compact = false,
 }: {
   course: PublicCourseCardModel;
   progress: number;
   locale: Locale;
+  compact?: boolean;
 }) {
   const t = useTranslations("courses");
 
   return (
-    <div className="flex flex-1 flex-col px-4 pt-3.5 pb-3.5">
-      <h2 className="line-clamp-2 min-h-[3rem] text-[15px] leading-6 font-bold text-white">
+    <div
+      className={
+        compact
+          ? "flex flex-1 flex-col px-3 pt-2.5 pb-2.5"
+          : "flex flex-1 flex-col px-4 pt-3.5 pb-3.5"
+      }
+    >
+      <h2
+        className={
+          compact
+            ? "line-clamp-2 text-[14px] leading-5 font-bold text-white"
+            : "line-clamp-2 min-h-[3rem] text-[15px] leading-6 font-bold text-white"
+        }
+      >
         {course.title}
       </h2>
-      <p className="mt-1.5 line-clamp-2 min-h-[2.5rem] text-[13px] leading-5 text-[#9aa3b5]">
+      <p
+        className={
+          compact
+            ? "mt-1 line-clamp-1 text-[12px] leading-4 text-[#9aa3b5]"
+            : "mt-1.5 line-clamp-2 min-h-[2.5rem] text-[13px] leading-5 text-[#9aa3b5]"
+        }
+      >
         {course.description || "\u00A0"}
       </p>
 
-      <div className="mt-3 min-h-[1.5rem]">
-        <InstructorChips instructors={course.instructors} locale={locale} />
+      <div className={compact ? "mt-2" : "mt-3 min-h-[1.5rem]"}>
+        <InstructorChips instructors={course.instructors} locale={locale} compact={compact} />
       </div>
 
-      <div className="mt-auto flex items-center gap-3 border-t border-[#242432] pt-3">
+      <div
+        className={
+          compact
+            ? "mt-2 flex items-center gap-3 border-t border-[#242432] pt-2"
+            : "mt-auto flex items-center gap-3 border-t border-[#242432] pt-3"
+        }
+      >
         <CourseProgress progress={progress} />
         <span className="shrink-0 bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-[13px] font-bold text-transparent">
           {priceLabel(course, t)}
@@ -215,7 +247,12 @@ function CardBody({
   );
 }
 
-export function PublicCourseCard({ course, progress, variant }: PublicCourseCardProps) {
+export function PublicCourseCard({
+  course,
+  progress,
+  variant,
+  compact = false,
+}: PublicCourseCardProps) {
   const t = useTranslations("courses");
   const locale = useLocale() as Locale;
   const cover = resolveCourseCoverUrl(course.coverUrl);
@@ -283,15 +320,21 @@ export function PublicCourseCard({ course, progress, variant }: PublicCourseCard
       href={courseHref}
       className="group flex h-full flex-col overflow-hidden rounded-lg border border-[#242432] bg-[#111119] transition-colors hover:border-[#3a3a4d]"
     >
-      <div className="relative aspect-[16/9] shrink-0 overflow-hidden bg-[#1c1c27]">
+      <div
+        className={
+          compact
+            ? "relative aspect-[2/1] shrink-0 overflow-hidden bg-[#1c1c27]"
+            : "relative aspect-[16/9] shrink-0 overflow-hidden bg-[#1c1c27]"
+        }
+      >
         {cover ? (
           <Image
             src={cover}
             alt={course.title}
             fill
             unoptimized
-            sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 25vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 280px"
+            className="object-cover object-center transition-transform duration-300 group-hover:scale-105"
           />
         ) : null}
         <CoverCertificate certificate={certificate} hasCover={Boolean(cover)} />
@@ -302,7 +345,7 @@ export function PublicCourseCard({ course, progress, variant }: PublicCourseCard
         ) : null}
       </div>
 
-      <CardBody course={course} progress={progress} locale={locale} />
+      <CardBody course={course} progress={progress} locale={locale} compact={compact} />
     </Link>
   );
 }

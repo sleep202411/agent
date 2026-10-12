@@ -9,11 +9,12 @@ const PAGE_SIZE = 20;
 export default async function CoursesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; published?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; published?: string; type?: string; page?: string }>;
 }) {
   const sp = await searchParams;
   const q = sp.q?.trim() ?? "";
   const published = sp.published === "true" || sp.published === "false" ? sp.published : "all";
+  const type = sp.type === "1" || sp.type === "2" || sp.type === "3" ? sp.type : "all";
   const page = Math.max(1, Number(sp.page) || 1);
 
   const session = await requireContentPagePermission("courses.read");
@@ -21,6 +22,7 @@ export default async function CoursesPage({
     fetchAdminCoursesList({
       q: q || undefined,
       published,
+      type: type === "all" ? undefined : type,
       page: String(page),
       pageSize: String(PAGE_SIZE),
     }),
@@ -43,6 +45,7 @@ export default async function CoursesPage({
       loadError={list.error}
       initialQ={q}
       initialPublished={published}
+      initialType={type}
       initialPage={page}
       pageSize={PAGE_SIZE}
     />

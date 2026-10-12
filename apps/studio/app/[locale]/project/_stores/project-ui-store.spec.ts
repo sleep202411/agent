@@ -13,6 +13,7 @@ describe("project UI drawer state", () => {
       skillsOpen: false,
       selectedSkillId: null,
       selectedShotId: null,
+      directorDeskOpen: false,
     });
   });
 
@@ -34,6 +35,15 @@ describe("project UI drawer state", () => {
       nodesOpen: true,
       crewAssetsOpen: false,
     });
+  });
+});
+
+it("opens the director-desk overlay without closing the left rail", () => {
+  useProjectUIStore.getState().openAssets();
+  useProjectUIStore.getState().openDirectorDesk();
+  expect(useProjectUIStore.getState()).toMatchObject({
+    directorDeskOpen: true,
+    assetsOpen: true,
   });
 });
 

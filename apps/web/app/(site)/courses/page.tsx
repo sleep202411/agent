@@ -1,68 +1,98 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
 import { CourseLoadError } from "./_components/CourseLoadError";
+import { CoursesHero } from "./_components/CoursesHero";
+import { PublicCourseList } from "./_components/PublicCourseList";
 import { Spinner } from "@/components/ui/spinner";
 import { usePublicCourseList } from "@/src/hooks/use-courses-public";
-import { PublicCourseList } from "./_components/PublicCourseList";
-import { SearchFilter } from "./_components/SearchFilter";
-
-interface PageFilters {
-  searchQuery: string;
-  selectedCategory: string | null;
-  selectedPriceRange: string | null;
-}
+import { PUBLIC_COURSE_TYPE } from "@/src/services/courses-public";
+import { useTranslations } from "@/src/i18n/i18n";
 
 /**
- * Courses plaza — public catalog from Java `/project/courses`.
- * Price filters use community-credit sale terms from the list payload.
+ * Academy catalog — OPC hero, then the existing course cards in a
+ * contained width. Required courses scroll sideways when they overflow.
  */
 export default function CoursesPage() {
-  const [filters, setFilters] = useState<PageFilters>({
-    searchQuery: "",
-    selectedCategory: null,
-    selectedPriceRange: null,
-  });
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const { isLoading, error, filteredCourses, refetch, isFetching } = usePublicCourseList(
-    filters.searchQuery,
-    filters.selectedPriceRange
+  const t = useTranslations("courses");
+  const { isLoading, error, courses, refetch, isFetching } = usePublicCourseList();
+
+  const required = useMemo(
+    () => courses.filter((course) => course.type === PUBLIC_COURSE_TYPE.required),
+    [courses]
+  );
+  const skills = useMemo(
+    () => courses.filter((course) => course.type === PUBLIC_COURSE_TYPE.skill),
+    [courses]
+  );
+  const masters = useMemo(
+    () => courses.filter((course) => course.type === PUBLIC_COURSE_TYPE.master),
+    [courses]
   );
 
-  function handleFiltersChange(updates: Partial<PageFilters>) {
-    setFilters((previous) => ({ ...previous, ...updates }));
-  }
+  const empty = !isLoading && !error && courses.length === 0;
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] overflow-hidden bg-background text-foreground">
-      <div className="mx-auto grid w-full max-w-[1540px] grid-cols-1 items-start gap-6 px-5 py-8 md:px-8 lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-8">
-        <div>
-          <SearchFilter
-            filters={filters}
-            onFiltersChange={handleFiltersChange}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
-        </div>
+    <main className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
+      <div className="mx-auto w-full max-w-[1200px] px-5 pt-6 md:px-6 md:pt-8">
+        <CoursesHero />
 
-        <div className="min-h-0">
-          <div className="w-full">
-            {isLoading ? (
-              <div className="flex min-h-80 items-center justify-center">
-                <Spinner className="size-7 text-[#ff5967]" />
-              </div>
-            ) : null}
-
-            {error ? (
-              <CourseLoadError error={error} retry={() => void refetch()} busy={isFetching} />
-            ) : null}
-
-            {!isLoading && !error ? (
-              <PublicCourseList courses={filteredCourses} viewMode={viewMode} />
-            ) : null}
+        {isLoading ? (
+          <div className="flex min-h-48 items-center justify-center">
+            <Spinner className="size-7 text-[#ea2804]" />
           </div>
-        </div>
+        ) : null}
+
+        {error ? (
+          <div className="mt-6">
+            <CourseLoadError error={error} retry={() => void refetch()} busy={isFetching} />
+          </div>
+        ) : null}
+
+        {empty ? (
+          <div className="mt-6">
+            <PublicCourseList courses={[]} viewMode="grid" />
+          </div>
+        ) : null}
+
+        {!isLoading && !error && required.length > 0 ? (
+          <section className="mt-5">
+            <PublicCourseList courses={required} viewMode="grid" layout="rail" />
+          </section>
+        ) : null}
       </div>
+
+      {!isLoading && !error ? (
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-14 px-5 pt-12 pb-16 md:px-6 md:pt-14 md:pb-20">
+          {skills.length > 0 ? (
+            <section className="space-y-6">
+              <div>
+                <p className="text-[11px] font-semibold tracking-[0.28em] text-[#ea2804] uppercase">
+                  {t("skillsEyebrow")}
+                </p>
+                <h2 className="mt-2 text-2xl font-black tracking-tight text-white md:text-3xl">
+                  {t("skillsTitle")}
+                </h2>
+              </div>
+              <PublicCourseList courses={skills} viewMode="grid" />
+            </section>
+          ) : null}
+
+          {masters.length > 0 ? (
+            <section className="space-y-6">
+              <div className="max-w-xl">
+                <p className="text-[11px] font-semibold tracking-[0.28em] text-[#ea2804] uppercase">
+                  {t("mastersEyebrow")}
+                </p>
+                <h2 className="mt-2 text-2xl font-black tracking-tight text-white md:text-3xl">
+                  {t("mastersTitle")}
+                </h2>
+              </div>
+              <PublicCourseList courses={masters} viewMode="grid" />
+            </section>
+          ) : null}
+        </div>
+      ) : null}
     </main>
   );
 }

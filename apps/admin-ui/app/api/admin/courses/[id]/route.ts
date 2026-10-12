@@ -3,8 +3,10 @@ import { NextRequest } from "next/server";
 import type {
   CourseLocaleCode,
   CourseLocaleContent,
+  CourseType,
   CourseVideoLocaleContent,
 } from "@/components/admin/courses/types";
+import { DEFAULT_COURSE_TYPE } from "@/components/admin/courses/types";
 import {
   deleteAdminCourse,
   fetchAdminCourseDetail,
@@ -29,6 +31,7 @@ type SaveBody = {
   priceCredits?: string | number | null;
   enrollmentEnabled?: boolean;
   instructorShares?: Array<{ userId?: string | number; shareBps?: number }>;
+  type?: number | string | null;
 };
 
 function toUserId(id: string | number): number {
@@ -63,6 +66,7 @@ function toSaveInput(body: SaveBody): AdminCourseSaveInput {
   if (!Number.isFinite(price) || price < 0 || !Number.isInteger(price)) {
     throw new Error("总费用须为非负整数。");
   }
+  const type = parseSaveType(body.type);
 
   return {
     localized: body.localized,
@@ -82,7 +86,15 @@ function toSaveInput(body: SaveBody): AdminCourseSaveInput {
     priceCredits: price,
     enrollmentEnabled: body.enrollmentEnabled === true,
     instructorShares,
+    type,
   };
+}
+
+function parseSaveType(value: unknown): CourseType {
+  if (value == null || value === "") return DEFAULT_COURSE_TYPE;
+  const n = Number(value);
+  if (n === 1 || n === 2 || n === 3) return n;
+  throw new Error("课程分类须为推荐必修课、大师课或技能课。");
 }
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

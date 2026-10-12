@@ -16,6 +16,26 @@ export type CourseLocaleCode = (typeof COURSE_LOCALES)[number]["code"];
 
 export const COURSE_PRIMARY_LOCALE: CourseLocaleCode = "zh-CN";
 
+export const COURSE_TYPES = [
+  { value: 1, label: "推荐必修课" },
+  { value: 2, label: "大师课" },
+  { value: 3, label: "技能课" },
+] as const;
+
+export type CourseType = (typeof COURSE_TYPES)[number]["value"];
+
+export const DEFAULT_COURSE_TYPE: CourseType = 2;
+
+export function parseCourseType(value: unknown): CourseType {
+  const n = typeof value === "number" ? value : Number(value);
+  if (n === 1 || n === 2 || n === 3) return n;
+  return DEFAULT_COURSE_TYPE;
+}
+
+export function courseTypeLabel(type: CourseType): string {
+  return COURSE_TYPES.find((item) => item.value === type)?.label ?? "大师课";
+}
+
 export interface CourseLocaleContent {
   title: string;
   description: string;
@@ -54,6 +74,8 @@ export interface CourseInstructor {
 export interface Course {
   id: string;
   published: boolean;
+  /** 1 推荐必修课 / 2 大师课 / 3 技能课 */
+  type: CourseType;
   localized: Record<CourseLocaleCode, CourseLocaleContent>;
   videos: CourseVideo[];
   /** List API summary field when full videos[] is omitted. */

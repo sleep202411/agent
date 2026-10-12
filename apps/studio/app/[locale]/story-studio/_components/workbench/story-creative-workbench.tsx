@@ -20,6 +20,7 @@ import {
   ProjectSidebar,
 } from "@/app/[locale]/project/_components/project-sidebar";
 import { WorkbenchPanelContent } from "@/app/[locale]/project/_components/workbench-panel-content";
+import { DirectorDeskHost } from "@/components/canvas/authoring/director-desk-host";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { CanvasView } from "@/app/[locale]/canvas/_components/canvas-view";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
@@ -236,6 +237,7 @@ function StoryWorkbenchShell({
               panelOpen={leftDrawerOpen}
             />
           </div>
+          <DirectorDeskHost />
 
           <header
             className="pointer-events-none absolute top-0 right-0 z-30 flex h-14 items-center gap-3 px-4"
