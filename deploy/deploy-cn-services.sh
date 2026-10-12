@@ -135,18 +135,21 @@ ECS_IP=""
 MANIFEST_FILE=""
 RELAY_KEY=""
 SSH_SOCKET_DIR=""
+REMOTE_BUILD_UNCERTAIN=0
 cleanup() {
   if [ -n "$SSH_SOCKET_DIR" ]; then
     "${SSH[@]}" -O exit "root@$ECS_IP" >/dev/null 2>&1 || true
     rm -rf "$SSH_SOCKET_DIR"
   fi
   [ -z "$RELAY_KEY" ] || node "${TOOLS_ROOT:-$ROOT}/deploy/cn-source-relay.cjs" delete "$RELAY_KEY" >/dev/null 2>&1 || true
-  [ -z "$RELEASE_DIR" ] || rm -rf "$RELEASE_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
-  if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
+  if [ "$REMOTE_BUILD_UNCERTAIN" = 1 ]; then
+    echo "WARNING: CN remote build completion is unknown; builder $ECS_ID and shared release lock are preserved. Inspect remote work before recovery; do not start another build." >&2
+  elif [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
     echo "==> stopping CN build ECS"
-    aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --RegionId cn-hangzhou --profile default >/dev/null || echo "WARNING: could not stop CN build ECS $ECS_ID" >&2
+    python3 "${TOOLS_ROOT:-$ROOT}/deploy/cn_ssh_access.py" "$ECS_ID" --stop-builder || echo "WARNING: could not confirm stop of CN build ECS $ECS_ID" >&2
   fi
+  [ -z "$RELEASE_DIR" ] || rm -rf "$RELEASE_DIR"
 }
 trap cleanup EXIT
 
@@ -254,12 +257,15 @@ if { [ "$PHASE" = build ] || [ "$PHASE" = all ]; } && [ "${#BUILD_SERVICES[@]}" 
   retry_transfer /dev/null "${SCP[@]}" "$RELEASE_DIR/credentials/acr-password.txt" "root@$ECS_IP:/root/.acr_token"
   retry_transfer /dev/null "${SCP[@]}" "$TMP_DIR/deploy/cn-remote-build-services.sh" "root@$ECS_IP:/root/cn-remote-build-services.sh"
   build_status=0
+  REMOTE_BUILD_UNCERTAIN=1
   "${SSH[@]}" "root@$ECS_IP" "sed -i 's/\r$//' /root/cn-remote-build-services.sh && TAG='$TAG' EXPECTED_REVISION='$TAG' SERVICES='${BUILD_SERVICES[*]}' bash /root/cn-remote-build-services.sh" \
     | tee "$RELEASE_DIR/build.log" || build_status=$?
+  case "$build_status" in
+    255|130|137|141|143) ;;
+    *) REMOTE_BUILD_UNCERTAIN=0 ;;
+  esac
   if [ "$build_status" -ne 0 ]; then
-    if [ "$build_status" -eq 255 ]; then
-      python3 "$TOOLS_ROOT/deploy/cn_ssh_access.py" "$ECS_ID" || true
-    fi
+    [ "$build_status" -ne 255 ] || echo "FATAL: SSH connection to CN builder was lost during the build. The build was not replayed; completion is unknown." >&2
     exit "$build_status"
   fi
   echo "==> images built and pushed; no ACK workload changed"

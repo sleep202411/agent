@@ -41,7 +41,7 @@ function run(t, scenario, phase = "all", pinned = false) {
   put("deploy/release_revision.py", "import os,sys\nprint(os.environ['QA_FUTURE'])\n");
   put("deploy/release_lock.py", "import os,sys\nos.environ['FD_REGIONAL_LOCK_CN']='fixture'\nos.execvp(sys.argv[3],sys.argv[3:])\n");
   put("deploy/cn_build_credentials.py", "import os,sys\nfrom pathlib import Path\nif os.environ.get('QA_SCENARIO')=='auth-failure': sys.exit(1)\np=Path(sys.argv[2]);p.mkdir(parents=True);(p/'acr-username.txt').write_text('fixture-user');(p/'acr-password.txt').write_text('fixture-token')\n");
-  put("deploy/cn_ssh_access.py", "import os,sys\nsys.exit(2 if os.environ.get('QA_SCENARIO') == 'ssh-blocked' else 0)\n");
+  put("deploy/cn_ssh_access.py", "import os,sys,subprocess\nif '--stop-builder' in sys.argv: subprocess.run(['aliyun','ecs','StopInstance'],check=True)\nsys.exit(2 if os.environ.get('QA_SCENARIO') == 'ssh-blocked' else 0)\n");
   put("deploy/cn-preflight.sh", "#!/bin/bash\nexit 0\n");
   put("deploy/cn-remote-build-services.sh", "# snapshot A\n");
   put("deploy/cn-source-relay.cjs", "// mocked relay\n");
@@ -285,6 +285,7 @@ test("build uploads only newly acquired credentials from its private release dir
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const uploads = calls.filter((c) => c.cmd === "scp" && c.args.some((a) => /\/credentials\/acr-/.test(a)));
   assert.equal(uploads.length, 2);
+  assert.equal(calls.filter(c => c.cmd === "aliyun" && c.args[1] === "StopInstance").length, 1);
   assert.equal(calls.some((c) => c.cmd === "scp" && c.args.some((a) => a.includes(".fizzdragon-cn/acr-"))), false);
 });
 test("failed token refresh prevents credential upload and deployment", (t) => {
@@ -305,10 +306,13 @@ test("known SSH allowlist mismatch stops before starting builder", (t) => {
 
 
 test("SSH build disconnect preserves failure and prevents Helm deployment", (t) => {
-  const { result, upgrades } = run(t, "ssh-disconnected");
+  const { result, calls, upgrades } = run(t, "ssh-disconnected");
   assert.equal(result.status, 255);
   assert.equal(upgrades.length, 0);
   assert.doesNotMatch(result.stdout, /images built and pushed/);
+  assert.equal(calls.some(c => c.cmd === "aliyun" && c.args[1] === "StopInstance"), false);
+  assert.equal(calls.filter(c => c.cmd === "ssh" && c.args.at(-1).includes("bash /root/cn-remote-build-services.sh")).length, 1);
+  assert.match(result.stderr, /completion is unknown/);
 });
 
 
