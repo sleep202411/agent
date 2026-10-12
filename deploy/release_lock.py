@@ -22,6 +22,9 @@ class Lock:
         if region == 'com':
             raise RuntimeError('The Azure .com release has retired; use deploy/deploy-com.sh instead')
         config, context, namespace = TARGETS[region]
+        context = os.environ.get('CN_KUBE_CONTEXT', context)
+        if not context.endswith('-c72d2039c68624a3e8d0dee257a13d451'):
+            raise RuntimeError('CN_KUBE_CONTEXT must identify the configured mainland-China ACK cluster')
         # Explicit regional targets: never coordinate against an unrelated current context.
         self.command = ['kubectl', '--kubeconfig', str(Path.home() / '.kube' / config),
                         '--context', context, '-n', namespace, '--request-timeout=30s']

@@ -362,6 +362,24 @@ agentOs:
   nodeSelector: null
   tolerations: null
 
+# App production uses the existing CN authoring route and qualified media catalog.
+appStoryAgent:
+  enabled: true
+  image:
+    tag: "d8b5bafe9bbe5bb511e829ff3cf7fc30ae4636d1"
+  model:
+    name: qwen-plus
+    baseUrl: https://llm-crovnhlv7n5y9hfm.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+    author: qwen-plus
+    image: wan-image-2.7
+    video: minimax-h3-max
+  authorizationPoints: "1000000"
+  secrets:
+    apiKey:
+      name: fizzdragon-app-story-agent-provider
+    internalToken:
+      name: fizzdragon-app-story-agent-internal
+
 # Independent Harness authoring uses the CN provider and private regional volume.
 gameAgent:
   enabled: true
