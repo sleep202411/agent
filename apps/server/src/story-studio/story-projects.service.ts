@@ -308,6 +308,9 @@ export class StoryProjectsService {
   async create(
     user: AuthUser,
     input: CreateStoryProjectInput,
+    // Internal callers can reserve the aggregate's IDs for idempotent admission.
+    // Public Studio requests continue to use database-generated IDs.
+    identity?: { projectId: string; chapterId: string },
   ): Promise<StoryWorkbenchDto> {
     const { workspaceId } = input;
     await this.workspacePermissions.requireWorkspaceRole(
@@ -327,6 +330,7 @@ export class StoryProjectsService {
       async (tx) => {
         const project = await tx.storyProject.create({
           data: {
+            ...(identity ? { id: identity.projectId } : {}),
             workspaceId,
             // The empty canvas needs a projection shape before the Agent intake
             // runs. This value is provisional: the creator's Q1 answer replaces
@@ -392,6 +396,7 @@ export class StoryProjectsService {
         });
         const chapter = await tx.storyChapter.create({
           data: {
+            ...(identity ? { id: identity.chapterId } : {}),
             storyProjectId: project.id,
             title: defaultStoryChapterTitle(input.defaultLocale, 1),
             rank: 0,

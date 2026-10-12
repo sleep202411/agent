@@ -3,6 +3,10 @@ import { Reflector } from '@nestjs/core';
 import request from 'supertest';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
+import type { Server } from 'node:http';
+import type { INestApplication } from '@nestjs/common';
+import { AppStoryEntryController } from './app-story-agent.controller';
+import { AppStoryAgentService } from './app-story-agent.service';
 import {
   AppStoryShellController,
   storyShellAsset,
@@ -47,30 +51,58 @@ describe('App Story hosted shell', () => {
 describe('App Story shell HTTP boundary', () => {
   it('serves authenticated assets without exposing arbitrary Server files', async () => {
     const previous = process.env.APP_STORY_AGENT_ENABLED;
+    const entryId = '00000000-0000-4000-8000-000000000001';
+    const createEntry = jest.fn().mockResolvedValue({
+      ready: true,
+      locale: 'en-US',
+      projectId: entryId,
+      chapterId: entryId,
+    });
     const module = await Test.createTestingModule({
-      controllers: [AppStoryShellController],
+      controllers: [AppStoryShellController, AppStoryEntryController],
+      providers: [{ provide: AppStoryAgentService, useValue: { createEntry } }],
     }).compile();
-    const app = module.createNestApplication();
+    const app = module.createNestApplication<INestApplication<Server>>();
     app.setGlobalPrefix('aurora');
     app.useGlobalGuards(
       new AuthGuard(
         {
-          validateSessionContext: async (cookie: string) =>
-            cookie === 'satoken=fixture'
-              ? { cookie, user: { id: 'fixture' } }
-              : null,
+          validateSessionContext: (cookie: string) =>
+            Promise.resolve(
+              cookie === 'satoken=fixture'
+                ? { cookie, user: { id: 'fixture' } }
+                : null,
+            ),
         } as unknown as AuthService,
         new Reflector(),
       ),
     );
     await app.init();
+    const httpServer = app.getHttpServer();
     try {
       process.env.APP_STORY_AGENT_ENABLED = 'true';
       const root = '/aurora/app-story-agent';
-      await request(app.getHttpServer())
+      await request(httpServer)
         .get(root + '/ui/index.html')
         .expect(401);
-      const result = await request(app.getHttpServer())
+      await request(httpServer)
+        .post(root + '/entry')
+        .send({ entryId, locale: 'en-US', title: 'New story' })
+        .expect(401);
+      expect(createEntry).not.toHaveBeenCalled();
+      await request(httpServer)
+        .post(root + '/entry')
+        .set('Cookie', 'satoken=fixture')
+        .send({ entryId: 'invalid', locale: 'en-US', title: 'New story' })
+        .expect(400);
+      expect(createEntry).not.toHaveBeenCalled();
+      await request(httpServer)
+        .post(root + '/entry')
+        .set('Cookie', 'satoken=fixture')
+        .send({ entryId, locale: 'en-US', title: 'New story' })
+        .expect(200);
+      expect(createEntry).toHaveBeenCalledTimes(1);
+      const result = await request(httpServer)
         .get(root + '/ui/index.html')
         .set('Cookie', 'satoken=fixture')
         .expect(200)
@@ -83,22 +115,22 @@ describe('App Story shell HTTP boundary', () => {
       expect(result.headers['content-security-policy']).toContain(
         "frame-ancestors 'none'",
       );
-      await request(app.getHttpServer())
+      await request(httpServer)
         .get(root + '/ui/app.css')
         .set('Cookie', 'satoken=fixture')
         .expect(200)
         .expect('Content-Type', /css/);
-      await request(app.getHttpServer())
+      await request(httpServer)
         .get(root + '/ui/experience-runtime/themes/core.film-dark.v1.json')
         .set('Cookie', 'satoken=fixture')
         .expect(200)
         .expect('Content-Type', /json/);
-      await request(app.getHttpServer())
+      await request(httpServer)
         .get(root + '/ui/package.json')
         .set('Cookie', 'satoken=fixture')
         .expect(404);
       process.env.APP_STORY_AGENT_ENABLED = 'false';
-      await request(app.getHttpServer())
+      await request(httpServer)
         .get(root + '/ui/index.html')
         .set('Cookie', 'satoken=fixture')
         .expect(503);

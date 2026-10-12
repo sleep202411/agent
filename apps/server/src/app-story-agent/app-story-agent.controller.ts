@@ -32,6 +32,27 @@ import type { CopilotDocumentUploadFile } from '../copilot/copilot-document.serv
 const ProjectParams = z.object({ projectId: z.uuid() }).strict();
 const RunParams = ProjectParams.extend({ runId: z.uuid() }).strict();
 const ChapterParams = ProjectParams.extend({ chapterId: z.uuid() }).strict();
+const EntryInput = z
+  .object({
+    entryId: z.uuid(),
+    locale: z.enum(['en-US', 'zh-CN', 'zh-HK']),
+    title: z.string().trim().min(1).max(160),
+  })
+  .strict();
+
+@Controller('app-story-agent')
+export class AppStoryEntryController {
+  constructor(private readonly runs: AppStoryAgentService) {}
+  @Post('entry')
+  @HttpCode(200)
+  async create(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(EntryInput)) input: z.infer<typeof EntryInput>,
+  ) {
+    return { code: 200, data: await this.runs.createEntry(user, input) };
+  }
+}
+
 @Controller('app-story-agent/projects/:projectId')
 export class AppStoryAgentController {
   constructor(private readonly runs: AppStoryAgentService) {}

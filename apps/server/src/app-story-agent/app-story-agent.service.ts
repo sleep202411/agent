@@ -43,6 +43,7 @@ import { canonicalJsonHash } from '../story-studio/canonical-json';
 import { readStoryScriptSourceSnapshot } from '../story-studio/story-script-stage';
 import { InteractiveStoryGraphSchema } from '../story-studio/interactive-film.schema';
 import { newUuidV7 } from '../common/id';
+import { WorkspacesService } from '../workspaces/workspaces.service';
 import {
   CopilotDocumentService,
   type CopilotDocumentUploadFile,
@@ -87,7 +88,80 @@ export class AppStoryAgentService {
     private readonly preview: StoryWorkingPreviewService,
     private readonly ai: AiGenerationService,
     private readonly documents: CopilotDocumentService,
+    private readonly workspaces: WorkspacesService,
   ) {}
+
+  async createEntry(
+    user: AuthUser,
+    input: {
+      entryId: string;
+      locale: 'en-US' | 'zh-CN' | 'zh-HK';
+      title: string;
+    },
+  ) {
+    const read = () =>
+      this.prisma.storyProject.findUnique({
+        where: { id: input.entryId },
+        select: {
+          createdByUserId: true,
+          archivedAt: true,
+          chapters: {
+            where: { id: input.entryId, archivedAt: null },
+            take: 1,
+            select: { id: true },
+          },
+        },
+      });
+    let existing = await read();
+    if (!existing) {
+      const workspace = await this.workspaces.ensureDefaultWorkspace(user);
+      try {
+        const result = await this.projects.create(
+          user,
+          {
+            workspaceId: workspace.id,
+            title: input.title,
+            defaultLocale: input.locale,
+            visibility: 'private',
+          },
+          { projectId: input.entryId, chapterId: input.entryId },
+        );
+        return {
+          ready: true,
+          locale: input.locale,
+          projectId: result.project.id,
+          chapterId: result.chapter.id,
+        };
+      } catch (error) {
+        // A concurrent request or an uncertain response retains the same entry ID.
+        // Only an already committed project can reconcile a unique-key conflict.
+        if (
+          !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+          error.code !== 'P2002'
+        )
+          throw error;
+        existing = await read();
+        if (!existing) throw error;
+      }
+    }
+    if (
+      existing.createdByUserId !== user.userId ||
+      existing.archivedAt ||
+      existing.chapters[0]?.id !== input.entryId
+    )
+      throw new NotFoundException('Story entry is not available.');
+    await this.permissions.requireProject(
+      user.userId,
+      input.entryId,
+      'story.edit',
+    );
+    return {
+      ready: true,
+      locale: input.locale,
+      projectId: input.entryId,
+      chapterId: existing.chapters[0].id,
+    };
+  }
 
   private async requireChapter(
     user: AuthUser,

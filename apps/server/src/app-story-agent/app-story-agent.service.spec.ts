@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -56,7 +56,8 @@ describe('App Story production recovery (Prisma + PostgreSQL)', () => {
     prisma: PrismaClient,
     service: AppStoryAgentService;
   const permissions = { requireProject: jest.fn() };
-  const projects = { get: jest.fn(), patch: jest.fn() };
+  const projects = { get: jest.fn(), patch: jest.fn(), create: jest.fn() };
+  const workspaces = { ensureDefaultWorkspace: jest.fn() };
   const authoring = {
     createAuthoringRun: jest.fn(),
     getRunForProject: jest.fn(),
@@ -224,6 +225,7 @@ describe('App Story production recovery (Prisma + PostgreSQL)', () => {
       preview as never,
       ai as never,
       documents as never,
+      workspaces as never,
     );
     Object.assign(service.config, config);
   });
@@ -241,6 +243,95 @@ describe('App Story production recovery (Prisma + PostgreSQL)', () => {
       message: 'Make a Beijing video',
       authorizedPoints: 100,
     });
+  it('creates a private standalone entry without authoring or paid generation', async () => {
+    const find = jest
+      .spyOn(prisma.storyProject, 'findUnique')
+      .mockResolvedValue(null);
+    workspaces.ensureDefaultWorkspace.mockResolvedValue({ id: workspaceId });
+    projects.create.mockResolvedValue({
+      project: { id: projectId },
+      chapter: { id: projectId },
+    });
+    try {
+      expect(
+        await service.createEntry(user, {
+          entryId: projectId,
+          locale: 'en-US',
+          title: 'New story',
+        }),
+      ).toEqual({
+        ready: true,
+        locale: 'en-US',
+        projectId,
+        chapterId: projectId,
+      });
+      expect(projects.create).toHaveBeenCalledWith(
+        user,
+        {
+          workspaceId,
+          title: 'New story',
+          defaultLocale: 'en-US',
+          visibility: 'private',
+        },
+        { projectId, chapterId: projectId },
+      );
+      expect(authoring.createAuthoringRun).not.toHaveBeenCalled();
+      expect(batches.confirm).not.toHaveBeenCalled();
+    } finally {
+      find.mockRestore();
+    }
+  });
+  it('reconciles concurrent standalone creation only with the same owned, editable project', async () => {
+    const find = jest
+      .spyOn(prisma.storyProject, 'findUnique')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        createdByUserId: user.userId,
+        archivedAt: null,
+        chapters: [{ id: projectId }],
+      } as never);
+    workspaces.ensureDefaultWorkspace.mockResolvedValue({ id: workspaceId });
+    projects.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Duplicate project', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    try {
+      expect(
+        await service.createEntry(user, {
+          entryId: projectId,
+          locale: 'en-US',
+          title: 'New story',
+        }),
+      ).toEqual({
+        ready: true,
+        locale: 'en-US',
+        projectId,
+        chapterId: projectId,
+      });
+      expect(permissions.requireProject).toHaveBeenCalledWith(
+        user.userId,
+        projectId,
+        'story.edit',
+      );
+      find.mockResolvedValue({
+        createdByUserId: 'other-user',
+        archivedAt: null,
+        chapters: [{ id: chapterId }],
+      } as never);
+      await expect(
+        service.createEntry(user, {
+          entryId: projectId,
+          locale: 'en-US',
+          title: 'New story',
+        }),
+      ).rejects.toThrow('Story entry is not available.');
+      expect(projects.create).toHaveBeenCalledTimes(1);
+    } finally {
+      find.mockRestore();
+    }
+  });
   const claim = async () => {
     await prisma.appStoryRun.updateMany({
       data: { nextAttemptAt: new Date(0) },
