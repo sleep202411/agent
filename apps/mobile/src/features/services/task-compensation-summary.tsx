@@ -25,7 +25,11 @@ export function TaskCompensationSummary({
         <ThemedText>
           {t("taskCompensation.rewardSummary")}:{" "}
           {rewardUsdMinor === null
-            ? t("taskPlanning.unset")
+            ? t(
+                profitShareBps && profitShareBps > 0
+                  ? "taskCompensation.shareOnly"
+                  : "taskPlanning.unset"
+              )
             : `${rewardCurrency} ${(rewardUsdMinor / 100).toFixed(2)}`}
         </ThemedText>
       )}

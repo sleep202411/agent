@@ -346,3 +346,19 @@ it("verifies the saved CN reward currency as well as its amount", async () => {
   vi.mocked(api.post).mockResolvedValue({ ...detail, rewardCurrency: "USD" });
   await expect(createTask("crew", { ...input, rewardCurrency: "CNY" })).rejects.toThrow();
 });
+
+it("preserves share-only compensation without creating a cash fee", async () => {
+  const terms = { rewardUsdMinor: null, profitShareBps: 100 };
+  vi.mocked(api.post).mockResolvedValue({ ...detail, ...terms });
+  await expect(createTask("crew", { ...input, ...terms })).resolves.toMatchObject(terms);
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject(terms);
+});
+it.each([0, null, undefined, -1, 10001, 0.5])(
+  "rejects missing cash with invalid share %s",
+  async (profitShareBps) => {
+    await expect(
+      createTask("crew", { ...input, rewardUsdMinor: null, profitShareBps })
+    ).rejects.toThrow();
+    expect(api.post).not.toHaveBeenCalled();
+  }
+);

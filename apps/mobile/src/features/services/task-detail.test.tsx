@@ -625,3 +625,18 @@ it("opens the simple task view by default and exposes management through Edit", 
   await act(async () => click("taskMenu.addCredit"));
   expect(host.textContent).toContain("compute for");
 });
+
+it.each([
+  { rewardUsdMinor: null, expected: "taskCompensation.shareOnly" },
+  { rewardUsdMinor: 12345, expected: "USD 123.45" },
+])("shows agreed cash and share terms: $expected", async ({ rewardUsdMinor, expected }) => {
+  h.fetch.mockResolvedValue({
+    ...detail,
+    rewardUsdMinor,
+    rewardCurrency: "USD",
+    profitShareBps: 125,
+  });
+  await render();
+  expect(host.textContent).toContain(expected);
+  expect(host.textContent).toContain("1.25%");
+});

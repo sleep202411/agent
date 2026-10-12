@@ -1044,3 +1044,18 @@ it("sends configured initial compute points and rejects fractional points", asyn
     expect.objectContaining({ computeBudgetPoints: 500 })
   );
 });
+
+it("submits a share-only task without a cash fee", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => {
+    type(0, "Task");
+    type(6, "");
+    type(7, "1");
+  });
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ rewardUsdMinor: null, profitShareBps: 100 })
+  );
+});
