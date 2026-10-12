@@ -595,3 +595,29 @@ it("limits the combined delivery link and note to 5000 characters", async () => 
   await act(async () => type(0, "x".repeat(5000)));
   expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
 });
+
+it.each(["script", "art", "music", "storyboard", "edit"] as const)(
+  "shows all standard delivery slots for %s tasks",
+  async (taskKind) => {
+    await render({ ...task, taskKind });
+    for (const slot of ["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"])
+      expect(host.textContent).toContain(`taskSubmit.${slot}`);
+  }
+);
+it.each([0, 1, 2, 3])(
+  "uploads through standard slot %s and submits without a link",
+  async (index) => {
+    await render({ ...task, canvasHref: null });
+    const uploads = Array.from(host.querySelectorAll("button")).filter(
+      (b) => b.textContent === "thread.uploadFile"
+    );
+    await act(async () => uploads[index]!.click());
+    await act(async () => button("finish upload")!.click());
+    h.submit.mockResolvedValue({});
+    await act(async () => button("taskSubmit.submitAction")!.click());
+    expect(h.submit).toHaveBeenCalled();
+    expect(h.submit.mock.calls[0][2]).toMatchObject({
+      assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+    });
+  }
+);

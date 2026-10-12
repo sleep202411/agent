@@ -332,14 +332,29 @@ function SubmissionForm({
               />
               <ThemedText>{t("taskSubmit.deliveryLinkHint")}</ThemedText>
               {linkError && <ThemedText accessibilityRole="alert">{t(linkError)}</ThemedText>}
-              <Pressable
-                accessibilityRole="button"
-                disabled={locked || assets.length >= 100}
-                onPress={() => session.beginUpload(task, templateKey)}
-                style={{ padding: 12 }}
-              >
-                <ThemedText>{t("thread.uploadFile")}</ThemedText>
-              </Pressable>
+              {(["subtitledVideo", "cleanVideo", "subtitleFile", "sourceFiles"] as const).map(
+                (slot) => (
+                  <View key={slot} style={{ gap: 8 }}>
+                    <ThemedText type="smallBold">{t(`taskSubmit.${slot}`)}</ThemedText>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${t("thread.uploadFile")}: ${t(`taskSubmit.${slot}`)}`}
+                      disabled={locked || assets.length >= 100}
+                      onPress={() => session.beginUpload(task, templateKey, slot)}
+                      style={{ padding: 12 }}
+                    >
+                      <ThemedText>{t("thread.uploadFile")}</ThemedText>
+                    </Pressable>
+                    {assets
+                      .filter(
+                        (asset) => Array.isArray(answers[slot]) && answers[slot].includes(asset.id)
+                      )
+                      .map((asset) => (
+                        <ThemedText key={asset.id}>{asset.name}</ThemedText>
+                      ))}
+                  </View>
+                )
+              )}
             </>
           )}
           <Pressable
