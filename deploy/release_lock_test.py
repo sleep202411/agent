@@ -29,6 +29,38 @@ class LockTests(unittest.TestCase):
                 lock.acquire('mine', timeout=0)
             write.assert_not_called()
 
+    def test_environment_zero_wait_fails_closed_with_recovery_guidance(self):
+        lock = Lock('cn')
+        with patch.dict(os.environ, {'CN_RELEASE_LOCK_WAIT_SECONDS': '0'}), patch.object(lock, 'read', return_value={'data': {'owner': 'old', 'updatedAt': '2026-10-12T06:12:10Z'}}), patch.object(lock, 'write') as write, patch('release_lock.time.sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'owner=old.*--recover-owner'):
+                lock.acquire('mine')
+            write.assert_not_called()
+            sleep.assert_not_called()
+
+    def test_invalid_wait_rejected_before_cluster_access(self):
+        for value in ['-1', '14401', 'nan', '1.5', '']:
+            with self.subTest(value=value), patch.dict(os.environ, {'CN_RELEASE_LOCK_WAIT_SECONDS': value}), patch.object(Lock, 'read') as read:
+                with self.assertRaisesRegex(RuntimeError, '0 to 14400'):
+                    Lock('cn').acquire('mine')
+                read.assert_not_called()
+
+    def test_wait_budget_limits_sleep(self):
+        lock = Lock('cn')
+        with patch.object(lock, 'read', return_value={'data': {'owner': 'other'}}), patch.object(lock, 'write') as write, patch('release_lock.time.monotonic', side_effect=[0, 1, 2]), patch('release_lock.time.sleep') as sleep:
+            with self.assertRaisesRegex(RuntimeError, 'Timed out'):
+                lock.acquire('mine', timeout=2)
+            sleep.assert_called_once_with(1)
+            write.assert_not_called()
+
+    def test_status_does_not_infer_activity_or_modify_owner(self):
+        lock = Lock('cn')
+        with patch.object(lock, 'read', return_value={'data': {'owner': 'old', 'updatedAt': 'timestamp'}}), patch.object(lock, 'write') as write:
+            status = lock.status()
+            self.assertEqual(status['owner'], 'old')
+            self.assertTrue(status['held'])
+            self.assertIn('unknown', status['activity'])
+            write.assert_not_called()
+
     def test_release_requires_owner(self):
         lock = Lock('cn')
         with patch.object(lock, 'read', return_value={'data': {'owner': 'other'}}), patch.object(lock, 'write') as write:
@@ -94,6 +126,17 @@ else:
             self.assertEqual(run('cn','--',sys.executable,'-c','raise SystemExit(3)').returncode,3)
             owner=json.loads((root/'state').read_text())['data']['owner']
             self.assertTrue(owner)
+            status = run('--status', 'cn')
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(json.loads(status.stdout)['owner'], owner)
+            self.assertTrue(json.loads(status.stdout)['held'])
+            self.assertEqual(json.loads((root/'state').read_text())['data']['owner'], owner)
+            env['CN_RELEASE_LOCK_WAIT_SECONDS'] = '0'
+            blocked = run('cn', '--', '/must-not-run')
+            self.assertEqual(blocked.returncode, 1)
+            self.assertIn('no build started', blocked.stderr)
+            self.assertIn(owner, blocked.stderr)
+            self.assertEqual(json.loads((root/'state').read_text())['data']['owner'], owner)
             self.assertNotEqual(run('--recover-owner',owner,'cn').returncode,0)
             env['CONFIRM_REMOTE_RELEASE_STOPPED']='YES'
             self.assertEqual(run('--recover-owner',owner,'cn').returncode,0)
