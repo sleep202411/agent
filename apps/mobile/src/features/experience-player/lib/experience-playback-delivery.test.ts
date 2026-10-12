@@ -32,7 +32,7 @@ vi.mock("@/config", () => ({
 vi.mock("./experience-media", () => ({
   absolutizeExperienceMediaUri: (s: string) => new URL(s, "https://api.test").href,
 }));
-vi.mock("./experience-media-cache", () => ({ resolvePlaybackUri: state.progressive }));
+vi.mock("./experience-media-cache", () => ({ resolveImmediatePlaybackUri: state.progressive }));
 const source = "/aurora/story-projects/p/builds/b/assets/a/variants/v/content?version=1";
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 beforeEach(() => {
