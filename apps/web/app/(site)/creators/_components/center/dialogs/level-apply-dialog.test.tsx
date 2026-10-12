@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { LevelApplyDialog } from "./level-apply-dialog";
 const h = vi.hoisted(() => ({
+  userId: "creator",
+  held: [] as { id: number }[],
+  pending: [] as { levelId: number }[],
+  keys: [] as unknown[][],
   upload: vi.fn(),
   submit: vi.fn(),
   success: vi.fn(),
@@ -10,17 +14,23 @@ const h = vi.hoisted(() => ({
   ips: [] as { id: string; title: string; roomNumber: string }[],
   crews: [] as { id: string; name: string }[],
 }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: h.userId, raw: { levels: h.held } } }),
+}));
 vi.mock("sonner", () => ({ toast: { success: h.success, error: h.error } }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: unknown[] }) => ({
-    data: queryKey.includes("options") ? [{ id: 13, name: "AI Producer" }] : [],
-    isLoading: false,
-    refetch: vi.fn(),
-  }),
+  useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
+    h.keys.push(queryKey);
+    return {
+      data: queryKey.includes("options") ? [{ id: 13, name: "AI Producer" }] : h.pending,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+  },
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useMyCrews: () => ({ data: { founded: [], joined: h.crews }, isLoading: false }),
@@ -49,6 +59,10 @@ afterAll(() => {
   else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 beforeEach(() => {
+  h.userId = "creator";
+  h.held = [];
+  h.pending = [];
+  h.keys = [];
   h.crews = [];
   h.ips = [];
   h.submit.mockResolvedValue({});
@@ -136,7 +150,7 @@ it.each([
         level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
       );
       const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-        (item) => item.textContent === "AI Producer"
+        (item) => item.textContent === "producerName"
       )!;
       await act(async () => option.click());
     }
@@ -234,3 +248,35 @@ it.each([true, false])(
     }
   }
 );
+
+it("held qualifications override duplicate pending status and account changes isolate queries", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  h.held = [{ id: 13 }];
+  h.pending = [{ levelId: 13 }];
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={13} />)
+    );
+    expect(document.body.textContent).toContain("levels.apply.levelHeldHint");
+    expect(document.body.textContent).not.toContain("levels.apply.levelPendingHint");
+    const submit = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "levels.apply.submit"
+    )!;
+    expect(submit.disabled).toBe(true);
+    expect(h.keys.some((key) => key.includes("mine") && key.includes("creator"))).toBe(true);
+    h.userId = "other";
+    h.held = [];
+    h.pending = [];
+    await act(async () =>
+      root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={13} />)
+    );
+    expect(h.keys.some((key) => key.includes("mine") && key.includes("other"))).toBe(true);
+    expect(document.body.textContent).not.toContain("levels.apply.levelHeldHint");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

@@ -18,6 +18,9 @@ const h = vi.hoisted(() => ({
   }[],
   mutate: vi.fn(),
 }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "creator", nickname: "Creator" } }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
@@ -89,8 +92,8 @@ async function render() {
 it("shows recorded consumption and requires an assigned task", async () => {
   await render();
   expect(host.textContent).toContain("USD 1.23");
-  expect(host.textContent).toContain("ownerOnly");
-  expect(host.querySelector("form")).toBeNull();
+  expect(host.querySelector("form")).not.toBeNull();
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
   expect(
     [...host.querySelectorAll("button")].some((button) => button.textContent === "approve")
   ).toBe(false);
@@ -151,7 +154,7 @@ it("can open Finance when randomUUID is unavailable in the browser", async () =>
   Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
   try {
     await render();
-    expect(host.textContent).toContain("ownerOnly");
+    expect(host.querySelector("form")).not.toBeNull();
   } finally {
     if (original) Object.defineProperty(crypto, "randomUUID", original);
     else delete (crypto as Partial<Crypto>).randomUUID;
@@ -254,11 +257,11 @@ it("shows exact per-person task spending and keeps other task rows out of task v
   expect(host.textContent).toContain("committed");
 });
 
-it("shows owner guidance instead of a request form to creators", async () => {
+it("allows creators to open their own points request form", async () => {
   h.tasks = [{ id: "task", title: "Shot", number: 1, assignees: [{ userId: "creator" }] }];
   await render();
-  expect(host.textContent).toContain("ownerOnly");
-  expect(host.querySelector("form")).toBeNull();
+  expect(host.querySelector("form")).not.toBeNull();
+  expect(host.querySelector("form")).not.toBeNull();
 });
 
 it("requires assignment and blocks a second application independently of request-page pagination", async () => {
@@ -282,5 +285,5 @@ it("requires assignment and blocks a second application independently of request
   await render();
   expect(host.textContent).toContain("topUpAlreadyApplied");
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
-  expect(host.querySelector<HTMLInputElement>('input[step="1"]')!.max).toBe("500");
+  expect(host.querySelector<HTMLInputElement>('input[step="1"]')!.max).toBe("3000");
 });

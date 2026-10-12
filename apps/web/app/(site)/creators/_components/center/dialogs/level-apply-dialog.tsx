@@ -5,6 +5,9 @@
  * Required: certification level. Crew, IP, attachment and notes may be omitted.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CertificationGuide } from "../certification-guide";
+import { certificationEntry, certificationGroup } from "../certification-guide-data";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useQuery } from "@tanstack/react-query";
 import { IconLoader2, IconPaperclip, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -24,6 +27,8 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectGroup,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -68,7 +73,10 @@ interface LevelApplyDialogProps {
 }
 
 export function LevelApplyDialog(props: LevelApplyDialogProps) {
-  return props.open ? <LevelApplyForm {...props} /> : null;
+  const { user } = useCurrentUser();
+  return props.open && user ? (
+    <LevelApplyForm key={`${user.id}:${props.lockedLevelId ?? "any"}`} {...props} />
+  ) : null;
 }
 
 function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
@@ -82,7 +90,10 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   }, []);
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
+  const guide = useTranslations("certificationGuide");
   const locale = useLocale() as Locale;
+  const { user } = useCurrentUser();
+  const heldLevelIds = new Set((user?.raw.levels ?? []).map((level) => Number(level.id)));
   const levelLocked = lockedLevelId != null;
 
   const levelsQuery = useQuery({
@@ -91,7 +102,8 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     staleTime: 60_000,
   });
   const pendingQuery = useQuery({
-    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING, locale],
+    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING, locale, user?.id],
+    enabled: Boolean(user),
     queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
     staleTime: 30_000,
   });
@@ -136,7 +148,9 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     return ids;
   }, [pendingQuery.data]);
 
-  const [levelId, setLevelId] = useState<string>("");
+  const [levelId, setLevelId] = useState<string>(
+    lockedLevelId == null ? "" : String(lockedLevelId)
+  );
   const [crewId, setCrewId] = useState<string>("");
   const [ipId, setIpId] = useState<string>("");
   const [extraInfo, setExtraInfo] = useState("");
@@ -147,16 +161,13 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!open || lockedLevelId == null) return;
-    setLevelId(String(lockedLevelId));
-  }, [open, lockedLevelId]);
-
   const selectedLevel = useMemo(
     () => levels.find((l) => String(l.id) === levelId) ?? null,
     [levelId, levels]
   );
-  const selectedLevelPending = selectedLevel ? pendingLevelIds.has(selectedLevel.id) : false;
+  const selectedLevelPending = selectedLevel
+    ? !heldLevelIds.has(selectedLevel.id) && pendingLevelIds.has(selectedLevel.id)
+    : false;
 
   function resetForm() {
     setLevelId(lockedLevelId != null ? String(lockedLevelId) : "");
@@ -203,7 +214,8 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   }
 
   async function handleSubmit() {
-    if (!active.current || operationPending.current) return;
+    if (!active.current || operationPending.current || pendingQuery.isError || levelsQuery.isError)
+      return;
     const level = levels.find((l) => String(l.id) === levelId);
     if (!level) {
       toast.error(t("levels.apply.missingRequired"));
@@ -211,6 +223,10 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     }
     const crew = crews.find((c) => c.id === crewId);
     const ip = ips.find((i) => i.id === ipId);
+    if (heldLevelIds.has(level.id)) {
+      toast.error(t("levels.apply.levelHeldHint"));
+      return;
+    }
     if (pendingLevelIds.has(level.id)) {
       toast.error(t("levels.apply.levelPendingHint"));
       return;
@@ -253,7 +269,14 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   const loadingLists =
     levelsQuery.isPending || pendingQuery.isPending || crewsQuery.isPending || ipsQuery.isPending;
   const canSubmit =
-    Boolean(selectedLevel) && !selectedLevelPending && !submitting && !uploading && !loadingLists;
+    !pendingQuery.isError &&
+    !levelsQuery.isError &&
+    !heldLevelIds.has(Number(levelId)) &&
+    Boolean(selectedLevel) &&
+    !selectedLevelPending &&
+    !submitting &&
+    !uploading &&
+    !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -274,6 +297,20 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
         </DialogHeader>
 
         <DialogBody className="space-y-5 px-5 py-4">
+          {(pendingQuery.error || levelsQuery.error) && (
+            <div role="alert">
+              {(pendingQuery.error || levelsQuery.error)?.message}
+              <Button
+                type="button"
+                onClick={() => {
+                  void pendingQuery.refetch();
+                  void levelsQuery.refetch();
+                }}
+              >
+                {tc("retry")}
+              </Button>
+            </div>
+          )}
           {loadingLists ? (
             <div className="flex h-28 items-center justify-center">
               <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
@@ -281,7 +318,10 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
           ) : (
             <FieldGroup className="gap-5">
               <Field>
-                <FieldLabel required>{t("levels.apply.levelLabel")}</FieldLabel>
+                <div className="flex items-center gap-1">
+                  <FieldLabel required>{t("levels.apply.levelLabel")}</FieldLabel>
+                  <CertificationGuide />
+                </div>
                 <Select
                   value={levelId}
                   onValueChange={setLevelId}
@@ -296,19 +336,42 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                         {t("levels.apply.levelEmpty")}
                       </SelectItem>
                     ) : (
-                      levels.map((level) => {
-                        const pending = pendingLevelIds.has(level.id);
+                      ["partner", "director", "skill", "other"].map((group) => {
+                        const options = levels.filter(
+                          (level) => certificationGroup(level.name) === group
+                        );
+                        if (!options.length) return null;
                         return (
-                          <SelectItem key={level.id} value={String(level.id)} disabled={pending}>
-                            {pending
-                              ? t("levels.apply.levelPendingOption", { name: level.name })
-                              : level.name}
-                          </SelectItem>
+                          <SelectGroup key={group}>
+                            <SelectLabel>{guide(group)}</SelectLabel>
+                            {options.map((level) => {
+                              const entry = certificationEntry(level.name);
+                              const name = entry ? guide(`${entry}Name`) : level.name;
+                              const pending = pendingLevelIds.has(level.id);
+                              const held = heldLevelIds.has(level.id);
+                              return (
+                                <SelectItem
+                                  key={level.id}
+                                  value={String(level.id)}
+                                  disabled={pending || held}
+                                >
+                                  {held
+                                    ? t("levels.apply.levelHeldOption", { name })
+                                    : pending
+                                      ? t("levels.apply.levelPendingOption", { name })
+                                      : name}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectGroup>
                         );
                       })
                     )}
                   </SelectContent>
                 </Select>
+                {heldLevelIds.has(Number(levelId)) && (
+                  <FieldDescription>{t("levels.apply.levelHeldHint")}</FieldDescription>
+                )}
                 {selectedLevelPending ? (
                   <FieldDescription className="mt-1.5 text-[11px] leading-relaxed text-amber-400">
                     {t("levels.apply.levelPendingHint")}

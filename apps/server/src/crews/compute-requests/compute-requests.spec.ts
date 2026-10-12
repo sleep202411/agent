@@ -136,29 +136,36 @@ describe('Crew compute requests', () => {
     );
   });
 
-  it('rejects a creator request before any allowance is written', async () => {
+  it('allows assigned creators to request up to 3000 points for themselves', async () => {
     const f = fixture(false);
     await expect(
-      f.service.create('crew', 'creator', f.request),
-    ).rejects.toThrow('Only the project owner');
-    expect(f.tx.crewComputeRequest.create).not.toHaveBeenCalled();
-  });
-  it('checks the recipient assignment, not the requesting owner assignment', async () => {
-    const f = fixture();
-    await f.service.create('crew', 'owner', {
-      ...f.request,
-      beneficiaryUserId: 'creator',
+      f.service.create('crew', 'creator', { ...f.request, points: 3000 }),
+    ).resolves.toMatchObject({
+      userId: 'creator',
+      requestedByUserId: 'creator',
+      points: 3000,
     });
     expect(f.tx.crewTask.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: contains({
-          assignees: { some: { userId: 'creator' } },
-        }),
+        where: contains({ assignees: { some: { userId: 'creator' } } }),
       }),
     );
   });
+  it.each([true, false])(
+    'rejects requesting points for another creator, owner=%s',
+    async (owner) => {
+      const f = fixture(owner);
+      await expect(
+        f.service.create('crew', 'owner', {
+          ...f.request,
+          beneficiaryUserId: 'creator',
+        }),
+      ).rejects.toThrow('themselves');
+      expect(f.tx.crewComputeRequest.create).not.toHaveBeenCalled();
+    },
+  );
 
-  it.each([0, -1, 1.5, 501, 2_000_000_001])(
+  it.each([0, -1, 1.5, 3001, 2_000_000_001])(
     'rejects invalid points %s',
     (points) => {
       expect(
@@ -196,9 +203,9 @@ describe('Crew compute requests', () => {
       f.service.create('crew', 'creator', { ...f.request, points: 90 }),
     ).rejects.toThrow('different details');
   });
-  it('snapshots recipient and requesting owner and locks admission before creating', async () => {
+  it('snapshots the requesting creator and locks admission before creating', async () => {
     const f = fixture();
-    await f.service.create('crew', 'owner', {
+    await f.service.create('crew', 'creator', {
       ...f.request,
       beneficiaryUserId: 'creator',
     });
@@ -207,7 +214,7 @@ describe('Crew compute requests', () => {
         taskTitle: 'Shot',
         workspaceId: 'workspace',
         userId: 'creator',
-        requestedByUserId: 'owner',
+        requestedByUserId: 'creator',
       }),
     });
     expect(f.tx.$executeRaw).toHaveBeenCalledTimes(2);
@@ -520,18 +527,18 @@ describe('top-up financial boundaries', () => {
     });
     expect(f.walletLedger.postEntryTx).not.toHaveBeenCalled();
   });
-  it('validates the 500-point boundary and percentage workload', () => {
+  it('validates the 3000-point boundary and percentage workload', () => {
     const value = {
       taskId: '01994bd8-0000-7000-8000-000000000001',
       requestKey: '01994bd8-0000-7000-8000-000000000002',
-      points: 500,
+      points: 3000,
       reason: 'Render',
       remainingWorkload: 100,
       workloadUnit: 'percent',
     };
     expect(CreateComputeRequestSchema.safeParse(value).success).toBe(true);
     expect(
-      CreateComputeRequestSchema.safeParse({ ...value, points: 501 }).success,
+      CreateComputeRequestSchema.safeParse({ ...value, points: 3001 }).success,
     ).toBe(false);
     expect(
       CreateComputeRequestSchema.safeParse({ ...value, remainingWorkload: 101 })

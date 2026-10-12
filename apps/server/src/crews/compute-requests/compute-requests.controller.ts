@@ -16,7 +16,7 @@ export const CreateComputeRequestSchema = z
   .object({
     taskId: z.string().uuid(),
     beneficiaryUserId: z.string().trim().min(1).max(64).optional(),
-    points: z.number().int().positive().max(500),
+    points: z.number().int().positive().max(3000),
     remainingWorkload: z
       .number()
       .positive()

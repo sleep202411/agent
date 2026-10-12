@@ -38,6 +38,7 @@ it.each(["failure", "pending"])(
     }
     client.setQueryData(["user", "credits", "alice"], 100);
     client.setQueryData(["user", "credits", "bob"], 200);
+    client.setQueryData(["user-levels", "apply", "mine", 0, "en-US", "alice"], [{ levelId: 3 }]);
     client.setQueryData(["kyc", "auth-status"], { verified: true });
     root = createRoot(document.createElement("div"));
     let logout!: () => void;
@@ -61,6 +62,7 @@ it.each(["failure", "pending"])(
     }
     expect(client.getQueriesData({ queryKey: ["user", "credits"] })).toEqual([]);
     expect(client.getQueryData(["kyc", "auth-status"])).toBeUndefined();
+    expect(client.getQueriesData({ queryKey: ["user-levels", "apply"] })).toEqual([]);
     expect(mocks.replace).toHaveBeenCalledTimes(1);
   }
 );
