@@ -3410,6 +3410,21 @@
         "replaceError": "The clip media could not be replaced.",
         "mediaUnavailable": "Media replacement is unavailable until this project is editable.",
         "unsupportedMedia": "A clip can only use image or video media."
+      },
+      "arrange": {
+        "media": "Project media",
+        "earlier": "Move clip earlier",
+        "later": "Move clip later",
+        "hint": "Drag media onto the timeline; drag clips to reorder.",
+        "loading": "Loading media…",
+        "retry": "Retry",
+        "empty": "No project images or videos yet. Import media using the clip inspector.",
+        "insert": "Insert {title} before the selected clip",
+        "error": "Could not update the timeline.",
+        "invalidKind": "Choose an image or video.",
+        "missingDuration": "This video has no duration yet. Wait for media processing and refresh the media list.",
+        "image": "Image",
+        "video": "Video"
       }
     },
     "canvas": {

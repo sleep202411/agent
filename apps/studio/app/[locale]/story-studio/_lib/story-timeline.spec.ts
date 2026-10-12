@@ -2,12 +2,62 @@ import { describe, expect, it } from "vitest";
 import type { StoryStoryboardClip, StoryStoryboardSequence } from "@/lib/story-production-api";
 import {
   appendStoryTimelineClip,
+  insertStoryTimelineClip,
+  moveStoryTimelineClip,
   createManualStoryTimelineClipStableKey,
   removeStoryTimelineClip,
   storySequenceToTimeline,
 } from "./story-timeline";
 
 describe("Story timeline domain", () => {
+  it("moves clips both directions with continuous times and unchanged versions", () => {
+    const sequence = fixtureSequence();
+    sequence.clips = [
+      fixtureClip(),
+      fixtureClip({ id: "clip-2", stableKey: "two", rank: 1, startMs: 4000, durationMs: 2000 }),
+    ];
+    sequence.durationMs = 6000;
+    const moved = moveStoryTimelineClip(sequence, "clip-2", "clip-1");
+    expect(moved.clips.map((c) => [c.id, c.startMs, c.expectedVersion])).toEqual([
+      ["clip-2", 0, 7],
+      ["clip-1", 2000, 7],
+    ]);
+    expect(moved.expectedVersion).toBe(sequence.version);
+    expect(moved.durationMs).toBe(6000);
+    expect(moveStoryTimelineClip(sequence, "clip-1", null).clips.map((c) => c.id)).toEqual([
+      "clip-2",
+      "clip-1",
+    ]);
+    expect(sequence.clips[0]!.startMs).toBe(0);
+    expect(() => moveStoryTimelineClip(sequence, "missing", null)).toThrow();
+    expect(() => moveStoryTimelineClip(sequence, "clip-1", "missing")).toThrow();
+  });
+
+  it("inserts existing media before a clip without losing its source or moving the original object", () => {
+    const sequence = fixtureSequence();
+    const input = insertStoryTimelineClip(
+      sequence,
+      {
+        stableKey: "new",
+        kind: "video",
+        title: "Video",
+        prompt: "Video",
+        durationMs: 1500,
+        description: null,
+        sourceMediaAssetId: "asset-1",
+      },
+      "clip-1"
+    );
+    expect(input.clips[0]).toMatchObject({
+      sourceMediaAssetId: "asset-1",
+      startMs: 0,
+      expectedVersion: 0,
+    });
+    expect(input.clips[1]).toMatchObject({ id: "clip-1", startMs: 1500, expectedVersion: 7 });
+    expect(input.durationMs).toBe(5500);
+    expect(sequence.clips).toHaveLength(1);
+  });
+
   it("projects a sequence into an ordered visual track without copying branching", () => {
     const sequence = fixtureSequence();
     sequence.clips = [fixtureClip({ id: "clip-2", rank: 1, startMs: 2_000 }), fixtureClip()];
