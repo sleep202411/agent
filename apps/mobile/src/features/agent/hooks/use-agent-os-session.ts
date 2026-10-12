@@ -110,7 +110,8 @@ function mergeRunMessages(
   runId: string,
   events: AgentOsEvent[],
   prompt?: { text: string; at: string; attachmentNames?: string[] } | null,
-  hitl?: { text: string; at: string; decision: "approve" | "reject" } | null
+  hitl?: { text: string; at: string; decision: "approve" | "reject" } | null,
+  runStatus?: string
 ): AgentMessage[] {
   const rebuilt = eventsToMessages(events, {
     runId,
@@ -120,6 +121,7 @@ function mergeRunMessages(
     hitlText: hitl?.text,
     hitlAt: hitl?.at,
     hitlDecision: hitl?.decision,
+    runStatus,
   });
   const kept = previous.filter((message) => !messageBelongsToRun(message.id, runId));
   return [...kept, ...rebuilt];
@@ -259,7 +261,14 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   const rebuildMessages = useCallback((runId: string) => {
     const hitl = hitlReplyRef.current;
     setMessages((prev) =>
-      mergeRunMessages(prev, runId, eventsBufRef.current, userPromptRef.current, hitl)
+      mergeRunMessages(
+        prev,
+        runId,
+        eventsBufRef.current,
+        userPromptRef.current,
+        hitl,
+        currentSessionRef.current.status
+      )
     );
   }, []);
 
@@ -805,7 +814,10 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     () => deriveAgentActivity(runEvents, session.status, session.pendingExternal),
     [runEvents, session.pendingExternal, session.status]
   );
-  const assistantStreaming = useMemo(() => currentTurnIsStreaming(runEvents), [runEvents]);
+  const assistantStreaming = useMemo(
+    () => currentTurnIsStreaming(runEvents, session.status),
+    [runEvents, session.status]
+  );
 
   return {
     configured: configured,

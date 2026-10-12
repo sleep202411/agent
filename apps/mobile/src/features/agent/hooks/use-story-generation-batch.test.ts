@@ -80,11 +80,16 @@ it("serializes cancel/resume synchronously and keeps active failures retryable",
     await pending;
   });
   expect(current.mutating).toBe(false);
-  expect(current.actionError).toBe("retry me");
+  expect(current.cancelError).toBe("retry me");
+  expect(current.resumeError).toBeNull();
+  state.get.mockResolvedValue({ ...batch, status: "running" });
+  await act(async () => current.retry());
+  expect(current.cancelError).toBe("retry me");
   state.resume.mockResolvedValue(batch);
   await act(async () => current.resume());
   expect(state.resume).toHaveBeenCalledTimes(1);
-  expect(current.actionError).toBeNull();
+  expect(current.cancelError).toBe("retry me");
+  expect(current.resumeError).toBeNull();
 });
 it("aborts old actions and preserves a replacement claim on credential change", async () => {
   state.get.mockResolvedValue(batch);

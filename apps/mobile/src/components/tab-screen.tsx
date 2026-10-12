@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Platform, ScrollView, StyleSheet, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
@@ -10,13 +10,35 @@ type TabScreenProps = {
   gap?: number;
 };
 
+/**
+ * Safe-area + tab-bar insets for primary bottom-tab screens.
+ * The native tab host does NOT inset content below the status bar (verified
+ * on iOS) — apply these paddings on every tab, including FlatList screens.
+ */
+export function useTabScreenInsets(): {
+  topInset: number;
+  bottomInset: number;
+  contentPadding: ViewStyle;
+} {
+  const insets = useSafeAreaInsets();
+  const topInset = insets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
+  const bottomInset = insets.bottom + BottomTabInset + Spacing.four;
+  return {
+    topInset,
+    bottomInset,
+    contentPadding: {
+      paddingTop: topInset,
+      paddingBottom: bottomInset,
+      paddingLeft: Math.max(insets.left, Spacing.four),
+      paddingRight: Math.max(insets.right, Spacing.four),
+    },
+  };
+}
+
+/** Scrollable tab page shell. Prefer this; for FlatList use `useTabScreenInsets`. */
 export function TabScreen({ children, gap = Spacing.four }: TabScreenProps) {
-  const safeAreaInsets = useSafeAreaInsets();
+  const { contentPadding } = useTabScreenInsets();
   const theme = useTheme();
-  // The native tab host does NOT inset content below the status bar (verified
-  // on iOS 26.3) — apply the safe-area inset manually on every platform.
-  const topInset = safeAreaInsets.top + (Platform.OS === "web" ? Spacing.four : Spacing.three);
-  const bottomInset = safeAreaInsets.bottom + BottomTabInset + Spacing.four;
 
   return (
     <ScrollView
@@ -24,15 +46,7 @@ export function TabScreen({ children, gap = Spacing.four }: TabScreenProps) {
       // native auto content-inset so the status-bar inset isn't counted twice.
       contentInsetAdjustmentBehavior="never"
       style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentContainerStyle={[
-        styles.content,
-        {
-          paddingTop: topInset,
-          paddingBottom: bottomInset,
-          paddingLeft: Math.max(safeAreaInsets.left, Spacing.four),
-          paddingRight: Math.max(safeAreaInsets.right, Spacing.four),
-        },
-      ]}
+      contentContainerStyle={[styles.content, contentPadding]}
     >
       <View style={[styles.page, { gap }]}>{children}</View>
     </ScrollView>

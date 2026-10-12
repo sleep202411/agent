@@ -46,6 +46,34 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+type TurnEvent = { event: AgentOsEvent; turnId: string };
+
+/**
+ * Resolve protocol turn ids without treating messageId as a turn id.
+ * Journals written before turnId existed get one synthetic turn per
+ * UserMessage; later events stay there until the next UserMessage.
+ */
+function eventsWithTurnIds(events: readonly AgentOsEvent[], runId: string): TurnEvent[] {
+  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+  const result: TurnEvent[] = [];
+  let legacyUserIndex = -1;
+  let currentTurnId: string | null = null;
+
+  for (const event of sorted) {
+    const explicitTurnId = nonEmptyString(event.data.turnId);
+    if (explicitTurnId) {
+      currentTurnId = explicitTurnId;
+    } else if (event.type === "UserMessage") {
+      legacyUserIndex += 1;
+      currentTurnId = `legacy:${runId}:${legacyUserIndex}`;
+    } else if (!currentTurnId) {
+      currentTurnId = `legacy:${runId}:prelude`;
+    }
+    result.push({ event, turnId: currentTurnId });
+  }
+  return result;
+}
+
 function agentActivityLabelKey(activity: AgentOsActivityPhase): string {
   if (activity.kind === "planning") return "planning";
   if (activity.kind === "thinking") return "thinking";
@@ -64,8 +92,9 @@ export function agentActivityMessageKey(activity: AgentOsActivityPhase): Message
 
 /**
  * One live status line for the current turn (mirrors PC `deriveAgentActivity`).
- * Streamed assistant copy clears the generic spinner; a pending external job
- * (story.author) keeps a tool phase so the host can overlay stage copy.
+ * Only the latest turnId counts. Streamed assistant copy clears the generic
+ * spinner; a pending external job (story.author) keeps a tool phase so the
+ * host can overlay stage copy.
  */
 export function deriveAgentActivity(
   events: AgentOsEvent[],
@@ -85,17 +114,24 @@ export function deriveAgentActivity(
   if (status === "waiting_for_approval") return { kind: "waiting_for_approval" };
   if (status === "queued") return { kind: "thinking" };
 
+  const annotated = eventsWithTurnIds(events, events.at(-1)?.runId ?? "run");
+  const turnId = annotated.at(-1)?.turnId ?? null;
   let activity: AgentOsActivityPhase | null = { kind: "thinking" };
-  for (const event of events) {
+  for (const item of annotated) {
+    if (item.turnId !== turnId) continue;
+    const event = item.event;
     switch (event.type) {
       case "PlanCreated":
       case "PlanUpdated":
         activity = { kind: "planning" };
         break;
+      case "StepStarted":
+        if (nonEmptyString(event.data.step) === "permission") activity = { kind: "thinking" };
+        break;
       case "ToolProposed":
       case "ToolStarted":
       case "ToolProgress": {
-        const toolId = typeof event.data.toolId === "string" ? event.data.toolId : "";
+        const toolId = nonEmptyString(event.data.toolId) ?? "";
         activity = toolId ? { kind: "tool", toolId } : { kind: "thinking" };
         break;
       }
@@ -127,11 +163,30 @@ export function deriveAgentActivity(
   return activity;
 }
 
-/** True while the open assistant message is still receiving deltas. */
-export function currentTurnIsStreaming(events: AgentOsEvent[]): boolean {
+const STREAM_SETTLED_STATUSES = new Set([
+  "waiting_for_input",
+  "waiting_for_approval",
+  "waiting_for_external",
+  "completed",
+  "failed",
+  "cancelled",
+  "idle",
+  "paused",
+]);
+
+/**
+ * True while the current turn's assistant copy is still receiving deltas.
+ * A pause, question, or approval settles that fragment, and waiting statuses
+ * do too when the runtime omitted MessageCompleted.
+ */
+export function currentTurnIsStreaming(events: AgentOsEvent[], status?: string): boolean {
+  if (status && STREAM_SETTLED_STATUSES.has(status)) return false;
+  const annotated = eventsWithTurnIds(events, events.at(-1)?.runId ?? "run");
+  const turnId = annotated.at(-1)?.turnId ?? null;
   let streaming = false;
-  for (const event of events) {
-    switch (event.type) {
+  for (const item of annotated) {
+    if (item.turnId !== turnId) continue;
+    switch (item.event.type) {
       case "MessageDelta":
         streaming = true;
         break;
@@ -255,7 +310,26 @@ function isArtifactStatus(value: unknown): value is StoryProposalArtifactStatus 
  * mobile thread UI. One user submission owns one Assistant bubble (H5 turn):
  * later MessageCompleted segments append in place, and domain artifacts stay
  * on that same bubble so markdown (tables included) paints before the card.
+ *
+ * Matches Studio `rebuildRunTimelineFromEvents`: turnId owns one Assistant
+ * bubble, each messageId is one segment, MessageCompleted text replaces that
+ * segment, and a crash-recovery segment closed with finishReason `superseded`
+ * stays out of the bubble. Pause, question, and approval settle the open segment.
  */
+type AssistantSegment = {
+  id: string;
+  content: string;
+  finishReason?: string;
+  completed: boolean;
+};
+
+type AssistantTurn = {
+  turnId: string;
+  segments: AssistantSegment[];
+  openMessageId: string | null;
+  assistant: AgentMessage | null;
+};
+
 function attachmentNamesFromEvent(event: AgentOsEvent): string[] {
   if (!Array.isArray(event.data.attachments)) return [];
   return event.data.attachments.flatMap((attachment) => {
@@ -275,68 +349,88 @@ export function eventsToMessages(
     hitlText?: string;
     hitlAt?: string;
     hitlDecision?: "approve" | "reject";
+    runStatus?: string;
   }
 ): AgentMessage[] {
   const out: AgentMessage[] = [];
   const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+  const runId = opts?.runId ?? "run";
   const artifactById = new Map<string, StoryTranscriptArtifact>();
   const artifactIdByToolCall = new Map<string, string>();
   const artifactIdByApproval = new Map<string, string>();
-  let lastAssistant: AgentMessage | null = null;
+  const turns = new Map<string, AssistantTurn>();
 
-  let streamText = "";
-  let streamStartedAt: string | null = null;
-  let streamSeq = 0;
+  const ensureTurn = (turnId: string): AssistantTurn => {
+    const existing = turns.get(turnId);
+    if (existing) return existing;
+    const created: AssistantTurn = {
+      turnId,
+      segments: [],
+      openMessageId: null,
+      assistant: null,
+    };
+    turns.set(turnId, created);
+    return created;
+  };
 
-  const ensureAssistantHost = (timestamp: string, sequence: number) => {
-    if (lastAssistant) return lastAssistant;
-    lastAssistant = {
-      id: `asst:${opts?.runId ?? "run"}:artifact:${sequence}`,
+  const visibleAssistantText = (turn: AssistantTurn) =>
+    turn.segments
+      .filter((segment) => segment.finishReason !== "superseded")
+      .map((segment) => segment.content.trim())
+      .filter(Boolean)
+      .join("\n\n");
+
+  const ensureAssistantHost = (turn: AssistantTurn, timestamp: string) => {
+    if (turn.assistant) return turn.assistant;
+    const created: AgentMessage = {
+      id: `asst:${runId}:${turn.turnId}`,
       role: "assistant",
       createdAt: timestamp,
       artifacts: [],
     };
-    out.push(lastAssistant);
-    return lastAssistant;
+    turn.assistant = created;
+    out.push(created);
+    return created;
+  };
+
+  const settleOpenSegment = (turn: AssistantTurn) => {
+    if (!turn.openMessageId) return;
+    const segment = turn.segments.find((item) => item.id === turn.openMessageId);
+    if (segment) segment.completed = true;
+    turn.openMessageId = null;
+  };
+
+  const segmentFor = (turn: AssistantTurn, messageId: string) => {
+    const existing = turn.segments.find((segment) => segment.id === messageId);
+    if (existing) return existing;
+    const created: AssistantSegment = { id: messageId, content: "", completed: false };
+    turn.segments.push(created);
+    return created;
   };
 
   const attachArtifact = (
+    turn: AssistantTurn,
     artifact: StoryTranscriptArtifact,
-    timestamp: string,
-    sequence: number
+    timestamp: string
   ) => {
     artifactById.set(artifact.id, artifact);
-    const host = ensureAssistantHost(timestamp, sequence);
+    const host = ensureAssistantHost(turn, timestamp);
     host.artifacts = [
       ...(host.artifacts ?? []).filter((item) => item.id !== artifact.id),
       artifact,
     ];
   };
 
-  const flushAssistant = (kind: string, sequence: number, timestamp: string) => {
-    const text = streamText.trim();
-    if (!text) return;
-    if (lastAssistant) {
-      lastAssistant.text = lastAssistant.text ? `${lastAssistant.text.trim()}\n\n${text}` : text;
-      lastAssistant.id = `asst:${opts?.runId ?? "run"}:${sequence}`;
-    } else {
-      lastAssistant = {
-        id: `asst:${opts?.runId ?? "run"}:${sequence}`,
-        role: "assistant",
-        text,
-        createdAt: streamStartedAt ?? timestamp,
-      };
-      out.push(lastAssistant);
+  for (const { event, turnId } of eventsWithTurnIds(sorted, runId)) {
+    const turn = ensureTurn(turnId);
+    if (
+      event.type === "UserInputRequired" ||
+      event.type === "ApprovalRequired" ||
+      event.type === "RunPaused"
+    ) {
+      settleOpenSegment(turn);
     }
-    streamText = "";
-    streamStartedAt = null;
-    void kind;
-  };
-
-  for (const event of sorted) {
     if (event.type === "UserMessage") {
-      flushAssistant("before_user", event.sequence, event.timestamp);
-      lastAssistant = null;
       const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
       const names = attachmentNamesFromEvent(event);
       if (text || names.length > 0) {
@@ -355,17 +449,41 @@ export function eventsToMessages(
       continue;
     }
 
+    if (event.type === "MessageStarted") {
+      const messageId =
+        nonEmptyString(event.data.messageId) ??
+        `legacy-message:${runId}:${turnId}:${event.sequence}`;
+      segmentFor(turn, messageId);
+      turn.openMessageId = messageId;
+      ensureAssistantHost(turn, event.timestamp);
+      continue;
+    }
+
     if (event.type === "MessageDelta" && typeof event.data.delta === "string") {
-      if (!streamStartedAt) streamStartedAt = event.timestamp;
-      streamText += event.data.delta;
-      streamSeq = event.sequence;
+      const messageId =
+        nonEmptyString(event.data.messageId) ??
+        turn.openMessageId ??
+        `legacy-message:${runId}:${turnId}`;
+      const segment = segmentFor(turn, messageId);
+      segment.content += event.data.delta;
+      segment.completed = false;
+      turn.openMessageId = messageId;
+      ensureAssistantHost(turn, event.timestamp);
       continue;
     }
 
     if (event.type === "MessageCompleted") {
-      const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
-      if (!streamText.trim() && text) streamText = text;
-      flushAssistant("message_completed", event.sequence, event.timestamp);
+      const messageId =
+        nonEmptyString(event.data.messageId) ??
+        turn.openMessageId ??
+        `legacy-message:${runId}:${turnId}`;
+      const segment = segmentFor(turn, messageId);
+      const text = typeof event.data.text === "string" ? event.data.text : "";
+      if (text.trim()) segment.content = text;
+      segment.finishReason = nonEmptyString(event.data.finishReason) ?? undefined;
+      segment.completed = true;
+      turn.openMessageId = null;
+      ensureAssistantHost(turn, event.timestamp);
       continue;
     }
 
@@ -380,6 +498,7 @@ export function eventsToMessages(
         const storyChapterId = nonEmptyString(reference.storyChapterId ?? reference.chapterId);
         if (!generationBatchId || !storyProjectId || !storyChapterId) continue;
         attachArtifact(
+          turn,
           {
             kind: "story_generation_batch",
             id: artifactId,
@@ -387,8 +506,7 @@ export function eventsToMessages(
             storyProjectId,
             storyChapterId,
           },
-          event.timestamp,
-          event.sequence
+          event.timestamp
         );
         continue;
       }
@@ -401,14 +519,14 @@ export function eventsToMessages(
         artifactById.set(artifactId, existing);
       } else {
         attachArtifact(
+          turn,
           {
             kind: "story_stage_proposal",
             id: artifactId,
             storyAgentRunId,
             status: event.data.status === "active" ? "active" : "proposed",
           },
-          event.timestamp,
-          event.sequence
+          event.timestamp
         );
       }
       const toolCallId = nonEmptyString(event.data.toolCallId);
@@ -429,14 +547,14 @@ export function eventsToMessages(
       );
       if (!existing) {
         attachArtifact(
+          turn,
           {
             kind: "story_stage_proposal",
             id: storyAgentRunId,
             storyAgentRunId,
             status: "proposed",
           },
-          event.timestamp,
-          event.sequence
+          event.timestamp
         );
       }
       artifactIdByToolCall.set(toolCallId, existing?.id ?? storyAgentRunId);
@@ -502,17 +620,26 @@ export function eventsToMessages(
       // H5 keeps RunFailed off the transcript. Progress copy and generation
       // cards stay; the host surfaces a short failed banner instead of the
       // English diagnostic dump.
-      flushAssistant("failed", event.sequence, event.timestamp);
       continue;
     }
   }
 
-  if (streamText.trim()) {
-    flushAssistant(
-      "streaming",
-      streamSeq || sorted.at(-1)?.sequence || 0,
-      new Date().toISOString()
-    );
+  if (
+    opts?.runStatus === "waiting_for_input" ||
+    opts?.runStatus === "waiting_for_approval" ||
+    opts?.runStatus === "waiting_for_external"
+  ) {
+    for (const turn of turns.values()) settleOpenSegment(turn);
+  }
+
+  for (const turn of turns.values()) {
+    if (!turn.assistant) continue;
+    const text = visibleAssistantText(turn);
+    turn.assistant.text = text || undefined;
+    if (!text && !turn.assistant.artifacts?.length) {
+      const index = out.indexOf(turn.assistant);
+      if (index >= 0) out.splice(index, 1);
+    }
   }
 
   const hasUserMessage = sorted.some((event) => event.type === "UserMessage");
@@ -555,7 +682,10 @@ export function eventsToMessages(
 export function conversationRunsToMessages(runs: AgentOsConversationRun[]): AgentMessage[] {
   const messages: AgentMessage[] = [];
   for (const run of runs) {
-    const fromEvents = eventsToMessages(run.events ?? [], { runId: run.runId });
+    const fromEvents = eventsToMessages(run.events ?? [], {
+      runId: run.runId,
+      runStatus: run.status,
+    });
     if (fromEvents.length) {
       messages.push(...fromEvents);
       continue;

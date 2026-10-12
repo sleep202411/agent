@@ -26,7 +26,6 @@ import { AGENT_OS_STORY_WORKBENCH_MODE } from "@/features/agent/api/studio-proje
 import { AgentApprovalCard } from "@/features/agent/components/agent-approval-card";
 import { AgentComposer } from "@/features/agent/components/agent-composer";
 import { AgentPermissionMenu } from "@/features/agent/components/agent-permission-menu";
-import { AgentSkillsMenu } from "@/features/agent/components/agent-skills-menu";
 import { AgentMessageList } from "@/features/agent/components/agent-message-list";
 import { AgentUserInputCard } from "@/features/agent/components/agent-user-input-card";
 import { StoryAuthoringDecision } from "@/features/agent/components/story-authoring-decision";
@@ -445,62 +444,56 @@ function AgentOsChatScreen() {
               canSendWithoutText={composerTurn.canSendWithoutText}
               nativeID={AGENT_INPUT_NATIVE_ID}
               attachmentBar={
-                <View style={styles.composerExtras}>
-                  {composerTurn.invocableSkills.length > 0 ? (
-                    <View style={styles.skillChips}>
-                      {composerTurn.invocableSkills.map((skill) => {
-                        const active = composerTurn.turnSkillIds.includes(skill.id);
-                        return (
-                          <Pressable
-                            key={skill.id}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: active, disabled: composerLocked }}
-                            disabled={composerLocked}
-                            onPress={() => composerTurn.toggleTurnSkill(skill.id)}
-                          >
-                            <View style={[styles.skillChip, active && styles.skillChipActive]}>
-                              <Text style={styles.skillChipText}>{skill.name}</Text>
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ) : null}
-                  <AgentSkillsMenu
-                    entries={composerTurn.projectSkillEntries}
-                    loading={composerTurn.projectSkillsLoading}
-                    error={composerTurn.projectSkillsError}
-                    disabled={composerLocked}
-                    activeCount={composerTurn.activeProjectSkillCount}
-                    isActive={composerTurn.isProjectSkillActive}
-                    onToggle={composerTurn.toggleProjectSkill}
-                    onRetry={composerTurn.retryProjectSkills}
-                  />
-                  {composerTurn.pendingFiles.length > 0 || composerTurn.uploading ? (
-                    <View style={styles.fileChips}>
-                      {composerTurn.uploading ? (
-                        <Text style={styles.uploading}>{t("agent.composer.uploading")}</Text>
-                      ) : null}
-                      {composerTurn.pendingFiles.map((file) => (
-                        <View key={file.id} style={styles.fileChip}>
-                          <Text style={styles.fileChipText} numberOfLines={1}>
-                            {file.filename}
-                          </Text>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={t("agent.composer.removeAttachment")}
-                            hitSlop={6}
-                            onPress={() => composerTurn.removePending(file.id)}
-                          >
-                            <View>
-                              <IconX size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
-                            </View>
-                          </Pressable>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
+                composerTurn.invocableSkills.length > 0 ||
+                composerTurn.pendingFiles.length > 0 ||
+                composerTurn.uploading ? (
+                  <View style={styles.composerExtras}>
+                    {composerTurn.invocableSkills.length > 0 ? (
+                      <View style={styles.skillChips}>
+                        {composerTurn.invocableSkills.map((skill) => {
+                          const active = composerTurn.turnSkillIds.includes(skill.id);
+                          return (
+                            <Pressable
+                              key={skill.id}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: active, disabled: composerLocked }}
+                              disabled={composerLocked}
+                              onPress={() => composerTurn.toggleTurnSkill(skill.id)}
+                            >
+                              <View style={[styles.skillChip, active && styles.skillChipActive]}>
+                                <Text style={styles.skillChipText}>{skill.name}</Text>
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                    {composerTurn.pendingFiles.length > 0 || composerTurn.uploading ? (
+                      <View style={styles.fileChips}>
+                        {composerTurn.uploading ? (
+                          <Text style={styles.uploading}>{t("agent.composer.uploading")}</Text>
+                        ) : null}
+                        {composerTurn.pendingFiles.map((file) => (
+                          <View key={file.id} style={styles.fileChip}>
+                            <Text style={styles.fileChipText} numberOfLines={1}>
+                              {file.filename}
+                            </Text>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={t("agent.composer.removeAttachment")}
+                              hitSlop={6}
+                              onPress={() => composerTurn.removePending(file.id)}
+                            >
+                              <View>
+                                <IconX size={12} color="rgba(255,255,255,0.45)" strokeWidth={2} />
+                              </View>
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null
               }
               leadingAction={
                 <Pressable
