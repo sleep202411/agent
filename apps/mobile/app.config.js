@@ -133,7 +133,7 @@ function readIdentifier(region, variant, platform) {
   if (variant === "production") {
     if (!regionValue) {
       throw new Error(
-        `[mobile config] Missing ${regionEnvName} for production ${region} ${platform} build`
+        `[mobile config] Missing ${regionEnvName} for production ${region} ${platform} build`,
       );
     }
 
@@ -225,19 +225,6 @@ module.exports = ({ config }) => {
   const defaults = REGION_DEFAULTS[appRegion];
 
   const wechatApplink = wechatAssociatedDomain();
-  const studioHost = appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com";
-  const siteHost = appRegion === "cn" ? "fizzdragon.fizzspace.cn" : "fizzdragon.com";
-  // Both hosts must publish matching AASA / assetlinks signing identities.
-  // Dev/preview builds use their configured custom scheme and must not claim release links.
-  const studioLinks = appVariant === "production";
-  const associatedDomains = [
-    ...new Set([
-      ...(config.ios?.associatedDomains ?? []),
-      ...(wechatApplink ? [wechatApplink] : []),
-      ...(studioLinks ? [`applinks:${studioHost}`] : []),
-      ...(studioLinks ? [`applinks:${siteHost}`] : []),
-    ]),
-  ];
 
   const appEnv = {
     appRegion,
@@ -248,17 +235,17 @@ module.exports = ({ config }) => {
       contentBaseUrl: readUrl(
         "EXPO_PUBLIC_API_CONTENT_BASE_URL",
         defaults.api.contentBaseUrl,
-        appVariant
+        appVariant,
       ),
       studioBaseUrl: readUrl(
         "EXPO_PUBLIC_API_STUDIO_BASE_URL",
         defaults.api.studioBaseUrl,
-        appVariant
+        appVariant,
       ),
       auroraBaseUrl: readUrl(
         "EXPO_PUBLIC_API_AURORA_BASE_URL",
         defaults.api.auroraBaseUrl,
-        appVariant
+        appVariant,
       ),
     },
     assets: {
@@ -267,12 +254,12 @@ module.exports = ({ config }) => {
       bannerBaseUrl: readUrl(
         "EXPO_PUBLIC_BANNER_BASE_URL",
         defaults.assets.bannerBaseUrl,
-        appVariant
+        appVariant,
       ),
       staticBaseUrl: readUrl(
         "EXPO_PUBLIC_STATIC_BASE_URL",
         defaults.assets.staticBaseUrl,
-        appVariant
+        appVariant,
       ),
     },
   };
@@ -282,7 +269,7 @@ module.exports = ({ config }) => {
     owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.3.2",
+    version: "2.4.0",
     orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: getUrlSchemes(appRegion, appVariant),
@@ -297,101 +284,18 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "82",
-      infoPlist: {
-        ...config.ios?.infoPlist,
-        NSCameraUsageDescription: "Use your camera to verify your own likeness.",
-        NSMicrophoneUsageDescription: "Use your microphone during likeness verification.",
-      },
+      buildNumber: "83",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
-      ...(associatedDomains.length ? { associatedDomains } : {}),
+      ...(wechatApplink ? { associatedDomains: [wechatApplink] } : {}),
     },
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 82,
-      permissions: [
-        ...new Set([
-          ...(config.android?.permissions ?? []),
-          "android.permission.CAMERA",
-          "android.permission.RECORD_AUDIO",
-        ]),
-      ],
-      intentFilters: [
-        ...(config.android?.intentFilters ?? []),
-        ...(studioLinks
-          ? [
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["/invite/", "/en-US/invite/", "/zh-CN/invite/", "/zh-HK/invite/"].map(
-                  (pathPrefix) => ({ scheme: "https", host: studioHost, pathPrefix })
-                ),
-              },
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
-                  ["", "/"].map((suffix) => ({
-                    scheme: "https",
-                    host: siteHost,
-                    path: `${locale}/creators/studios${suffix}`,
-                  }))
-                ),
-              },
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
-                  ["", "/"].map((suffix) => ({
-                    scheme: "https",
-                    host: siteHost,
-                    path: `${locale}/ips/gps${suffix}`,
-                  }))
-                ),
-              },
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
-                  scheme: "https",
-                  host: siteHost,
-                  pathPrefix: `${locale}/crew-invite/`,
-                })),
-              },
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["", "/en-US", "/zh-CN", "/zh-HK"].map((locale) => ({
-                  scheme: "https",
-                  host: siteHost,
-                  pathPrefix: `${locale}/crew-invitations/`,
-                })),
-              },
-              {
-                action: "VIEW",
-                autoVerify: true,
-                category: ["BROWSABLE", "DEFAULT"],
-                data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
-                  ["", "/"].map((suffix) => ({
-                    scheme: "https",
-                    host: studioHost,
-                    path: `${locale}/casting/accept${suffix}`,
-                  }))
-                ),
-              },
-            ]
-          : []),
-      ],
+      versionCode: 83,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
@@ -424,19 +328,6 @@ module.exports = ({ config }) => {
       "expo-file-system",
       "expo-image",
       "expo-localization",
-      [
-        "expo-location",
-        {
-          locationWhenInUsePermission:
-            "Allow FizzDragon to suggest your city when you choose to use your device location.",
-          motionUsagePermission: false,
-          locationAlwaysPermission: false,
-          locationAlwaysAndWhenInUsePermission: false,
-          isIosBackgroundLocationEnabled: false,
-          isAndroidBackgroundLocationEnabled: false,
-          isAndroidForegroundServiceEnabled: false,
-        },
-      ],
       "expo-secure-store",
       "expo-sharing",
       [
@@ -506,16 +397,6 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       appEnv,
-      discoveryMap: {
-        enabled: readOptionalEnv("FD_DISCOVERY_MAP_ENABLED") || "false",
-        documentUrl: readOptionalEnv("FD_DISCOVERY_MAP_DOCUMENT_URL"),
-        provider: appRegion === "cn" ? "gaode" : "google",
-        key: readOptionalEnv(
-          appRegion === "cn" ? "FD_DISCOVERY_MAP_GAODE_KEY" : "FD_DISCOVERY_MAP_GOOGLE_KEY"
-        ),
-        mapId: readOptionalEnv("FD_DISCOVERY_MAP_GOOGLE_MAP_ID"),
-        securityProxyPath: readOptionalEnv("FD_DISCOVERY_MAP_GAODE_PROXY_PATH"),
-      },
       paywall: {
         revenueCatAppleApiKey: readRevenueCatAppleKey(appRegion),
         revenueCatGoogleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY") || "",

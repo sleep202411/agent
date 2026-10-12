@@ -26,7 +26,8 @@ export function useStoryGenerationBatch(
   storyboard: StoryStoryboardSequence[];
   loading: boolean;
   error: string | null;
-  actionError: string | null;
+  cancelError: string | null;
+  resumeError: string | null;
   mutating: boolean;
   retry: () => void;
   cancel: () => Promise<void>;
@@ -37,7 +38,8 @@ export function useStoryGenerationBatch(
   const [storyboard, setStoryboard] = useState<StoryStoryboardSequence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
   const [mutating, setMutating] = useState(false);
   const [tick, setTick] = useState(0);
   const identity = useStoryRequestScope(`${projectId}:${chapterId}:${batchId}`);
@@ -64,7 +66,8 @@ export function useStoryGenerationBatch(
     setStoryboard([]);
     setLoading(ok);
     setError(null);
-    setActionError(null);
+    setCancelError(null);
+    setResumeError(null);
     setMutating(false);
   }
 
@@ -77,13 +80,6 @@ export function useStoryGenerationBatch(
           if (signal?.aborted) return;
           setBatch(next);
           setError(null);
-          if (
-            storyGenerationBatchHasPendingItems(next) ||
-            next.status === "queued" ||
-            next.status === "running"
-          ) {
-            setActionError(null);
-          }
           const kind = next.items[0]?.targetKind;
           if (kind === "asset_spec") {
             const rows = await storyProductionApi.listAssetSpecs(projectId, chapterId, signal);
@@ -139,6 +135,8 @@ export function useStoryGenerationBatch(
         currentScope.current === identity &&
         !controller.signal.aborted &&
         activeAction.current === controller;
+      const report = action === "cancel" ? setCancelError : setResumeError;
+      report(null);
       try {
         const next =
           action === "cancel"
@@ -156,10 +154,10 @@ export function useStoryGenerationBatch(
               );
         if (!current()) return;
         setBatch(next);
-        setActionError(null);
+        report(null);
       } catch (err) {
         if (!current()) return;
-        setActionError(err instanceof Error ? err.message : String(err));
+        report(err instanceof Error ? err.message : String(err));
       } finally {
         if (current()) {
           activeAction.current = null;
@@ -178,7 +176,8 @@ export function useStoryGenerationBatch(
     storyboard,
     loading: ok && loading,
     error,
-    actionError,
+    cancelError,
+    resumeError,
     mutating,
     retry: () => {
       if (!ok || currentScope.current !== identity || activeAction.current) return;

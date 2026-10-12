@@ -252,6 +252,93 @@ export function isStillVideoVariant(mediaType: string | undefined): boolean {
   return Boolean(mediaType?.toLowerCase().startsWith("image/"));
 }
 
+/**
+ * How near its declared end a clip counts as finished. Matches the web player.
+ * A file often runs a little past the authored duration.
+ */
+const CLIP_END_MARGIN_SECONDS = 0.15;
+
+/** True when playback has reached the clip's declared end, within one breath. */
+export function clipPlaybackReachedEnd(currentTimeSeconds: number, endSeconds: number): boolean {
+  if (!(endSeconds > 0) || !Number.isFinite(endSeconds) || !Number.isFinite(currentTimeSeconds)) {
+    return false;
+  }
+  return endSeconds - currentTimeSeconds < CLIP_END_MARGIN_SECONDS;
+}
+
+/**
+ * How long a clip that has already reached its last moments may sit still
+ * before the sequence moves on. iOS sometimes never emits `playToEnd`.
+ * A freeze in the middle of the shot is not the end.
+ */
+export const CLIP_PLAYBACK_STALL_MS = 1_500;
+const CLIP_STALL_MOVE_SECONDS = 0.05;
+const CLIP_STALL_END_GAP_SECONDS = 0.5;
+
+/**
+ * The end this player should measure to. A fresh player reports its own file
+ * length, which is trustworthy. The file often runs a little past the authored
+ * duration, and the authored duration is sometimes longer than the file.
+ */
+export function clipPlaybackEndSeconds(
+  authoredMs: number | undefined,
+  playerDurationSeconds: number
+): number {
+  const authored = authoredMs && authoredMs > 0 ? authoredMs / 1_000 : 0;
+  const native =
+    Number.isFinite(playerDurationSeconds) && playerDurationSeconds > 0 ? playerDurationSeconds : 0;
+  if (authored > 0 && native > 0) return Math.min(authored, native);
+  return authored || native;
+}
+
+/**
+ * True when a clip that already started has stopped within a breath of its end.
+ * A host pause and a playhead that never left the start do not count.
+ */
+export function clipPlaybackStalled(input: {
+  currentTimeSeconds: number;
+  anchoredTimeSeconds: number;
+  anchoredForMs: number;
+  endSeconds: number;
+  moved: boolean;
+  held: boolean;
+}): boolean {
+  if (input.held || !input.moved) return false;
+  if (!Number.isFinite(input.currentTimeSeconds) || !Number.isFinite(input.anchoredTimeSeconds)) {
+    return false;
+  }
+  if (!Number.isFinite(input.endSeconds) || !(input.endSeconds > 0)) return false;
+  if (input.endSeconds - input.currentTimeSeconds > CLIP_STALL_END_GAP_SECONDS) return false;
+  if (Math.abs(input.currentTimeSeconds - input.anchoredTimeSeconds) > CLIP_STALL_MOVE_SECONDS) {
+    return false;
+  }
+  return input.anchoredForMs >= CLIP_PLAYBACK_STALL_MS;
+}
+
+/**
+ * What the player should open. A file already on disk plays at once. Otherwise
+ * the signed media URL plays immediately — the same bytes the web player uses —
+ * and the download continues in the background for the next visit. Waiting for
+ * the whole file before the cut is what freezes the shot.
+ */
+export async function resolveClipPlaybackUri(
+  sourceUri: string,
+  signal: AbortSignal,
+  io: {
+    cached: (sourceUri: string) => string | null;
+    sign: (sourceUri: string, signal: AbortSignal) => Promise<string>;
+    warm: (sourceUri: string) => void;
+  }
+): Promise<string | null> {
+  if (signal.aborted) return null;
+  const cached = io.cached(sourceUri);
+  if (cached) return cached;
+  const signed = await io.sign(sourceUri, signal);
+  if (signal.aborted) return null;
+  io.warm(sourceUri);
+  return signed;
+}
+
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
 
 /**
