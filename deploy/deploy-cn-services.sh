@@ -320,6 +320,10 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
         *@sha256:*) helm_sets+=(--set-string "appStoryAgent.image.digest=${app_story_image##*@}") ;;
         *) helm_sets+=(--set-string "appStoryAgent.image.tag=${app_story_image##*:}" --set-string "appStoryAgent.image.digest=") ;;
       esac
+    else
+      # First activation belongs to an explicit worker release, after its image,
+      # secrets and schema are ready. Unrelated releases keep the feature off.
+      helm_sets+=(--set 'appStoryAgent.enabled=false')
     fi
   fi
   if contains_service agent; then
