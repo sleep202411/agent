@@ -599,7 +599,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
       removeStatus?.();
       removeStatus = ctx.locale.register("chat", transport.context.locale, {
         "chat.deepDiving": label,
-        "chat.deepDivingFor": label,
+        "chat.deepDivingFor": t.h5.runningFor.replace("{status}", label),
         "message.failure.accountSignedOut": t.h5.sessionExpired,
         "message.failure.accountSignInRequired": t.h5.sessionRequired,
       });
