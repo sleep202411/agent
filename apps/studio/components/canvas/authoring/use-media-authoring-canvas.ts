@@ -226,6 +226,7 @@ export function useMediaAuthoringCanvas({
   const storeOpenAssets = useProjectUIStore((s) => s.openAssets);
   const nodeInsertRequest = useProjectUIStore((s) => s.nodeInsertRequest);
   const clearNodeInsertRequest = useProjectUIStore((s) => s.clearNodeInsertRequest);
+  const openDirectorDesk = useProjectUIStore((s) => s.openDirectorDesk);
   const [localAssetsOpen, setLocalAssetsOpen] = useState(false);
   const assetsOpen = projectCtx ? storeAssetsOpen : localAssetsOpen;
   const setAssetsOpen = projectCtx
@@ -380,6 +381,7 @@ export function useMediaAuthoringCanvas({
     const disabled = new Set<AddNodeAction>();
     const pending = addMenu?.pending;
     if (!pending) return disabled;
+    disabled.add("director-desk");
     if (pending.handleType === "source") {
       const kind = outputKind(pending.nodeId);
       if (kind) {
@@ -647,6 +649,11 @@ export function useMediaAuthoringCanvas({
         setAddMenu(null);
         return;
       }
+      if (action === "director-desk") {
+        openDirectorDesk();
+        setAddMenu(null);
+        return;
+      }
       const id = crypto.randomUUID();
       const modality: GenerationModality | null =
         action === "generate-image"
@@ -716,7 +723,7 @@ export function useMediaAuthoringCanvas({
         );
       }
     },
-    [addNode, generationDefaults, getDocumentNodes, nodes, onConnect, t]
+    [addNode, generationDefaults, getDocumentNodes, nodes, onConnect, openDirectorDesk, t]
   );
   const addNodeFromDock = useCallback(
     (action: AddNodeAction) => {

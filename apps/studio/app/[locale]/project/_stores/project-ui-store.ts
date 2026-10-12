@@ -50,6 +50,8 @@ interface ProjectUIState {
   /** One-shot request consumed by the active media-authoring canvas. */
   nodeInsertRequest: { id: number; action: AddNodeAction } | null;
   nodeInsertSerial: number;
+  /** Director-desk overlay — opened from the add-node menu, dock, or assets. */
+  directorDeskOpen: boolean;
 
   // ── Actions ────────────────────────────────────────────────────────────
   /** Open asset library; closes any open shot drawer (mutually exclusive). */
@@ -61,6 +63,8 @@ interface ProjectUIState {
   closeNodes: () => void;
   requestNodeInsert: (action: AddNodeAction) => void;
   clearNodeInsertRequest: (id: number) => void;
+  openDirectorDesk: () => void;
+  closeDirectorDesk: () => void;
   toggleOverview: () => void;
   closeOverview: () => void;
   toggleSections: () => void;
@@ -99,6 +103,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
       historyOpen: false,
       nodeInsertRequest: null,
       nodeInsertSerial: 0,
+      directorDeskOpen: false,
 
       openActors: () =>
         set({
@@ -167,6 +172,21 @@ export const useProjectUIStore = create<ProjectUIState>()(
         }),
       clearNodeInsertRequest: (id) =>
         set((state) => (state.nodeInsertRequest?.id === id ? { nodeInsertRequest: null } : {})),
+      openDirectorDesk: () =>
+        set({
+          directorDeskOpen: true,
+          nodesOpen: false,
+          assetsOpen: false,
+          crewAssetsOpen: false,
+          actorsOpen: false,
+          historyOpen: false,
+          overviewOpen: false,
+          sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
+          selectedShotId: null,
+        }),
+      closeDirectorDesk: () => set({ directorDeskOpen: false }),
       toggleOverview: () =>
         set((state) => ({
           overviewOpen: !state.overviewOpen,

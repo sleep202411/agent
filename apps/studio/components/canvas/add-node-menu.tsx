@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
+  IconCamera,
   IconCloudUpload,
   IconLayoutList,
   IconNote,
@@ -20,6 +21,7 @@ export type AddNodeAction =
   | "generate-video"
   | "generate-audio"
   | "note"
+  | "director-desk"
   | "shot";
 
 /** What a canvas offers when the product doesn't narrow it. */
@@ -29,6 +31,7 @@ export const DEFAULT_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
   "generate-video",
   "generate-audio",
   "note",
+  "director-desk",
 ];
 
 /** Complete node catalog used by the project canvas and its sidebar panel. */
@@ -47,6 +50,7 @@ export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
   "generate-video": "shift+v",
   "generate-audio": "a",
   note: "n",
+  "director-desk": "d",
   shot: "s",
 };
 
@@ -56,6 +60,7 @@ export const ADD_NODE_ICONS: Record<AddNodeAction, Icon> = {
   "generate-video": IconVideo,
   "generate-audio": IconAudioWaveform,
   note: IconNote,
+  "director-desk": IconCamera,
   shot: IconLayoutList,
 };
 
@@ -66,6 +71,7 @@ export const ADD_NODE_LABEL_KEYS: Record<AddNodeAction, string> = {
   "generate-video": "video",
   "generate-audio": "audio",
   note: "note",
+  "director-desk": "directorDesk",
   shot: "shot",
 };
 

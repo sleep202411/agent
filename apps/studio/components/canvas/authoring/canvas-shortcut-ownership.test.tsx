@@ -72,6 +72,10 @@ it("keeps image creation available", () => {
   key("i");
   expect(addNode).toHaveBeenCalledWith("generate-image");
 });
+it("D opens director desk without duplicating", () => {
+  key("d");
+  expect(addNode).toHaveBeenCalledWith("director-desk");
+});
 it("does not create video while typing", () => {
   container.querySelector("input")!.focus();
   key("V", true);

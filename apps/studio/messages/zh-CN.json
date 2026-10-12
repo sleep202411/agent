@@ -1377,6 +1377,7 @@
       "video": "视频",
       "audio": "音频",
       "note": "便签",
+      "directorDesk": "导演台",
       "shot": "分镜"
     },
     "guest": "访客",
@@ -1445,6 +1446,7 @@
       "video": "视频",
       "audio": "音频",
       "note": "便签",
+      "directorDesk": "导演台",
       "shot": "分镜",
       "searchPlaceholder": "搜索节点",
       "noMatches": "没有匹配的节点"
@@ -1638,6 +1640,17 @@
         "title": "暂无素材",
         "generated": "该项目中的生成结果会显示在这里。",
         "uploaded": "你上传到该项目的媒体会显示在这里。"
+      },
+      "directorDesk": {
+        "open": "打开导演台",
+        "title": "导演台",
+        "description": "在导演台里摆机位截图，截图会进入当前项目资产。",
+        "imported": "已将 {count} 张导演台截图放到画布上",
+        "importFailed": "导演台截图导入失败",
+        "editRequired": "需要编辑权限才能导入导演台截图",
+        "capture": "截图到画布",
+        "capturing": "截图上传中…",
+        "captureTimeout": "截图时间过长，请再试一次。"
       }
     },
     "crewSave": {

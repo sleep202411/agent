@@ -1377,6 +1377,7 @@
       "video": "Video",
       "audio": "Audio",
       "note": "Note",
+      "directorDesk": "Director desk",
       "shot": "Shot"
     },
     "guest": "Guest",
@@ -1445,6 +1446,7 @@
       "video": "Video",
       "audio": "Audio",
       "note": "Note",
+      "directorDesk": "Director desk",
       "shot": "Shot",
       "searchPlaceholder": "Search nodes",
       "noMatches": "No matching nodes"
@@ -1638,6 +1640,17 @@
         "title": "No assets yet",
         "generated": "Generations in this project show up here.",
         "uploaded": "Media you upload to this project shows up here."
+      },
+      "directorDesk": {
+        "open": "Open director desk",
+        "title": "Director desk",
+        "description": "Stage a shot in the director desk. Captures are added to this project’s assets.",
+        "imported": "Placed {count} director stills on the canvas",
+        "importFailed": "Could not import director stills",
+        "editRequired": "Edit access is required to import director stills",
+        "capture": "Capture to canvas",
+        "capturing": "Uploading capture…",
+        "captureTimeout": "Capture is taking too long. Try again."
       }
     },
     "crewSave": {

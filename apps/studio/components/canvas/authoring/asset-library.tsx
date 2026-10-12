@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
-import { IconLibraryPhoto, IconPhoto, IconSearch } from "@tabler/icons-react";
+import { IconCamera, IconLibraryPhoto, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 import { cn } from "@/lib/utils";
 import {
@@ -71,6 +71,7 @@ export function AssetLibrary({
   variant = "default",
   description,
   customTab,
+  onOpenDirectorDesk,
 }: {
   open: boolean;
   onClose: () => void;
@@ -81,6 +82,7 @@ export function AssetLibrary({
     label: string;
     render: () => ReactNode;
   };
+  onOpenDirectorDesk?: () => void;
 }) {
   const t = useTranslations("canvasNodes");
   const { assets: projectAssets } = useProjectAssets("");
@@ -216,6 +218,16 @@ export function AssetLibrary({
             className="w-full bg-transparent text-[11px] text-white/78 outline-none placeholder:text-white/30"
           />
         </div>
+        {onOpenDirectorDesk ? (
+          <button
+            type="button"
+            onClick={onOpenDirectorDesk}
+            className="mx-4 mb-3 flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-white/[0.07] text-[10px] font-medium text-white/72 transition hover:bg-white/[0.12] hover:text-white"
+          >
+            <IconCamera className="size-3.5" stroke={1.8} />
+            {t("asset.directorDesk.open")}
+          </button>
+        ) : null}
 
         <DrawerPanel.Body>{content}</DrawerPanel.Body>
       </>
@@ -258,6 +270,16 @@ export function AssetLibrary({
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
+      {onOpenDirectorDesk ? (
+        <button
+          type="button"
+          onClick={onOpenDirectorDesk}
+          className="mx-4 mb-3 flex h-9 shrink-0 items-center justify-center gap-2 rounded-full bg-white/[0.07] text-xs font-medium text-white/72 transition hover:bg-white/[0.12] hover:text-white"
+        >
+          <IconCamera className="size-4" stroke={1.8} />
+          {t("asset.directorDesk.open")}
+        </button>
+      ) : null}
 
       <DrawerPanel.Body>{content}</DrawerPanel.Body>
     </>

@@ -1377,6 +1377,7 @@
       "video": "影片",
       "audio": "音訊",
       "note": "便箋",
+      "directorDesk": "導演台",
       "shot": "分鏡"
     },
     "guest": "訪客",
@@ -1445,6 +1446,7 @@
       "video": "影片",
       "audio": "音訊",
       "note": "便箋",
+      "directorDesk": "導演台",
       "shot": "分鏡",
       "searchPlaceholder": "搜尋節點",
       "noMatches": "沒有符合的節點"
@@ -1638,6 +1640,17 @@
         "title": "暫無素材",
         "generated": "此專案中的生成結果會顯示在這裡。",
         "uploaded": "你上載到此專案的媒體會顯示在這裡。"
+      },
+      "directorDesk": {
+        "open": "打開導演台",
+        "title": "導演台",
+        "description": "在導演台裡擺機位截圖，截圖會進入目前專案資產。",
+        "imported": "已將 {count} 張導演台截圖放到畫布上",
+        "importFailed": "導演台截圖匯入失敗",
+        "editRequired": "需要編輯權限才能匯入導演台截圖",
+        "capture": "截圖到畫布",
+        "capturing": "截圖上傳中…",
+        "captureTimeout": "截圖時間過長，請再試一次。"
       }
     },
     "crewSave": {
