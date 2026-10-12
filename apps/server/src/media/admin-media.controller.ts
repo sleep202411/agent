@@ -21,6 +21,7 @@ import {
   AdminPermissionGuard,
   CurrentAdmin,
   RequireAdminPermissions,
+  RequireAnyAdminPermissions,
   type AdminActor,
 } from '../admin-auth';
 import { Public } from '../auth';
@@ -54,6 +55,7 @@ import {
 } from './dto';
 import { MediaAccessService } from './media-access.service';
 import { MediaUploadService } from './media-upload.service';
+import { assertAdminMayUploadMediaKind } from './admin-media-permissions';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -72,7 +74,10 @@ export class AdminMediaController {
    * the storage-key scope + ownership root. Used by admin-ui for 资讯 covers
    * (kind `news_cover`); the returned `url` is written onto the Java news row.
    */
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @RequireAnyAdminPermissions(
+    ADMIN_PERMISSION_KEYS.MediaRead,
+    ADMIN_PERMISSION_KEYS.AiActorsWrite,
+  )
   @Post('upload-url')
   @HttpCode(HttpStatus.OK)
   async createUploadUrl(
@@ -80,13 +85,17 @@ export class AdminMediaController {
     @Body(new ZodValidationPipe(CreateUploadUrlSchema))
     body: CreateUploadUrlInputDto,
   ) {
+    assertAdminMayUploadMediaKind(admin, body.kind);
     return {
       code: 200,
       data: await this.mediaUpload.createUploadUrl(admin.id, body),
     };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @RequireAnyAdminPermissions(
+    ADMIN_PERMISSION_KEYS.MediaRead,
+    ADMIN_PERMISSION_KEYS.AiActorsWrite,
+  )
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   async confirmUpload(
@@ -94,6 +103,7 @@ export class AdminMediaController {
     @Body(new ZodValidationPipe(ConfirmUploadSchema))
     body: ConfirmUploadInputDto,
   ) {
+    assertAdminMayUploadMediaKind(admin, body.kind);
     return {
       code: 200,
       data: await this.mediaUpload.confirmUpload(admin.id, body),
@@ -140,7 +150,11 @@ export class AdminMediaController {
     return { code: 200, data };
   }
 
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
+  @RequireAnyAdminPermissions(
+    ADMIN_PERMISSION_KEYS.MediaRead,
+    ADMIN_PERMISSION_KEYS.AiActorsRead,
+    ADMIN_PERMISSION_KEYS.AiActorsWrite,
+  )
   @Get('assets/:assetId/content')
   async redirectToAssetContent(
     @CurrentAdmin() admin: AdminActor,
