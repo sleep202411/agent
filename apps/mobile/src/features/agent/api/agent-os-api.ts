@@ -222,8 +222,10 @@ export function normalizePendingUserInput(
   const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
   const questions = Array.isArray(raw.questions) ? raw.questions : [];
   if (!requestId || !questions.length) return null;
+  const formId = typeof raw.formId === "string" ? raw.formId : undefined;
   return {
     requestId,
+    ...(formId ? { formId } : {}),
     questions,
     formId: typeof raw.formId === "string" ? raw.formId : undefined,
     turnId: typeof raw.turnId === "string" ? raw.turnId : undefined,
