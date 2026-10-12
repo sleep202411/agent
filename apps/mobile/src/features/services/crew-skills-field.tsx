@@ -3,7 +3,8 @@ import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { useTranslations, type MessageKey } from "@/i18n";
+import { certificationEntry } from "../certificates/certification-guide-data";
 import { fetchCrewSkills } from "./crew-skills-api";
 
 export function CrewSkillsField({
@@ -91,7 +92,11 @@ export function CrewSkillsField({
                 <Pressable
                   key={skill}
                   accessibilityRole="checkbox"
-                  accessibilityLabel={skill === "Editor" ? t("crewSkills.videoEditor") : skill}
+                  accessibilityLabel={
+                    certificationEntry(skill)
+                      ? t(`certificationGuide.${certificationEntry(skill)}Name` as MessageKey)
+                      : skill
+                  }
                   accessibilityState={{ checked: selected, disabled }}
                   disabled={disabled}
                   style={{
@@ -108,7 +113,9 @@ export function CrewSkillsField({
                 >
                   <ThemedText>
                     {selected ? "✓ " : ""}
-                    {skill === "Editor" ? t("crewSkills.videoEditor") : skill}
+                    {certificationEntry(skill)
+                      ? t(`certificationGuide.${certificationEntry(skill)}Name` as MessageKey)
+                      : skill}
                   </ThemedText>
                 </Pressable>
               );

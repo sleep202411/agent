@@ -101,3 +101,13 @@ it("ignores catalog completion after account changes", async () => {
   await act(async () => resolve(["Editing"]));
   expect(control("Editing")).toBeNull();
 });
+
+it("keeps FD role selection separate from Editor certification", async () => {
+  h.fetch.mockResolvedValue(["FD-I", "FD-II", "Editor"]);
+  await act(async () => root.render(<Harness />));
+  await act(async () => control("crewSkills.label").click());
+  await act(async () => control("certificationGuide.fd1Name").click());
+  expect(control("certificationGuide.fd1Name").getAttribute("aria-checked")).toBe("true");
+  expect(control("certificationGuide.editorName").getAttribute("aria-checked")).toBe("false");
+  expect(host.textContent).toContain("FD-I");
+});
