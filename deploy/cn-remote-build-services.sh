@@ -24,9 +24,15 @@ cd /root/src || { echo "FATAL: no source"; exit 1; }
 # from previous services are already verified in ACR before the next build.
 prepare_build_storage() {
   if docker --version 2>/dev/null | grep -qi podman; then
-    # Failed Buildah containers can pin layers after ENOSPC. This is run only
-    # between builds on the dedicated builder, never with --volumes.
-    docker system prune --all --force --build >/dev/null
+    # Podman 4.9 has no system-prune --build flag. Use its supported cleanup,
+    # then reclaim images pinned by abandoned Buildah containers when supported.
+    # This runs between builds on the dedicated builder, never with --volumes.
+    docker system prune --all --force >/dev/null
+    local image_prune_help
+    image_prune_help=$(docker image prune --help)
+    if [[ "$image_prune_help" == *"--external"* ]]; then
+      docker image prune --all --force --external >/dev/null
+    fi
   else
     docker image prune -af >/dev/null
     docker builder prune -af >/dev/null

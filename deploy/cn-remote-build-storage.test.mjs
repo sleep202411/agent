@@ -5,13 +5,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 const source = readFileSync(new URL("./cn-remote-build-services.sh", import.meta.url), "utf8");
-function run(t, { low = false, pushFail = false, podman = false } = {}) {
+function run(
+  t,
+  { low = false, pushFail = false, podman = false, external = true, pruneFail = false } = {}
+) {
   const dir = mkdtempSync(join(tmpdir(), "cn-disk-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const log = join(dir, "calls");
   writeFileSync(
     join(dir, "docker"),
     `#!/bin/bash\necho "$*" >> '${log}'\nif [ "$1" = --version ]; then echo '${podman ? "podman version 4.9" : "Docker version 27"}'; fi
+if [[ " $* " == *" --build "* ]]; then echo 'Error: unknown flag: --build' >&2; exit 125; fi
+if [ "$1 $2 $3" = 'image prune --help' ]; then echo '${external ? "--external" : "--all --force"}'; exit 0; fi
+${pruneFail ? "if [ \"$1 $2\" = 'system prune' ]; then exit 125; fi" : ":"}
 if [ "$1" = info ]; then\n ${podman ? '[ "$3" != "{{.DockerRootDir}}" ] || exit 1' : ":"}\n echo '${dir}'\nfi\n${pushFail ? '[ "$1" != push ] || exit 1' : ":"}\n`,
     { mode: 0o755 }
   );
@@ -58,6 +64,18 @@ test("checks Podman graph storage when DockerRootDir is unavailable", (t) => {
   const r = run(t, { podman: true });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.calls.includes("info --format {{.Store.GraphRoot}}"));
-  assert.equal(r.calls.filter(c => c === "system prune --all --force --build").length, 2);
-  assert.ok(r.calls.every(c => !c.includes("--volumes")));
+  assert.equal(r.calls.filter((c) => c === "system prune --all --force").length, 2);
+  assert.ok(r.calls.every((c) => !c.includes("--volumes") && !c.split(" ").includes("--build")));
+  assert.equal(r.calls.filter((c) => c === "image prune --all --force --external").length, 2);
+});
+
+test("Podman without external-image pruning still uses supported cleanup", (t) => {
+  const r = run(t, { podman: true, external: false });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!r.calls.some((c) => c.endsWith("--external")));
+});
+test("Podman cleanup failures stop the build instead of hiding errors", (t) => {
+  const r = run(t, { podman: true, pruneFail: true });
+  assert.notEqual(r.status, 0);
+  assert.ok(!r.calls.some((c) => c.startsWith("build ")));
 });
