@@ -7,7 +7,10 @@ export function missingTaskFields(input: Partial<CreateCrewTaskInput>) {
   if (!input.taskKind) missing.push("taskKindLabel");
   if (!input.description?.trim()) missing.push("taskBrief");
   if (!input.workflowStateId) missing.push("planningState");
-  if (input.rewardUsdMinor == null) missing.push("requiredReward");
+  const share = input.profitShareBps;
+  const hasRevenueShare =
+    typeof share === "number" && Number.isInteger(share) && share > 0 && share <= 10000;
+  if (input.rewardUsdMinor == null && !hasRevenueShare) missing.push("requiredReward");
   if (!input.dueAt) missing.push("due");
   return missing;
 }

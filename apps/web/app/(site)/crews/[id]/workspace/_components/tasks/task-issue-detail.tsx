@@ -486,7 +486,11 @@ export function TaskIssueDetail({
                   )}
                   <p>
                     {task.rewardUsdMinor == null
-                      ? projectT("workbench.rewardUnset")
+                      ? projectT(
+                          task.profitShareBps && task.profitShareBps > 0
+                            ? "workbench.revenueShareOnly"
+                            : "workbench.rewardUnset"
+                        )
                       : projectT("workbench.rewardValue", {
                           amount: (task.rewardUsdMinor / 100).toFixed(2),
                           currency: task.rewardCurrency ?? "USD",
