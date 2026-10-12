@@ -7,7 +7,7 @@ import { spawnSync } from "node:child_process";
 const source = readFileSync(new URL("./cn-remote-build-services.sh", import.meta.url), "utf8");
 function run(
   t,
-  { low = false, pushFail = false, podman = false, external = true, pruneFail = false, pullFailures = 0, buildFail = false } = {}
+  { low = false, pushFail = false, podman = false, external = true, pruneFail = false, inUse = false, mixedError = false, pullFailures = 0, buildFail = false } = {}
 ) {
   const dir = mkdtempSync(join(tmpdir(), "cn-disk-test-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -18,6 +18,12 @@ function run(
 if [[ " $* " == *" --build "* ]]; then echo 'Error: unknown flag: --build' >&2; exit 125; fi
 if [ "$1 $2 $3" = 'image prune --help' ]; then echo '${external ? "--external" : "--all --force"}'; exit 0; fi
 ${pruneFail ? "if [ \"$1 $2\" = 'system prune' ]; then exit 125; fi" : ":"}
+${inUse ? `if [ "$1 $2" = 'system prune' ]; then
+ echo 'Emulate Docker CLI using podman. Create /etc/containers/nodocker to quiet msg.' >&2
+ echo 'Error: image used by 5424a237c389bcb4641bad7692af25ec804bc2f4ecca759299c4865c24e5757a: image is in use by a container: consider listing external containers and force-removing image' >&2
+ ${mixedError ? "echo 'Error: permission denied opening storage' >&2" : ":"}
+ exit 125
+fi` : ":"}
 if [ "$1 $2" = 'image inspect' ]; then exit 1; fi
 if [ "$1 $2" = 'pull node:test' ]; then
  n=$(cat '${dir}/pull-count' 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > '${dir}/pull-count'
@@ -74,7 +80,7 @@ test("checks Podman graph storage when DockerRootDir is unavailable", (t) => {
   assert.ok(r.calls.includes("info --format {{.Store.GraphRoot}}"));
   assert.equal(r.calls.filter((c) => c === "system prune --all --force").length, 2);
   assert.ok(r.calls.every((c) => !c.includes("--volumes") && !c.split(" ").includes("--build")));
-  assert.equal(r.calls.filter((c) => c === "image prune --all --force --external").length, 2);
+  assert.ok(r.calls.every((c) => !c.includes("--external")));
 });
 
 test("Podman without external-image pruning still uses supported cleanup", (t) => {
@@ -106,4 +112,24 @@ test("never retries compilation errors", (t) => {
  assert.notEqual(r.status,0);
  assert.equal(r.calls.filter(c=>c.startsWith('build ')).length,1);
  assert.ok(!r.calls.some(c=>c.startsWith('push ')));
+});
+
+test("retains referenced Podman images and builds when storage is sufficient", (t) => {
+  const r = run(t, { podman: true, inUse: true });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /preserving container-referenced images/);
+  assert.equal(r.calls.filter((c) => c.startsWith("build ")).length, 2);
+  assert.ok(r.calls.every((c) => !/--external|container rm|image rm/.test(c)));
+});
+test("a referenced-image conflict never bypasses the free-space gate", (t) => {
+  const r = run(t, { podman: true, inUse: true, low: true });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /12 GiB/);
+  assert.ok(!r.calls.some((c) => c.startsWith("build ")));
+});
+test("mixed Podman errors remain fatal even alongside a referenced-image conflict", (t) => {
+  const r = run(t, { podman: true, inUse: true, mixedError: true });
+  assert.equal(r.status, 125);
+  assert.match(r.stderr, /permission denied/);
+  assert.ok(!r.calls.some((c) => c.startsWith("build ")));
 });
