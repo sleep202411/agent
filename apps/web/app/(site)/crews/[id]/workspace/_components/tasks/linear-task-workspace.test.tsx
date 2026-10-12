@@ -298,6 +298,7 @@ describe("Crew task navigation", () => {
       (el) => el.textContent === "Document: Failed"
     )!;
     expect(action).toBeTruthy();
+    expect(document.querySelector("nav")?.hidden).toBe(true);
     expect(action.closest("nav")).toBeNull();
     expect(action.closest("header")).not.toBeNull();
     const slot = action.parentElement!;

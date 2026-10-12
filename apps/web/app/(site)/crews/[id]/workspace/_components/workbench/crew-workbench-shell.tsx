@@ -47,6 +47,7 @@ interface CrewWorkbenchShellProps {
   tabs: readonly WorkspaceTab[];
   children: ReactNode;
   notice?: ReactNode;
+  canvasActionRef?: (node: HTMLDivElement | null) => void;
   crewId: string;
   crewLogo?: string | null;
   crewName: string;
@@ -67,6 +68,7 @@ export function CrewWorkbenchShell({
   tabs,
   children,
   notice,
+  canvasActionRef,
   crewId,
   crewLogo,
   crewName,
@@ -201,6 +203,7 @@ export function CrewWorkbenchShell({
 
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-background">
         <CrewWorkbenchHeader
+          canvasActionRef={canvasActionRef}
           crewLogo={crewLogo}
           crewId={crewId}
           crewName={crewName}

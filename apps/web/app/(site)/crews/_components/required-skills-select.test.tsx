@@ -59,3 +59,13 @@ it("preserves saved selections when the catalog cannot be loaded", async () => {
   act(() => host.querySelector<HTMLButtonElement>("[role=checkbox]")!.click());
   expect(host.querySelector("output")!.textContent).toBe('["Sound"]');
 });
+
+it("submits canonical FD role names while explaining their capabilities", async () => {
+  h.get.mockResolvedValue({ skills: ["FD-I", "FD-II", "Editor"] });
+  await render();
+  expect(host.textContent).toContain("fd1Name");
+  expect(host.textContent).toContain("fd2Name");
+  const choices = host.querySelectorAll<HTMLButtonElement>("[role=checkbox]");
+  act(() => choices[0]!.click());
+  expect(host.querySelector("output")!.textContent).toBe('["FD-I"]');
+});

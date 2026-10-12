@@ -71,6 +71,7 @@ import { TaskCreationWorkbench } from "./task-creation-workbench";
 type PrimarySection = "production" | "overview" | "activity" | "issues";
 
 interface LinearTaskWorkspaceProps {
+  canvasActionTarget?: HTMLElement | null;
   crewId: string;
   crewName: string;
   crewSummary: string;
@@ -99,6 +100,7 @@ export function LinearTaskWorkspace(props: LinearTaskWorkspaceProps) {
 }
 
 function LinearTaskSession({
+  canvasActionTarget,
   createTaskRequested = false,
   onCreateTaskRequestHandled,
   canInvite = false,
@@ -363,7 +365,8 @@ function LinearTaskSession({
       {projectError}
       <header className="shrink-0 border-b border-white/[0.065] bg-[#0b0c0f]">
         <nav
-          className="flex h-10 items-center gap-1.5 overflow-x-auto border-t border-white/[0.045] px-3"
+          hidden
+          className="hidden h-10 items-center gap-1.5 overflow-x-auto border-t border-white/[0.045] px-3"
           aria-label={t("projectViews")}
         >
           <ProjectTab
@@ -477,6 +480,11 @@ function LinearTaskSession({
             </button>
           </div>
         </nav>
+        {section !== "production" ? (
+          <Button variant="ghost" size="sm" onClick={() => openSection("production")}>
+            {t("workbench.title")}
+          </Button>
+        ) : null}
         <div
           ref={setWorkbenchToolbar}
           className={
@@ -581,6 +589,7 @@ function LinearTaskSession({
 
       <TaskCreationWorkbench
         toolbarTarget={workbenchToolbar}
+        canvasActionTarget={canvasActionTarget}
         crewId={crewId}
         crewName={crewName}
         project={project}
