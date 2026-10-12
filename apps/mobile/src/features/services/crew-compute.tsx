@@ -9,7 +9,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import {
   fetchCompute,
-  setupComputeWorkspace,
   workloadUnits,
   createCompute,
   computeInput,
@@ -231,27 +230,6 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   const selected = tasks.find((task) => task.id === taskId);
   const assignees = selected?.assignees ?? [];
   const recipient = props.userId;
-  if (!props.page.workspaceLinked)
-    return (
-      <View>
-        <ThemedText>{t("crewComputeFinance.workspaceRequired")}</ThemedText>
-        <Pressable
-          accessibilityRole="button"
-          disabled={op.busy || !props.page.isOwner}
-          onPress={() => {
-            if (props.generation !== getAuthGeneration()) return;
-            void op.run(
-              () => setupComputeWorkspace(props.crewId, props.generation),
-              props.onSaved,
-              (e) => setError(e instanceof Error ? e.message : String(e))
-            );
-          }}
-        >
-          <ThemedText>{t("crewComputeFinance.setupWorkspace")}</ThemedText>
-        </Pressable>
-        {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      </View>
-    );
   if (!tasks.length) return <ThemedText>{t("crewComputeFinance.noTasks")}</ThemedText>;
   return (
     <View style={{ gap: 12 }}>

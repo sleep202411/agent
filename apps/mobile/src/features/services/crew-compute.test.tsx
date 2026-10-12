@@ -245,3 +245,17 @@ it("shows the stored budget rate and separates credited points from allowance", 
   expect(host.textContent).toContain("mobileProduction.credited · 400");
   expect(host.textContent).toContain("crewComputeFinance.committed · 200");
 });
+
+it("submits an assigned creator request without manual workspace setup", async () => {
+  h.detail.mockResolvedValue({ ...page, workspaceLinked: false, isOwner: false });
+  await fill();
+  expect(host.textContent).not.toContain("crewComputeFinance.setupWorkspace");
+  await act(async () => button("crewComputeFinance.request").click());
+  expect(h.sign).toHaveBeenCalledTimes(1);
+  expect(h.sign).toHaveBeenCalledWith(
+    "crew",
+    "user",
+    expect.objectContaining({ beneficiaryUserId: "user", points: 20 }),
+    1
+  );
+});
