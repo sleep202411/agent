@@ -5455,7 +5455,7 @@
       "batchClose": "关闭",
       "assetGroup_finalEditing": "最终剪辑",
       "dashboardStatistics": "制作统计",
-      "dashboard_total": "任务总数",
+      "dashboard_total": "项目任务（全部分类）",
       "dashboard_inProgress": "进行中",
       "dashboard_overdue": "已逾期",
       "dashboard_completed": "已完成",

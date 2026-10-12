@@ -265,7 +265,10 @@ async function render(
 }
 function button(label: string) {
   return [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === label || b.getAttribute("aria-label") === label
+    (b) =>
+      b.textContent === label ||
+      b.getAttribute("aria-label") === label ||
+      (b.hasAttribute("aria-pressed") && b.firstChild?.textContent?.trim() === label)
   )!;
 }
 async function click(label: string) {
@@ -1148,4 +1151,34 @@ it("opens the points task picker for a member while Scripts is empty", async () 
   expect(button).toBeDefined();
   await act(async () => button!.click());
   expect(host.querySelector('[data-points-picker="all-assigned"]')).not.toBeNull();
+});
+
+it("shows imported production tasks in category counts while Final Editing is empty", async () => {
+  state.tasks = Array.from({ length: 130 }, (_, index) => ({
+    id: `imported-${index}`,
+    parentId: null,
+    status: "open" as const,
+    assetCategory: "other",
+    taskKind: "storyboard",
+    assignees: [],
+  }));
+  state.tasks.push(
+    ...Array.from({ length: 6 }, (_, index) => ({
+      id: `legacy-${index}`,
+      parentId: null,
+      status: "open" as const,
+      assetCategory: "other",
+      assignees: [],
+    }))
+  );
+  await render(false);
+  const buttons = [...host.querySelectorAll("button")];
+  expect(buttons.some((b) => /Production\s+130$/.test(b.textContent ?? ""))).toBe(true);
+  expect(buttons.some((b) => /Final Editing\s+0$/i.test(b.textContent ?? ""))).toBe(true);
+});
+
+it("does not present partial category totals as complete during pagination", async () => {
+  state.taskMore = true;
+  await render(false);
+  expect(button("Production").textContent).toMatch(/Production\s+—$/);
 });

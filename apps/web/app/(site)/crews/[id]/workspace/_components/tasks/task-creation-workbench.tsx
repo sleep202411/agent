@@ -194,6 +194,13 @@ function TaskCreationSession({
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
     );
   }
+  const savedCategoryCounts = savedTasks.reduce<Record<string, number>>((counts, task) => {
+    const key = normalizeCategory(
+      task.taskKind ? stagedCategoryKey(task.taskKind) : (task.assetCategory ?? "other")
+    );
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
   const visibleDrafts: Draft[] = [
     ...savedTasks.map((task, index) => ({
       id: -index - 1,
@@ -505,7 +512,10 @@ function TaskCreationSession({
                     aria-pressed={category === key}
                     onClick={() => setCategory(key)}
                   >
-                    {key === "artAssets" ? t("artAssets") : t(`assetGroup_${key}`)}
+                    {key === "artAssets" ? t("artAssets") : t(`assetGroup_${key}`)}{" "}
+                    <span className="tabular-nums text-muted-foreground">
+                      {progressReady ? (savedCategoryCounts[key] ?? 0) : "—"}
+                    </span>
                   </Button>
                 ))}
               </div>

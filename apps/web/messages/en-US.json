@@ -5455,7 +5455,7 @@
       "batchClose": "Close",
       "assetGroup_finalEditing": "Final editing",
       "dashboardStatistics": "Production statistics",
-      "dashboard_total": "Total tasks",
+      "dashboard_total": "Project tasks (all categories)",
       "dashboard_inProgress": "In progress",
       "dashboard_overdue": "Overdue",
       "dashboard_completed": "Completed",
