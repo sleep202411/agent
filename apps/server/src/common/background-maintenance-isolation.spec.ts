@@ -1,3 +1,5 @@
+import { WithdrawalProofsService } from '../creator-withdrawals/withdrawal-proofs.service';
+import { RevenueContractsService } from '../creator-withdrawals/revenue-contracts.service';
 import { CdnPurgeWorkerService } from '../media/cdn-purge-worker.service';
 import { MediaProcessingWorkerService } from '../media/media-processing-worker.service';
 import { MediaTakedownWorkerService } from '../media/media-takedown-worker.service';
@@ -13,6 +15,8 @@ import { AlertingService } from './alerting/alerting.service';
 import { AdminAuthService } from '../admin-auth/admin-auth.service';
 
 const workers = [
+  [WithdrawalProofsService, 'onApplicationBootstrap', 'drainCleanup'],
+  [RevenueContractsService, 'onApplicationBootstrap', 'drainCleanup'],
   [CdnPurgeWorkerService, 'onApplicationBootstrap', 'drainOnce'],
   [MediaProcessingWorkerService, 'onApplicationBootstrap', 'drainOnce'],
   [MediaTakedownWorkerService, 'onApplicationBootstrap', 'drainOnce'],
