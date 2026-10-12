@@ -27,9 +27,13 @@ export const ContextSchema = z
     locale: z.enum(["en-US", "zh-CN", "zh-HK"]),
     projectId: z.uuid().optional(),
     chapterId: z.uuid().optional(),
+    standalone: z.boolean().optional(),
   })
   .refine(
-    (value) => !value.ready || Boolean(value.projectId && value.chapterId),
+    (value) =>
+      !value.ready ||
+      Boolean(value.projectId && value.chapterId) ||
+      Boolean(value.standalone && !value.projectId && value.chapterId),
     "A ready conversation requires a project and chapter."
   );
 export type StoryContext = z.infer<typeof ContextSchema>;
@@ -38,17 +42,31 @@ export const copy = (locale: StoryContext["locale"]) =>
 export const playerCopy = (locale: StoryContext["locale"]) =>
   ({ "en-US": en, "zh-CN": cn, "zh-HK": hk })[locale].experiencePlayer;
 
+export function storyLocale(): StoryContext["locale"] {
+  const explicit = ContextSchema.shape.locale.safeParse(
+    new URLSearchParams(location.search).get("locale")
+  );
+  if (explicit.success) return explicit.data;
+  const language = navigator.language.toLowerCase();
+  return language.startsWith("zh") ? (/hk|hant|tw/.test(language) ? "zh-HK" : "zh-CN") : "en-US";
+}
+
 export async function loadContext(bridge?: StoryBridge): Promise<StoryContext> {
   if (bridge) return ContextSchema.parse({ ready: true, ...(await bridge.context) });
   const query = new URLSearchParams(location.search);
   if (location.pathname === "/")
     return ContextSchema.parse(await (await fetch("/api/context")).json());
-  return ContextSchema.parse({
+  const result = ContextSchema.safeParse({
     ready: true,
-    locale: query.get("locale"),
-    projectId: query.get("projectId"),
-    chapterId: query.get("chapterId"),
+    locale: query.get("locale") ?? storyLocale(),
+    projectId: query.get("projectId") ?? undefined,
+    chapterId:
+      query.get("chapterId") ??
+      (!query.has("projectId") ? (query.get("entryId") ?? crypto.randomUUID()) : undefined),
+    standalone: !query.has("projectId") && !query.has("chapterId"),
   });
+  if (!result.success) throw new Error(copy(storyLocale()).h5.contextRequired);
+  return result.data;
 }
 
 export function resumeAuthorization(run: StoryRun, authorizedPoints?: number, confirm = false) {
@@ -61,12 +79,17 @@ export class StoryTransport {
   readonly queries: QueryClient;
   readonly conversations: QueryObserver<ReturnType<typeof StoryConversationsSchema.parse>>;
   private readonly ownsQueries: boolean;
-  readonly legacyChapterId: string | undefined;
+  legacyChapterId: string | undefined;
   readonly history: QueryObserver<StoryHistory>;
-  private readonly path: string;
+  private get path() {
+    return this.local ? "/api" : `/aurora/app-story-agent/projects/${this.context.projectId}`;
+  }
   private readonly local = location.pathname === "/";
   private pending: ReturnType<typeof StartStoryRunSchema.parse> | undefined;
-  private readonly receiptKey: string;
+  private get receiptKey() {
+    return `story-agent:${this.context.projectId}:${this.context.chapterId}`;
+  }
+  private entry: Promise<void> | undefined;
   private receipt:
     | {
         submissionId: string;
@@ -80,13 +103,13 @@ export class StoryTransport {
     readonly context: StoryContext,
     queries?: QueryClient,
     legacyChapterId = context.chapterId,
-    readonly bridge?: StoryBridge
+    readonly bridge?: StoryBridge,
+    private readonly owner?: StoryTransport
   ) {
     this.legacyChapterId = legacyChapterId;
     this.ownsQueries = !queries;
     this.queries = queries ?? new QueryClient({ defaultOptions: { queries: { retry: 1 } } });
     if (this.ownsQueries) this.queries.mount();
-    this.receiptKey = `story-agent:${context.projectId}:${context.chapterId}`;
     try {
       const stored = JSON.parse(sessionStorage.getItem(this.receiptKey) ?? "null");
       const parsed = StartStoryRunSchema.omit({ message: true })
@@ -96,7 +119,6 @@ export class StoryTransport {
     } catch {
       /* Memory retains idempotency when browser storage is unavailable. */
     }
-    this.path = this.local ? "/api" : `/aurora/app-story-agent/projects/${context.projectId}`;
     this.history = new QueryObserver<StoryHistory>(this.queries, {
       queryKey: ["app-story-agent", context.projectId],
       enabled: context.ready,
@@ -110,10 +132,90 @@ export class StoryTransport {
         queryKey: ["story-conversations", context.projectId],
         enabled: context.ready,
         queryFn: ({ signal }) =>
-          this.request("/conversations", StoryConversationsSchema, undefined, signal),
+          context.standalone && !context.projectId
+            ? Promise.resolve([
+                {
+                  id: context.chapterId!,
+                  title: copy(context.locale).h5.newConversation,
+                  pinned: false,
+                  archived: false,
+                  rank: 0,
+                  inherited: [],
+                  createdAt: new Date(0).toISOString(),
+                  updatedAt: new Date(0).toISOString(),
+                },
+              ])
+            : this.request("/conversations", StoryConversationsSchema, undefined, signal),
         refetchInterval: 10000,
       }
     );
+  }
+  async initializeProject() {
+    if (this.owner && this.context.standalone) {
+      await this.owner.initializeProject();
+      this.bindProject();
+      return;
+    }
+    if (!this.context.standalone) return;
+    if (!this.entry)
+      this.entry = this.createEntry().catch((error) => {
+        this.entry = undefined;
+        throw error;
+      });
+    return this.entry;
+  }
+  private async createEntry() {
+    if (!this.context.projectId) {
+      const url = new URL(location.href);
+      const entryId = this.context.chapterId!;
+      if (!z.uuid().safeParse(entryId).success)
+        throw new Error(copy(this.context.locale).h5.contextRequired);
+      url.searchParams.set("entryId", entryId);
+      window.history.replaceState(null, "", url);
+      const response = await fetch("/aurora/app-story-agent/entry", {
+        method: "POST",
+        credentials: "same-origin",
+        redirect: "error",
+        headers: { "content-type": "application/json", "accept-language": this.context.locale },
+        body: JSON.stringify({
+          entryId,
+          locale: this.context.locale,
+          title: copy(this.context.locale).h5.newConversation,
+        }),
+        signal: AbortSignal.timeout(20000),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.code !== 200)
+        throw new Error(
+          payload?.msg || payload?.message || copy(this.context.locale).app.requestFailed
+        );
+      const context = ContextSchema.safeParse(payload.data);
+      if (
+        !context.success ||
+        !context.data.ready ||
+        context.data.projectId !== entryId ||
+        context.data.chapterId !== entryId
+      )
+        throw new Error(copy(this.context.locale).h5.backendInvalidResponse);
+      Object.assign(this.context, context.data);
+      this.legacyChapterId = this.context.chapterId;
+      url.searchParams.delete("entryId");
+      url.searchParams.set("projectId", this.context.projectId!);
+      url.searchParams.set("chapterId", this.context.chapterId!);
+      url.searchParams.set("locale", this.context.locale);
+      window.history.replaceState(null, "", url);
+      this.bindProject();
+    }
+    const results = await Promise.all([this.history.refetch(), this.conversations.refetch()]);
+    for (const result of results) if (result.error) throw result.error;
+    this.context.standalone = false;
+  }
+  private bindProject() {
+    this.history.setOptions({ ...this.history.options, queryKey: this.historyKey() });
+    this.conversations.setOptions({
+      ...this.conversations.options,
+      queryKey: ["story-conversations", this.context.projectId],
+    });
   }
   chapterHistory(history = this.history.getCurrentResult().data): StoryHistory | undefined {
     const metadata = this.queries
@@ -146,6 +248,8 @@ export class StoryTransport {
     );
   }
   private async refreshHistory(signal: AbortSignal): Promise<StoryHistory> {
+    if (this.context.standalone && !this.context.projectId)
+      return { runs: [], legacyMessages: [], legacyActiveRunId: null, authorizationLimit: 0 };
     const previous = this.queries.getQueryData<StoryHistory>(this.historyKey());
     let page = await this.request("/history", StoryHistorySchema, undefined, signal);
     let runs = page.runs;
@@ -234,6 +338,7 @@ export class StoryTransport {
       this.savePending(undefined);
   }
   async send(message: string, submissionId?: string, attachmentIds?: string[]) {
+    await this.initializeProject();
     if (!this.context.ready || !this.context.chapterId)
       throw new Error(copy(this.context.locale).h5.backendUnconfigured);
     const refreshed = await this.history.refetch();
@@ -393,10 +498,11 @@ export class StoryTransport {
   }
   forChapter(chapterId: string) {
     return new StoryTransport(
-      { ...this.context, chapterId },
+      this.context.standalone ? this.context : { ...this.context, chapterId },
       this.queries,
       this.legacyChapterId,
-      this.bridge
+      this.bridge,
+      this
     );
   }
   async createConversation(input: ReturnType<typeof CreateStoryConversationSchema.parse>) {
@@ -448,6 +554,8 @@ export class StoryTransport {
       throw new Error(copy(this.context.locale).h5.sessionRequired);
     if (file.size > 10 * 1024 * 1024)
       throw new Error(copy(this.context.locale).h5.attachmentTooLarge);
+    signal?.throwIfAborted();
+    await this.initializeProject();
     const form = new FormData();
     form.append("file", file, name);
     const payload = await new Promise<unknown>((resolve, reject) => {

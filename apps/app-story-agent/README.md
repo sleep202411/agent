@@ -128,7 +128,13 @@ only after valid initialization, without creating an extra empty conversation.
 not completed production. Missing initialization fails visibly after 20 seconds.
 Capabilities default to `[]`: advertise only implemented native actions, and
 H5 shows only those buttons. Ordinary browsers use their existing local/query
-context without a native handshake. No project picker or login page is added.
+context without a native handshake. The bare production URL opens an independent
+conversation using the existing regional login session. The first message or
+attachment creates a private project through `POST /aurora/app-story-agent/entry`;
+the entry UUID makes uncertain replies and concurrent requests idempotent. The
+resulting project/chapter parameters replace it in the URL, so reload restores
+the same conversation. Explicit project/chapter URLs must supply both valid UUIDs.
+No project picker or login page is added, and opening the page alone creates no project.
 
 | Type                            | Direction | Payload / behavior                                                                                                                                                   |
 | ------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryHistory, StoryRun } from "@repo/app-story-protocol";
-import { StoryTransport, copy } from "./transport";
+import { StoryTransport, copy, loadContext } from "./transport";
 import { projectHistory, forkBoundary, storyMediaDefinition, videoProgress } from "./events";
 
 const projectId = "00000000-0000-4000-8000-000000000001";
@@ -47,6 +47,83 @@ beforeEach(() => {
 afterEach(() => {
   transports.splice(0).forEach((transport) => transport.dispose());
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
+});
+
+describe("Standalone browser entry", () => {
+  const page = "/aurora/app-story-agent/ui/index.html";
+  it("opens a bare link without creating a project or changing the native context contract", async () => {
+    window.history.replaceState(null, "", page);
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const context = await loadContext();
+    expect(context).toMatchObject({ ready: true, locale: "en-US", standalone: true });
+    const transport = new StoryTransport(context);
+    transports.push(transport);
+    expect((await transport.history.refetch()).data?.runs).toEqual([]);
+    expect((await transport.conversations.refetch()).data?.[0]?.id).toBe(context.chapterId);
+    expect(fetch).not.toHaveBeenCalled();
+    window.history.replaceState(null, "", `${page}?projectId=${projectId}&chapterId=${chapterId}`);
+    expect(await loadContext()).toMatchObject({
+      ready: true,
+      projectId,
+      chapterId,
+      standalone: false,
+    });
+  });
+  it("rejects incomplete or invalid explicit context instead of creating a different project", async () => {
+    for (const query of [`projectId=${projectId}`, "chapterId=broken", "locale=unsupported"]) {
+      window.history.replaceState(null, "", `${page}?${query}`);
+      await expect(loadContext()).rejects.toThrow(copy("en-US").h5.contextRequired);
+    }
+  });
+  it("creates once on first use, restores from the URL and retains the entry ID after an uncertain reply", async () => {
+    window.history.replaceState(null, "", page);
+    const entries: string[] = [];
+    let fail = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, options?: RequestInit) => {
+        if (url.endsWith("/entry")) {
+          const input = JSON.parse(String(options?.body));
+          entries.push(input.entryId);
+          if (fail) {
+            fail = false;
+            throw new TypeError("Network unavailable");
+          }
+          return response({
+            code: 200,
+            data: {
+              ready: true,
+              locale: "en-US",
+              projectId: input.entryId,
+              chapterId: input.entryId,
+            },
+          });
+        }
+        if (url.endsWith("/history")) return response({ code: 200, data: history });
+        if (url.endsWith("/conversations")) return response({ code: 200, data: [] });
+        throw new Error(`Unexpected request: ${url}`);
+      })
+    );
+    const transport = new StoryTransport(await loadContext());
+    transports.push(transport);
+    const child = transport.forChapter(transport.context.chapterId!);
+    transports.push(child);
+    await expect(child.initializeProject()).rejects.toThrow("Network unavailable");
+    await Promise.all([transport.initializeProject(), child.initializeProject()]);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toBe(entries[1]);
+    expect(transport.context).toMatchObject({
+      projectId: entries[0],
+      chapterId: entries[0],
+      standalone: false,
+    });
+    expect(location.search).not.toContain("entryId");
+    expect((await loadContext()).projectId).toBe(entries[0]);
+    await transport.initializeProject();
+    expect(entries).toHaveLength(2);
+  });
 });
 
 describe("Story UI admission and recovery", () => {

@@ -502,6 +502,9 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
     },
     retainInfo: (id) => bindings.get(id)?.retention ?? zero,
     async create() {
+      if (root.context.standalone) {
+        return root.context.chapterId as SessionId;
+      }
       const row = await root.createConversation({
         title: copy(root.context.locale).h5.newConversation,
       });
@@ -587,7 +590,7 @@ export function createStorySession(ctx: Context, root: StoryTransport) {
     binding: (id) => bindings.get(id)?.binding,
   };
   const view = (): WorkspaceView => ({
-    workspaceId: root.context.projectId as WorkspaceId,
+    workspaceId: (root.context.projectId ?? "new-story") as WorkspaceId,
     path: `story://${root.context.projectId}`,
     title: copy(root.context.locale).h5.title,
     sessionIds: (root.conversations.getCurrentResult().data ?? []).map(

@@ -12251,6 +12251,7 @@
       "title": "影游助手",
       "sessionExpired": "登录已过期，请重新登录后继续，已完成的成果会保留。",
       "sessionRequired": "请登录 FizzDragon 后继续。",
+      "contextRequired": "影游链接不完整或无效。请打开原项目，或移除项目和章节参数以开始新故事。",
       "welcomeTitle": "想制作什么故事？",
       "welcomeHint": "说出你的想法，Agent 会规划故事并自动完成制作。",
       "example": "制作一个北京主题的视频",

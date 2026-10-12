@@ -12251,6 +12251,7 @@
       "title": "Story Agent",
       "sessionExpired": "Your FizzDragon session ended. Sign in to continue; completed work is retained.",
       "sessionRequired": "Sign in to FizzDragon to continue.",
+      "contextRequired": "This story link is incomplete or invalid. Open the original project, or remove the project and chapter parameters to start a new story.",
       "welcomeTitle": "What story would you like to make?",
       "welcomeHint": "Describe your idea. Your agent will plan the story and take it through production.",
       "example": "Make a video about Beijing.",

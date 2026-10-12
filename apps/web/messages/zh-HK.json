@@ -12251,6 +12251,7 @@
       "title": "影遊助手",
       "sessionExpired": "登入已過期，請重新登入後繼續，已完成的成果會保留。",
       "sessionRequired": "請登入 FizzDragon 後繼續。",
+      "contextRequired": "影遊連結不完整或無效。請開啟原項目，或移除項目和章節參數以開始新故事。",
       "welcomeTitle": "想製作甚麼故事？",
       "welcomeHint": "說出你的想法，Agent 會規劃故事並自動完成製作。",
       "example": "製作一個北京主題的影片",

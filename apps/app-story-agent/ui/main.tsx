@@ -1,4 +1,4 @@
-import { loadContext, StoryTransport } from "./transport";
+import { loadContext, StoryTransport, storyLocale } from "./transport";
 import { mountStoryAgent } from "./runtime";
 import { connectStoryBridge } from "./bridge";
 import "./style.css";
@@ -20,5 +20,7 @@ try {
   bridge?.dispose();
   container.removeAttribute("aria-busy");
   container.setAttribute("role", "alert");
+  document.documentElement.lang = storyLocale();
+  container.classList.add("story-startup-error");
   container.textContent = error instanceof Error ? error.message : String(error);
 }

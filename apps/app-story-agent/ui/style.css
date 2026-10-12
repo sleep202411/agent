@@ -29,6 +29,11 @@ body,
   overflow: auto;
   padding: 20px;
 }
+.story-startup-error {
+  padding: 24px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
 #story-agent [class$="_fishHitbox"]:empty,
 #story-agent [class$="_previewBadge"]:empty {
   display: none;
