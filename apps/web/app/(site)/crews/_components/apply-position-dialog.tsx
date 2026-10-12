@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
+import { defaultCurrencyForCell } from "@/src/lib/region/cell";
 import {
   CURRENCY_SYMBOLS,
   CrewApiError,
@@ -107,7 +107,7 @@ function ApplicationForm({
       alive.current = false;
     };
   }, []);
-  const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
+  const currencyOptions = useMemo(() => ["USD", "CNY"] as const, []);
   const showCurrencyPicker = currencyOptions.length > 1;
 
   const messageTrimmed = message.trim();

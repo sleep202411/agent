@@ -1280,3 +1280,39 @@ it("does not open recruitment or invitations for a pending task proposal", async
   expect(publish).not.toHaveBeenCalled();
   expect(created).not.toHaveBeenCalled();
 });
+
+it("selects share-only settlement and a currency without retaining the cash fee", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    onStage: stage,
+    initialInput: {
+      title: "Share task",
+      description: "Storyboard",
+      taskKind: "script",
+      priority: "normal",
+      assignees: [],
+      rewardCurrency: "USD",
+      rewardUsdMinor: 100,
+      profitShareBps: 100,
+      dueAt: "2099-10-03T00:00:00Z",
+    } as CreateCrewTaskInput,
+  });
+  async function choose(label: string, text: string) {
+    await act(async () =>
+      click(document.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!)
+    );
+    const option = [...document.querySelectorAll('[role="option"]')].find(
+      (node) => node.textContent === text
+    )!;
+    expect(option).toBeDefined();
+    await act(async () =>
+      option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    );
+  }
+  await choose("Compensation mode", "Revenue share only");
+  await choose("Settlement currency", "CNY");
+  await act(async () => click(exactButton("Save Changes")));
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ rewardCurrency: "CNY", rewardUsdMinor: null, profitShareBps: 100 })
+  );
+});

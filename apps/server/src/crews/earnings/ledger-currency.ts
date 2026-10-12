@@ -5,11 +5,16 @@ export function crewCurrency(): 'CNY' | 'USD' {
   return CURRENT_CELL === 'cn' ? 'CNY' : 'USD';
 }
 
-export function assertNewCrewCurrency(currency: string): void {
-  if (currency !== crewCurrency())
+export function assertNewCrewCurrency(
+  currency: string | null | undefined,
+  field = 'currency',
+): void {
+  if (currency == null) return;
+  if (currency !== 'USD' && currency !== 'CNY')
     throw new BadRequestException({
       code: 'CREW_CURRENCY_MISMATCH',
-      message: `New Crew amounts must use ${crewCurrency()} integer minor units.`,
+      field,
+      message: 'Crew amounts must use USD or CNY integer minor units.',
     });
 }
 

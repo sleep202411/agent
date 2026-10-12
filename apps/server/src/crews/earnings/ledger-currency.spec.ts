@@ -12,7 +12,7 @@ import { UpdateCrewTaskSchema } from '../dto';
 describe('Crew monetary boundary', () => {
   it('rejects historical points and cross-region currency for new earnings', () => {
     expect(() => assertNewCrewCurrency('POINTS')).toThrow();
-    expect(() => assertNewCrewCurrency('CNY')).toThrow();
+    expect(() => assertNewCrewCurrency('CNY')).not.toThrow();
     expect(() => assertNewCrewCurrency('USD')).not.toThrow();
   });
   it('formats maximum bigint money without floating-point loss', () => {

@@ -165,6 +165,13 @@ export function TaskQuickCreate({
   const [estimatePoints, setEstimatePoints] = useState(
     initialInput?.estimatePoints?.toString() ?? ""
   );
+  const compensationT = useTranslations("taskCompensation");
+  const [rewardCurrency, setRewardCurrency] = useState<"USD" | "CNY">(
+    initialInput?.rewardCurrency ?? CREW_CURRENCY
+  );
+  const [compensationMode, setCompensationMode] = useState(
+    initialInput?.profitShareBps ? (initialInput?.rewardUsdMinor ? "both" : "share") : "cash"
+  );
   const [rewardUsd, setRewardUsd] = useState(
     initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
   );
@@ -208,6 +215,10 @@ export function TaskQuickCreate({
     setEstimatePoints(initialInput?.estimatePoints?.toString() ?? "");
     setRewardUsd(
       initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
+    );
+    setRewardCurrency(initialInput?.rewardCurrency ?? CREW_CURRENCY);
+    setCompensationMode(
+      initialInput?.profitShareBps ? (initialInput?.rewardUsdMinor ? "both" : "share") : "cash"
     );
     setPaymentTerms(initialInput?.paymentTerms ?? "on_completion");
     setProfitShare(
@@ -400,7 +411,7 @@ export function TaskQuickCreate({
       taskKind: taskKind || null,
       description,
       workflowStateId: resolvedWorkflowStateId ?? undefined,
-      rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+      rewardCurrency: rewardCurrency,
       rewardUsdMinor: rewardUsd.trim() ? Number(rewardUsd) * 100 : null,
       profitShareBps: profitShare.trim() ? Math.round(Number(profitShare) * 100) : null,
       dueAt: dueDate || null,
@@ -477,7 +488,7 @@ export function TaskQuickCreate({
             : dateEndIso(dueDate || null),
         startAt: draft ? dateStartIso(draft.startDate ?? null) : (initialInput?.startAt ?? null),
         paymentTerms,
-        rewardCurrency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+        rewardCurrency: rewardCurrency,
         rewardUsdMinor: rewardUsd === "" ? null : Math.round(Number(rewardUsd) * 100),
         profitShareBps: profitShare === "" ? null : Math.round(Number(profitShare) * 100),
         ...(computePoints !== ""
@@ -499,7 +510,7 @@ export function TaskQuickCreate({
           !recruit && !invite && assigneeUserId
             ? initialInput?.assignees[0]?.userId === assigneeUserId
               ? initialInput.assignees
-              : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
+              : [{ userId: assigneeUserId, currency: rewardCurrency }]
             : [],
       };
       if (!onSave) {
@@ -869,6 +880,35 @@ export function TaskQuickCreate({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <SelectChip
+              icon={<IconCoin className="size-3.5" />}
+              value={compensationMode}
+              label={compensationT(compensationMode)}
+              ariaLabel={compensationT("mode")}
+              onChange={(value) => {
+                setCompensationMode(value);
+                draftRevision.current += 1;
+                if (value === "share") setRewardUsd("");
+                if (value === "cash") setProfitShare("");
+              }}
+              options={["cash", "share", "both"].map((value) => ({
+                value,
+                label: compensationT(value),
+              }))}
+            />
+            <SelectChip
+              icon={<IconCoin className="size-3.5" />}
+              value={rewardCurrency}
+              label={rewardCurrency}
+              ariaLabel={compensationT("currency")}
+              onChange={(value) => {
+                if (value === "USD" || value === "CNY") {
+                  setRewardCurrency(value);
+                  draftRevision.current += 1;
+                }
+              }}
+              options={["USD", "CNY"].map((value) => ({ value, label: value }))}
+            />
+            <SelectChip
               icon={<StateRing color={activeState?.color} />}
               value={resolvedWorkflowStateId}
               label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
@@ -889,9 +929,10 @@ export function TaskQuickCreate({
                 <span className="flex items-center gap-2 text-xs font-medium text-[#92929c]">
                   <IconCoin className="size-3.5" />
                   {projectT(`workbench.${field.key}`, {
-                    currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+                    currency: rewardCurrency,
                   })}{" "}
-                  {field.key === "rewardUsd" && (
+                  {((field.key === "rewardUsd" && compensationMode === "cash") ||
+                    (field.key === "profitShare" && compensationMode !== "cash")) && (
                     <span aria-hidden="true" className="text-primary">
                       *
                     </span>
@@ -903,15 +944,33 @@ export function TaskQuickCreate({
                   pattern="[0-9]+([.][0-9]{1,2})?"
                   value={field.value}
                   aria-label={projectT(`workbench.${field.key}`, {
-                    currency: initialInput?.rewardCurrency ?? CREW_CURRENCY,
+                    currency: rewardCurrency,
                   })}
-                  aria-required={field.key === "rewardUsd"}
+                  aria-required={
+                    field.key === "rewardUsd"
+                      ? compensationMode !== "share"
+                      : compensationMode !== "cash"
+                  }
                   className="h-10 data-[size=default]:h-10 w-full min-w-0 rounded-lg border border-white/10 bg-[#101012] px-3 text-sm text-white outline-none focus:border-primary"
                   onChange={(event) => {
                     draftRevision.current += 1;
                     const value = event.target.value;
-                    if (/^\d*(?:\.\d{0,2})?$/.test(value) && Number(value || 0) <= field.max)
+                    if (/^\d*(?:\.\d{0,2})?$/.test(value) && Number(value || 0) <= field.max) {
                       field.set(value);
+                      setCompensationMode(
+                        field.key === "rewardUsd"
+                          ? Number(profitShare) > 0
+                            ? value
+                              ? "both"
+                              : "share"
+                            : "cash"
+                          : Number(value) > 0
+                            ? rewardUsd
+                              ? "both"
+                              : "share"
+                            : "cash"
+                      );
+                    }
                   }}
                 />
               </label>

@@ -1,3 +1,4 @@
+import { assertNewCrewCurrency } from './earnings/ledger-currency';
 /**
  * Position CRUD inside a crew.
  *
@@ -25,7 +26,7 @@ import {
 } from '@nestjs/common';
 import { type CrewModerationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import { assertAllowedCurrency, toSmallestUnit } from '../common/currency';
+import { toSmallestUnit } from '../common/currency';
 import type {
   CreatePositionInput,
   ListCrewPositionsQuery,
@@ -591,7 +592,7 @@ export class PositionsService {
             );
           currency = c.rewardCurrency;
           paymentTerms = c.paymentTerms;
-          assertAllowedCurrency(currency, 'task currency');
+          assertNewCrewCurrency(currency, 'task currency');
           groupedTaskTerms[task.id] = { amount, currency };
           total += amount;
           descriptions.push(
@@ -659,7 +660,7 @@ export class PositionsService {
             'Create task recruitment before assigning work. Existing assignments must retain their agreements.',
           );
       }
-      assertAllowedCurrency(input.salary?.currency, 'salary.currency');
+      assertNewCrewCurrency(input.salary?.currency, 'salary.currency');
       const ccy = input.salary?.currency ?? null;
       const row = await tx.crewPosition.create({
         data: {
@@ -735,7 +736,7 @@ export class PositionsService {
         throw new ConflictException(
           'Grouped recruitment retains its per-task agreements. Create a new posting to change compensation or headcount.',
         );
-      assertAllowedCurrency(input.salary?.currency, 'salary.currency');
+      assertNewCrewCurrency(input.salary?.currency, 'salary.currency');
 
       if (
         input.targetCount !== undefined &&

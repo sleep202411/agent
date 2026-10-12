@@ -32,7 +32,9 @@ export function WorkspaceGrantDialog(props: {
   onClose: () => void;
   onGranted: (workspaceId: string, availableBalance: string) => void;
 }) {
-  return <WorkspaceGrantDialogContent key={props.workspace.id} {...props} />;
+  return (
+    <WorkspaceGrantDialogContent key={`${props.workspace.site}:${props.workspace.id}`} {...props} />
+  );
 }
 
 function WorkspaceGrantDialogContent({
@@ -44,6 +46,9 @@ function WorkspaceGrantDialogContent({
   onClose: () => void;
   onGranted: (workspaceId: string, availableBalance: string) => void;
 }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const siteLabel =
+    workspace.site === "cn" ? "国内站 .cn" : workspace.site === "global" ? "国际站 .com" : null;
   const [score, setScore] = useState("");
   const [note, setNote] = useState("");
   const { busy: submitting, begin } = useAdminOperation();
@@ -56,10 +61,11 @@ function WorkspaceGrantDialogContent({
   const parsedScore = Number(score);
   const scoreValid =
     /^-?\d+$/.test(score.trim()) && Number.isSafeInteger(parsedScore) && parsedScore !== 0;
-  const canSubmit = scoreValid && Boolean(note.trim()) && !submitting;
+  const canSubmit =
+    scoreValid && Boolean(note.trim()) && !submitting && confirmed && Boolean(siteLabel);
 
   async function submit() {
-    if (!scoreValid || !note.trim() || submitting) return;
+    if (!canSubmit) return;
     const operation = begin();
     if (!operation) return;
     setError(null);
@@ -68,6 +74,7 @@ function WorkspaceGrantDialogContent({
         "/api/admin/billing/wallets/workspace-credits",
         {
           workspaceId: workspace.id,
+          expectedSite: workspace.site,
           // String, not number — large grants must not round through 2^53.
           amount: score.trim(),
           reason: note.trim(),
@@ -89,6 +96,7 @@ function WorkspaceGrantDialogContent({
 
   // Next grant for the same workspace = a new intent → fresh key + cleared form.
   function grantAgain() {
+    setConfirmed(false);
     setResult(null);
     setScore("");
     setNote("");
@@ -99,7 +107,7 @@ function WorkspaceGrantDialogContent({
   return (
     <AdminDialog
       open
-      title="调整工作区积分"
+      title={`调整工作区积分 · ${siteLabel ?? "站点未确认"}`}
       description={`工作区「${workspace.name}」的算力积分。正数加、负数扣，即时生效并写入审计。`}
       onClose={() => {
         if (!submitting) onClose();
@@ -110,6 +118,22 @@ function WorkspaceGrantDialogContent({
             <Button type="button" variant="outline" size="sm" onClick={grantAgain}>
               再加一笔
             </Button>
+            {result.delta > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const correction = -result.delta;
+                  const originalKey = idempotencyKey;
+                  grantAgain();
+                  setScore(String(correction));
+                  setNote(`纠正误充值：原操作 ${originalKey}`);
+                }}
+              >
+                填写反向调整
+              </Button>
+            )}
             <Button type="button" size="sm" onClick={onClose}>
               完成
             </Button>
@@ -183,12 +207,19 @@ function WorkspaceGrantDialogContent({
             </span>
           </div>
 
+          <p className="text-sm text-slate-500">
+            未提交时可点击取消。已生效的调整不能删除；如有误，请由指定积分管理员在同一工作区提交反向调整并注明原操作，保留审计记录。YH
+            应在算力申请中审批创作者申请。
+          </p>
           <FormLabel label="积分增减" help="正数加分，负数扣分（单位：算力积分）。">
             <TextInput
               value={score}
               inputMode="numeric"
               placeholder="例如 50000 或 -100"
-              onChange={(event) => setScore(event.target.value)}
+              onChange={(event) => {
+                setScore(event.target.value);
+                setConfirmed(false);
+              }}
             />
           </FormLabel>
 
@@ -200,6 +231,17 @@ function WorkspaceGrantDialogContent({
             />
           </FormLabel>
 
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            <span>
+              我已确认用户实际使用 {siteLabel ?? "（请刷新以获取站点）"}，目标为「{workspace.name}
+              」（{workspace.id}）。另一站点的同名工作区不能使用这里的积分。
+            </span>
+          </label>
           {error ? <ErrorBanner message={error} /> : null}
         </div>
       )}

@@ -12,9 +12,8 @@ import {
 } from "@repo/shared/crew";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { isChinaRegion } from "@/config/app-env";
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
-export const positionCurrencies: readonly CurrencyCode[] = isChinaRegion ? ["CNY"] : ALL_CURRENCIES;
+export const positionCurrencies: readonly CurrencyCode[] = ["USD", "CNY"];
 export function positionAmount(value: string, currency: CurrencyCode): number | null {
   if (!value.trim()) return null;
   const pattern = ZERO_DECIMAL_CURRENCIES.has(currency)

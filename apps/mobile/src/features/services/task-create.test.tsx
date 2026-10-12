@@ -1069,3 +1069,20 @@ it("allows an active non-manager to submit a proposal", async () => {
   expect(button("taskCreate.submit")).toBeDefined();
   expect(h.defaults).toHaveBeenCalled();
 });
+
+it("clears the old cash fee for share-only mode and submits selected currency", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => {
+    type(0, "Task");
+    type(6, "1");
+    type(7, "1");
+  });
+  await act(async () => button("taskCompensation.shareMode")!.click());
+  await act(async () => button("USD")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ rewardCurrency: "USD", rewardUsdMinor: null, profitShareBps: 100 })
+  );
+});

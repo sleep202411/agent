@@ -1,3 +1,4 @@
+import { assertNewCrewCurrency } from './earnings/ledger-currency';
 import { assertInterviewResolved } from './application-interviews';
 import { assertRecruitableTask } from './task-recruitment';
 import { assertApplicationTermsConfirmed } from './application-terms';
@@ -40,11 +41,7 @@ import type {
 import { ConversationsService } from '../conversations/conversations.service';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
-import {
-  assertAllowedCurrency,
-  toSmallestUnit,
-  type CurrencyCode,
-} from '../common/currency';
+import { toSmallestUnit, type CurrencyCode } from '../common/currency';
 import type { ApplyInput, ListCrewApplicationsQuery } from './dto';
 import { newCrewDomainId } from './id';
 import { toApplicationDTO } from './mappers';
@@ -286,7 +283,7 @@ export class ApplicationsService {
     );
 
     const expected = normalizeExpectedCompensation(input);
-    assertAllowedCurrency(expected?.currency, 'expectedCompensation.currency');
+    assertNewCrewCurrency(expected?.currency, 'expectedCompensation.currency');
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {

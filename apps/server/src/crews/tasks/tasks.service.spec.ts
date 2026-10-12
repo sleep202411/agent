@@ -654,6 +654,41 @@ describe('CrewTasksService', () => {
     },
   );
 
+  it('updates the explicit currency without relabelling allocated cash', async () => {
+    const t = build();
+    const current = task({
+      canvasProjectId: null,
+      assignees: [],
+      metadata: {
+        compensation: { rewardCurrency: 'USD', rewardUsdMinor: 100 },
+      },
+    });
+    t.prisma.crewTask.findUnique.mockResolvedValue(current);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+    t.tx.crewTask.update.mockResolvedValue(current);
+    await t.service.update(TASK_ID, OWNER_ID, {
+      expectedVersion: 1,
+      rewardCurrency: 'CNY',
+    });
+    expect(
+      firstCallArgument<Prisma.CrewTaskUpdateArgs>(t.tx.crewTask.update).data
+        .metadata,
+    ).toMatchObject({
+      compensation: { rewardCurrency: 'CNY', rewardUsdMinor: 100 },
+    });
+    current.assignees = [
+      { rewardAmountMinor: 100n },
+    ] as typeof current.assignees;
+    t.tx.crewTask.update.mockClear();
+    await expect(
+      t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        rewardCurrency: 'CNY',
+      }),
+    ).rejects.toThrow('cash rewards are allocated');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+  });
+
   it('exposes stable asset categories without exposing raw metadata', async () => {
     const t = build();
     t.prisma.crewTask.findUnique.mockResolvedValue(

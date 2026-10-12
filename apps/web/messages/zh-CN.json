@@ -17,6 +17,13 @@
     "cannotManagePositions": "您需要此剧组的招聘管理权限。",
     "continuePosition": "继续创建职位"
   },
+  "taskCompensation": {
+    "mode": "结算模式",
+    "cash": "现金报酬",
+    "share": "纯分成",
+    "both": "现金＋分成",
+    "currency": "结算币种"
+  },
   "taskPaymentTerms": {
     "unspecified": "未指定",
     "label": "付款方式",
@@ -10193,6 +10200,7 @@
     "removedBody": "你已被移出该剧组，请让管理者重新邀请你。",
     "failed": "加入失败，请重试。",
     "taskOffer": "任务邀请",
+    "taskShareOnly": "仅利润分成，无固定现金报酬",
     "taskReward": "报酬",
     "taskShare": "收益分成",
     "taskDeadline": "截止时间",

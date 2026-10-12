@@ -105,7 +105,7 @@ it.each([
 ] as const)("rejects precision/range errors %s %s", (v, c) =>
   expect(() => positionAmount(v, c)).toThrow()
 );
-it("accepts JPY receipts without multiplying by 100", async () => {
+it("rejects unsupported JPY before submitting", async () => {
   const data = {
     ...input,
     salary: { ...input.salary, currency: "JPY" as const, min: 10, max: 20 },
@@ -114,7 +114,8 @@ it("accepts JPY receipts without multiplying by 100", async () => {
     ...result,
     salary: { period: "project", currency: "JPY", minAmount: 10, maxAmount: 20, negotiable: false },
   });
-  await createPosition("crew", "manager", 1, data);
+  await expect(createPosition("crew", "manager", 1, data)).rejects.toThrow("Salary currency");
+  expect(api.post).not.toHaveBeenCalled();
 });
 it.each([
   { crewId: "other" },

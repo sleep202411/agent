@@ -2121,6 +2121,12 @@ export class BillingService {
     adminId: string,
     input: CreateAdminWorkspaceWalletCreditInput,
   ) {
+    const site = CURRENT_CELL === 'cn' ? 'cn' : 'global';
+    if (input.expectedSite && input.expectedSite !== site) {
+      throw new BadRequestException(
+        'The confirmed site does not match this server. Reload the correct regional workspace before adjusting points.',
+      );
+    }
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM workspaces WHERE id=${input.workspaceId}::uuid FOR SHARE`;
       const workspace = await tx.workspace.findFirst({
@@ -2276,6 +2282,24 @@ export class BillingService {
       ) {
         or.push({ id: query });
       }
+      if (query.includes('@')) {
+        // Resolve contact identity in the current region, never across sites.
+        const matched = await this.legacyPoints.findUser(query);
+        if (matched) {
+          or.push(
+            { ownerUserId: matched.userId },
+            {
+              members: {
+                some: {
+                  userId: matched.userId,
+                  status: 'active',
+                  removedAt: null,
+                },
+              },
+            },
+          );
+        }
+      }
       where.OR = or;
     }
 
@@ -2309,6 +2333,7 @@ export class BillingService {
         name: true,
         status: true,
         ownerUserId: true,
+        defaultForUserId: true,
         createdAt: true,
         _count: {
           select: { members: { where: { status: 'active', removedAt: null } } },
@@ -2347,6 +2372,8 @@ export class BillingService {
         return {
           id: workspace.id,
           name: workspace.name,
+          site: CURRENT_CELL === 'cn' ? 'cn' : 'global',
+          kind: workspace.defaultForUserId ? 'personal' : 'shared',
           status: workspace.status,
           // Encoded public id — the raw owner id stays server-side.
           ownerUserId: encodeUserId(workspace.ownerUserId),

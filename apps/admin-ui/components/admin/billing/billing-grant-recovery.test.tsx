@@ -95,6 +95,7 @@ const onGranted = vi.fn();
 const workspace = (id = "workspace") =>
   ({
     id,
+    site: "global",
     name: id,
     memberCount: 1,
     createdAt: "2026-09-01T00:00:00Z",
@@ -171,6 +172,10 @@ async function open(view: typeof membership | typeof credits) {
     view === credits ? "例如 企业单发放、事故补偿" : "例如 临时提高并发、客服补偿",
     "fixture note"
   );
+  if (view === credits)
+    await act(async () =>
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()
+    );
 }
 afterEach(async () => {
   await act(async () => root?.unmount());

@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/select";
 import { SwitchControl } from "@/components/ui/schema-field/switch-control";
 import { cn } from "@/lib/utils";
-import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
+import { defaultCurrencyForCell } from "@/src/lib/region/cell";
 import { useTranslatedPresetPositions } from "@/app/(site)/crews/_hooks/use-position-label";
 import {
   CURRENCY_SYMBOLS,
@@ -135,7 +135,7 @@ function PositionForm({
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const presetPositions = useTranslatedPresetPositions();
-  const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
+  const currencyOptions = useMemo(() => ["USD", "CNY"] as const, []);
   const showCurrencyPicker = currencyOptions.length > 1;
   const isEdit = editingPosition !== undefined;
 

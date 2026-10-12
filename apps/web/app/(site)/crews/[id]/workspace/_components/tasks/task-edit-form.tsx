@@ -72,9 +72,8 @@ export function TaskEditForm({ task, ...props }: Props) {
         const changed = Object.fromEntries(
           Object.entries(input).filter(
             ([key, value]) =>
-              key !== "rewardCurrency" &&
               JSON.stringify(value) !==
-                JSON.stringify(initialInput[key as keyof CreateCrewTaskInput])
+              JSON.stringify(initialInput[key as keyof CreateCrewTaskInput])
           )
         );
         if (!Object.keys(changed).length) return original;

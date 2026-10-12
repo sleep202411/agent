@@ -17,6 +17,13 @@
     "cannotManagePositions": "You need permission to manage openings in this Crew.",
     "continuePosition": "Continue to Position"
   },
+  "taskCompensation": {
+    "mode": "Compensation mode",
+    "cash": "Cash fee",
+    "share": "Revenue share only",
+    "both": "Cash fee + revenue share",
+    "currency": "Settlement currency"
+  },
   "taskPaymentTerms": {
     "unspecified": "Not specified",
     "label": "Payment terms",
@@ -10193,6 +10200,7 @@
     "removedBody": "You were removed from this crew. Ask an owner to invite you again.",
     "failed": "Could not join. Try again.",
     "taskOffer": "Task invitation",
+    "taskShareOnly": "Revenue share only — no fixed cash fee",
     "taskReward": "Reward",
     "taskShare": "Profit share",
     "taskDeadline": "Deadline",

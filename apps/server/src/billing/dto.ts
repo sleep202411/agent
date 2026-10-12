@@ -258,6 +258,7 @@ export type CreateAdminWalletAdjustmentInput = z.infer<
 // Compute credits are adjusted through an explicit workspace ID.
 export const CreateAdminWorkspaceWalletCreditSchema = z
   .object({
+    expectedSite: z.enum(['cn', 'global']).optional(),
     workspaceId: z.string().uuid(),
     amount: z.coerce
       .bigint()

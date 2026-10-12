@@ -319,7 +319,9 @@ function CrewInviteSession({ token }: { token: string }) {
                     <dt className="text-white/55">{t("taskReward")}</dt>
                     <dd>
                       {view.preview.task.rewardUsdMinor === null
-                        ? t("taskUnspecified")
+                        ? view.preview.task.profitShareBps
+                          ? t("taskShareOnly")
+                          : t("taskUnspecified")
                         : new Intl.NumberFormat(locale, {
                             style: "currency",
                             currency: view.preview.task.rewardCurrency ?? "USD",

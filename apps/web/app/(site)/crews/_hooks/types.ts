@@ -683,6 +683,7 @@ export interface CrewTaskActivityPageDTO {
 }
 
 export interface UpdateCrewTaskInput {
+  rewardCurrency?: "USD" | "CNY";
   expectedVersion: number;
   title?: string;
   description?: string;

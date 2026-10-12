@@ -2277,7 +2277,7 @@ export class CrewTasksService {
             compensation: {
               paymentTerms: input.paymentTerms ?? null,
               // Legacy API amount key; currency is explicit for all new tasks.
-              rewardCurrency: crewCurrency(),
+              rewardCurrency: input.rewardCurrency ?? crewCurrency(),
               rewardUsdMinor: input.rewardUsdMinor ?? null,
               profitShareBps: input.profitShareBps ?? null,
             },
@@ -2513,6 +2513,18 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
       const locked = await this.requireActiveTaskTx(tx, taskId);
+      if (
+        input.rewardCurrency &&
+        input.rewardCurrency !==
+          taskCompensation(locked.metadata).rewardCurrency &&
+        locked.assignees.some(
+          (a) => a.rewardAmountMinor != null && a.rewardAmountMinor > 0n,
+        )
+      ) {
+        throw new ConflictException(
+          'Task currency cannot change while cash rewards are allocated. Resolve the existing reward agreement first.',
+        );
+      }
       if (closure) {
         const retry = await tx.crewTaskTimelineItem.findFirst({
           where: {
@@ -2960,6 +2972,11 @@ export class CrewTasksService {
       const priorCompensation = (priorMetadata.compensation ??
         {}) as Prisma.JsonObject;
       recordChange(
+        'rewardCurrency',
+        taskCompensation(locked.metadata).rewardCurrency,
+        input.rewardCurrency,
+      );
+      recordChange(
         'rewardUsdMinor',
         priorCompensation.rewardUsdMinor ?? null,
         input.rewardUsdMinor,
@@ -2997,6 +3014,7 @@ export class CrewTasksService {
             input.assetCategory !== undefined ||
             input.taskKind !== undefined ||
             input.paymentTerms !== undefined ||
+            input.rewardCurrency !== undefined ||
             input.rewardUsdMinor !== undefined ||
             input.profitShareBps !== undefined ||
             input.requiredSkills !== undefined ||
@@ -3027,11 +3045,15 @@ export class CrewTasksService {
                     ? { requiredSkills: [...new Set(input.requiredSkills)] }
                     : {}),
                   ...(input.paymentTerms !== undefined ||
+                  input.rewardCurrency !== undefined ||
                   input.rewardUsdMinor !== undefined ||
                   input.profitShareBps !== undefined
                     ? {
                         compensation: {
                           ...priorCompensation,
+                          ...(input.rewardCurrency !== undefined
+                            ? { rewardCurrency: input.rewardCurrency }
+                            : {}),
                           ...(input.paymentTerms !== undefined
                             ? { paymentTerms: input.paymentTerms }
                             : {}),

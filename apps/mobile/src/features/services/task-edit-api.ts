@@ -88,7 +88,6 @@ export async function saveTaskEdit(task: TaskEditSnapshot, input: TaskDraftInput
   const changed: Record<string, unknown> = Object.fromEntries(
     Object.entries(parsed).filter(
       ([key, value]) =>
-        key !== "rewardCurrency" &&
         JSON.stringify(value) !== JSON.stringify(original[key as keyof TaskDraftInput])
     )
   );

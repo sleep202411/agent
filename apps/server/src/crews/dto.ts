@@ -789,6 +789,7 @@ export type CloseCrewTaskInput = z.infer<typeof CloseCrewTaskSchema>;
 
 export const UpdateCrewTaskSchema = z
   .object({
+    rewardCurrency: z.enum(['USD', 'CNY']).optional(),
     expectedVersion: z.number().int().positive(),
     title: z.string().trim().min(1).max(180).optional(),
     description: z.string().trim().max(10_000).optional(),

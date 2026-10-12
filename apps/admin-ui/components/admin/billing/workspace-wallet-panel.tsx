@@ -76,14 +76,14 @@ export function BillingWorkspaceWalletPanel({
         eyebrow={`${siteLabel} · ${databaseLabel}`}
         title="工作区积分"
         icon={<IconWallet className="size-5" />}
-        description="给指定工作区的算力积分池加 / 扣分，即时生效并写入审计。"
+        description="个人工作区与项目工作区分别持有积分；按成员邮箱可查找其拥有或加入的工作区。调整前请核对目标工作区。"
       />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex w-full max-w-md gap-2 sm:w-auto">
           <TextInput
             value={query}
-            placeholder="工作区名称 / ID / 拥有者用户ID"
+            placeholder="工作区名称 / ID / 成员邮箱 / 拥有者用户ID"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") void search();
@@ -102,6 +102,10 @@ export function BillingWorkspaceWalletPanel({
         </div>
       </div>
 
+      <p className="text-sm text-slate-600">
+        当前站点：{siteLabel}。国际站与国内站积分独立，同名工作区不代表同一账户。
+        {!canWrite && " 直接加减积分仅限 Pax；YH 请通过算力申请审批创作者提交的申请。"}
+      </p>
       <div className="max-w-48">
         <Metric label="当前结果" value={rows.length} />
       </div>
@@ -124,7 +128,7 @@ export function BillingWorkspaceWalletPanel({
             {rows.length === 0 && !loading ? (
               <tr>
                 <td colSpan={6} className="px-4 py-10 text-center text-[13px] text-slate-400">
-                  没有匹配的工作区。换个名称 / ID 再试。
+                  没有匹配的工作区。可按名称、ID 或成员邮箱查询；请确认账号属于当前站点。
                 </td>
               </tr>
             ) : null}
@@ -132,6 +136,13 @@ export function BillingWorkspaceWalletPanel({
               <tr key={row.id} className="text-slate-700 hover:bg-slate-50/60">
                 <td className="px-4 py-3">
                   <p className="font-medium text-slate-950">{row.name}</p>
+                  <p className="text-xs text-slate-500">
+                    {row.kind === "personal"
+                      ? "个人工作区"
+                      : row.kind === "shared"
+                        ? "项目 / 共享工作区"
+                        : ""}
+                  </p>
                   <p className="mt-0.5 flex items-center gap-2 font-mono text-[11px] text-slate-400">
                     <span className="truncate" title={row.id}>
                       {row.id}

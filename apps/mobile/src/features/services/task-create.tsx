@@ -189,6 +189,9 @@ function Editor({
   const [paymentTerms, setPaymentTerms] = useState<TaskPaymentTerms | null>(
     initial?.paymentTerms ?? "on_completion"
   );
+  const [rewardCurrency, setRewardCurrency] = useState<"USD" | "CNY">(
+    initial?.rewardCurrency ?? (appEnv.siteRegion === "cn" ? "CNY" : "USD")
+  );
   const [reward, setReward] = useState(compensationText(initial?.rewardUsdMinor));
   const [share, setShare] = useState(compensationText(initial?.profitShareBps));
   const [computePoints, setComputePoints] = useState(
@@ -234,7 +237,7 @@ function Editor({
       computeBudgetPoints: parsePlanningNumber(computePoints, 2_000_000_000),
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
       paymentTerms,
-      rewardCurrency: appEnv.siteRegion === "cn" ? "CNY" : "USD",
+      rewardCurrency,
       rewardUsdMinor: parseCompensation(reward, 100_000_000_000),
       profitShareBps: parseCompensation(share, 10_000),
       revisionLimit: parsePlanningNumber(revisionLimit, 100),
@@ -250,7 +253,7 @@ function Editor({
         userId: member.userId,
         currency:
           initial?.assignees.find((row) => row.userId === member.userId)?.currency ??
-          (appEnv.siteRegion === "cn" ? "CNY" : "USD"),
+          rewardCurrency,
       })),
     });
     if (!onSave || input.dueAt !== initial?.dueAt) assertTaskCreationDeadline(input.dueAt);
@@ -426,7 +429,8 @@ function Editor({
       <TaskCompensationFields
         paymentTerms={paymentTerms}
         onPaymentTerms={setPaymentTerms}
-        rewardCurrency={appEnv.siteRegion === "cn" ? "CNY" : "USD"}
+        rewardCurrency={rewardCurrency}
+        onCurrency={setRewardCurrency}
         rewardRequired
         reward={reward}
         share={share}

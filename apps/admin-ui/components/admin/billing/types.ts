@@ -638,6 +638,8 @@ export type AdminBillingPromotionsData = {
 export type AdminWorkspaceMemberRole = "owner" | "admin" | "editor" | "billing" | "viewer";
 
 export type AdminWorkspaceRow = {
+  site?: "cn" | "global";
+  kind?: "personal" | "shared";
   id: string;
   name: string;
   status: string;

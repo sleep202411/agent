@@ -94,6 +94,7 @@ const onGranted = vi.fn();
 const workspace = (id = "workspace") =>
   ({
     id,
+    site: "global",
     name: id,
     memberCount: 1,
     createdAt: "2026-09-01T00:00:00Z",
@@ -162,6 +163,10 @@ async function open(view: typeof credits) {
     view === credits ? "例如 企业单发放、事故补偿" : "例如 临时提高并发、客服补偿",
     "fixture note"
   );
+  if (view === credits)
+    await act(async () =>
+      container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()
+    );
 }
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -208,3 +213,22 @@ it.each([credits])(
     expect(container.textContent).not.toContain("成功");
   }
 );
+
+it("requires site confirmation and prepares a separate audited correction", async () => {
+  await open(credits);
+  const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  await act(async () => checkbox.click());
+  await act(async () => click("加积分"));
+  expect(
+    fetchMock.mock.calls.filter(([url]) => String(url).includes("workspace-credits"))
+  ).toHaveLength(0);
+  fetchMock.mockResolvedValue(response({ account: { availableBalance: "200" } }));
+  await act(async () => checkbox.click());
+  await act(async () => click("加积分"));
+  await act(async () => click("填写反向调整"));
+  expect(
+    container.querySelector<HTMLInputElement>('input[placeholder="例如 50000 或 -100"]')!.value
+  ).toBe("-100");
+  expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
+  expect(container.textContent).toContain("国际站 .com");
+});
