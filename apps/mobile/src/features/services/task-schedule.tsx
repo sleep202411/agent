@@ -1,43 +1,28 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useTaskScheduleSession, type TaskScheduleSession } from "./use-task-schedule-session";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
-import { scheduleDateText, parseScheduleDate, taskScheduleInput } from "./task-schedule-api";
+import {
+  scheduleDateText,
+  parseScheduleDate,
+  taskScheduleInput,
+  updateTaskSchedule,
+} from "./task-schedule-api";
 import type { TaskDetail } from "./task-detail-api";
-type Props = {
-  task: TaskDetail;
-  userId: string;
-  generation: number;
-  onRefresh: () => void;
-  session?: TaskScheduleSession;
-};
+type Props = { task: TaskDetail; userId: string; generation: number; onRefresh: () => void };
 export function TaskSchedule(props: Props) {
-  if (props.session) return <ScheduleAccess {...props} session={props.session} />;
-  return <LocalSchedule key={`${props.task.id}:${props.generation}`} {...props} />;
-}
-function LocalSchedule(props: Props) {
-  const session = useTaskScheduleSession(props.task.id, props.generation, props.onRefresh);
-  return <ScheduleAccess {...props} session={session} />;
-}
-function ScheduleAccess(props: Props & { session: TaskScheduleSession }) {
   if (["approved", "cancelled"].includes(props.task.status)) return null;
   return <Access key={`${props.task.id}:${props.task.version}:${props.generation}`} {...props} />;
 }
-
-function Access({
-  task,
-  userId,
-  generation,
-  onRefresh,
-  session,
-}: Props & { session: TaskScheduleSession }) {
+function Access({ task, userId, generation, onRefresh }: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskCommentAccess(task.crewId, userId, controller.signal).then(
@@ -53,8 +38,15 @@ function Access({
     return () => controller.abort();
   }, [task.crewId, userId, generation]);
   if (allowed === false) return null;
-  if (session.draft && allowed)
-    return <Editor task={task} generation={generation} onRefresh={onRefresh} session={session} />;
+  if (editing && allowed)
+    return (
+      <Editor
+        task={task}
+        generation={generation}
+        onRefresh={onRefresh}
+        onCancel={() => setEditing(false)}
+      />
+    );
   return (
     <View style={{ gap: 8 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
@@ -70,7 +62,7 @@ function Access({
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            if (generation === getAuthGeneration()) session.open(task);
+            if (generation === getAuthGeneration()) setEditing(true);
           }}
           style={{ padding: 12 }}
         >
@@ -82,16 +74,22 @@ function Access({
 }
 function Editor({
   task,
+  generation,
   onRefresh,
-  session,
-}: Omit<Props, "userId"> & { session: TaskScheduleSession }) {
+  onCancel,
+}: Omit<Props, "userId"> & { onCancel: () => void }) {
   const t = useTranslations(),
-    theme = useTheme();
-  const draft = session.draft!;
-  const { snapshot, priority, startAt, dueAt, error } = draft;
-  const locked = session.busy || !!draft.attemptedAt;
-  const stale = task.version !== snapshot.version;
-  const canReview = !session.busy && (stale || (!!draft.attemptedAt && task !== draft.attemptedAt));
+    theme = useTheme(),
+    op = useAuthFormOperation(task.id, true);
+  // Captured at editor opening; never rebase a draft onto a refreshed server version.
+  const [snapshot] = useState(task);
+  const [priority, setPriority] = useState(task.priority);
+  const [startAt, setStartAt] = useState(() => scheduleDateText(task.startAt));
+  const [dueAt, setDueAt] = useState(() => scheduleDateText(task.dueAt));
+  const [error, setError] = useState<string>(),
+    [attempted, setAttempted] = useState(false);
+  const attemptedRef = useRef(false);
+  const locked = op.busy || attempted;
   let data:
     | {
         expectedVersion: number;
@@ -115,7 +113,7 @@ function Editor({
     (data.priority !== snapshot.priority ||
       data.startAt !== snapshot.startAt ||
       data.dueAt !== snapshot.dueAt);
-  const canSave = !!data && changed && !locked && !stale;
+  const canSave = !!data && changed && !locked;
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskSchedule.edit")}</ThemedText>
@@ -127,7 +125,7 @@ function Editor({
             accessibilityRole="radio"
             accessibilityState={{ selected: value === priority }}
             disabled={locked}
-            onPress={() => session.change("priority", value)}
+            onPress={() => setPriority(value)}
             style={{
               padding: 12,
               backgroundColor:
@@ -145,7 +143,7 @@ function Editor({
       <TextInput
         accessibilityLabel={t("thread.taskStart")}
         value={startAt}
-        onChangeText={(value) => session.change("startAt", value)}
+        onChangeText={setStartAt}
         editable={!locked}
         placeholder="YYYY-MM-DD HH:mm"
         placeholderTextColor={theme.textSecondary}
@@ -156,7 +154,7 @@ function Editor({
       <TextInput
         accessibilityLabel={t("thread.taskDue")}
         value={dueAt}
-        onChangeText={(value) => session.change("dueAt", value)}
+        onChangeText={setDueAt}
         editable={!locked}
         placeholder="YYYY-MM-DD HH:mm"
         placeholderTextColor={theme.textSecondary}
@@ -165,57 +163,43 @@ function Editor({
       />
       <ThemedText>{t("taskSchedule.clearHelp")}</ThemedText>
       {!data && <ThemedText accessibilityRole="alert">{t("taskSchedule.invalid")}</ThemedText>}
-      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {(error || stale) && (
-        <Pressable
-          accessibilityRole="button"
-          disabled={session.busy}
-          onPress={onRefresh}
-          style={{ padding: 12 }}
-        >
-          <ThemedText>{t("thread.refresh")}</ThemedText>
-        </Pressable>
-      )}
-      {canReview && (
-        <View style={{ gap: 8 }}>
-          <ThemedText>{t("taskSchedule.latest")}</ThemedText>
-          <ThemedText>
-            {t("taskSchedule.priority")}: {t(`taskSchedule.${task.priority}`)}
-          </ThemedText>
-          <ThemedText>
-            {t("thread.taskStart")}: {scheduleDateText(task.startAt) || t("thread.taskUnset")}
-          </ThemedText>
-          <ThemedText>
-            {t("thread.taskDue")}: {scheduleDateText(task.dueAt) || t("thread.taskUnset")}
-          </ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => session.review(task)}
-            style={{ padding: 12 }}
-          >
-            <ThemedText>{t("taskBrief.reviewLatest")}</ThemedText>
+      {error && (
+        <>
+          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <Pressable accessibilityRole="button" onPress={onRefresh}>
+            <ThemedText>{t("thread.refresh")}</ThemedText>
           </Pressable>
-        </View>
+        </>
       )}
       <Pressable
         accessibilityRole="button"
         disabled={!canSave}
-        style={{ padding: 12, opacity: canSave ? 1 : 0.45 }}
+        style={{ padding: 12 }}
         onPress={() => {
-          if (canSave) session.save(task);
+          if (!data || !canSave || attemptedRef.current || generation !== getAuthGeneration())
+            return;
+          void op.run(
+            () => {
+              attemptedRef.current = true;
+              setAttempted(true);
+              return updateTaskSchedule(snapshot, data);
+            },
+            onRefresh,
+            (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+          );
         }}
       >
         <ThemedText>{t("taskSchedule.save")}</ThemedText>
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        disabled={session.busy}
-        onPress={session.cancel}
+        disabled={op.busy}
+        onPress={attempted ? onRefresh : onCancel}
         style={{ padding: 12 }}
       >
         <ThemedText>{t("myServices.cancel")}</ThemedText>
       </Pressable>
-      {session.busy && <ActivityIndicator />}
+      {op.busy && <ActivityIndicator />}
     </View>
   );
 }

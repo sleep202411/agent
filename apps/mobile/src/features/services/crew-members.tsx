@@ -1,6 +1,3 @@
-import { router } from "expo-router";
-import { toHref } from "@/lib/navigation";
-import { CrewTeamInvitations } from "./crew-team-invitations";
 import { CrewOwnershipTransfer } from "./crew-ownership-transfer";
 import { CrewMemberAccess } from "./crew-member-access";
 import { CrewMemberPositions } from "./crew-member-positions";
@@ -49,8 +46,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
   const [canManagePermissions, setCanManagePermissions] = useState(false);
   const [editingPositions, setEditingPositions] = useState<CrewMember>();
   const [removing, setRemoving] = useState<CrewMember>();
-  const [inviting, setInviting] = useState(false),
-    [canInvite, setCanInvite] = useState(false);
   const [canManage, setCanManage] = useState(false);
   const [items, setItems] = useState<CrewMember[]>([]),
     [total, setTotal] = useState<number>(),
@@ -101,7 +96,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
         setItems(page.items);
         setTotal(page.total);
         setCanManage(page.canManageMembers);
-        setCanInvite(page.canInvite);
         setCanManagePermissions(page.canManagePermissions);
         setCanTransfer(page.canTransferOwnership);
         setMore(state.more);
@@ -144,7 +138,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
       setItems(state.items);
       setTotal(page.total);
       setCanManage(page.canManageMembers);
-      setCanInvite(page.canInvite);
       setCanManagePermissions(page.canManagePermissions);
       setCanTransfer(page.canTransferOwnership);
       setMore(state.more);
@@ -169,7 +162,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     String(props.generation),
     items.map((m) => m.userId)
   );
-  if (inviting) return <CrewTeamInvitations {...props} onClose={props.refresh} />;
   if (transferring)
     return (
       <CrewOwnershipTransfer
@@ -210,22 +202,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{props.title}</ThemedText>
-      {canInvite && !error && (
-        <>
-          <Button
-            label={t("teamInvites.title")}
-            disabled={busy}
-            onPress={() => setInviting(true)}
-          />
-          <Button
-            label={t("crewLinks.title")}
-            disabled={busy}
-            onPress={() =>
-              router.push(toHref(`/crew-invite-links?crewId=${encodeURIComponent(props.crewId)}`))
-            }
-          />
-        </>
-      )}
       {total !== undefined && (
         <ThemedText>
           {t("crewMembers.loaded")
@@ -241,10 +217,6 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
           <ThemedText type="smallBold">
             {displays?.get(member.userId)?.nickname || member.userId}
           </ThemedText>
-          <Button
-            label={t("crewMembers.viewProfile")}
-            onPress={() => router.push(toHref(`/creator/${encodeURIComponent(member.userId)}`))}
-          />
           <ThemedText>
             {t("crewMembers.userId")}: {member.userId}
           </ThemedText>

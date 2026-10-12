@@ -1,4 +1,3 @@
-import { getAuthGeneration } from "@/auth/auth-store";
 import { capturePaymentSession } from "./payment-session";
 import { getBillingOrder, isOrderDead, isOrderFulfilled } from "./billing-api";
 
@@ -19,8 +18,7 @@ function sleep(ms: number) {
  * Concurrent follows for the same orderId share one poll.
  */
 export function followWechatOrderUntilSettled(orderId: string): Promise<WechatFollowResult> {
-  const key = `${getAuthGeneration()}:${orderId}`;
-  const existing = inFlight.get(key);
+  const existing = inFlight.get(orderId);
   if (existing) return existing;
 
   const assertAccount = capturePaymentSession();
@@ -33,24 +31,18 @@ export function followWechatOrderUntilSettled(orderId: string): Promise<WechatFo
       }
       try {
         const order = await getBillingOrder(orderId);
-        assertAccount();
         if (isOrderFulfilled(order.status)) return "fulfilled";
         if (isOrderDead(order.status)) return "dead";
       } catch {
-        try {
-          assertAccount();
-        } catch {
-          return "aborted";
-        }
-        // Transient — try again for the same account.
+        // Transient — try again.
       }
       if (attempt < MAX_ATTEMPTS - 1) await sleep(POLL_MS);
     }
     return "timeout";
   })().finally(() => {
-    inFlight.delete(key);
+    inFlight.delete(orderId);
   });
 
-  inFlight.set(key, run);
+  inFlight.set(orderId, run);
   return run;
 }

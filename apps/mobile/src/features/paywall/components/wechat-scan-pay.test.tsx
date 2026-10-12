@@ -21,9 +21,7 @@ vi.mock("react-native", () => {
   return {
     Modal: Box,
     View: Box,
-    Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) => (
-      <button onClick={onPress}>{children}</button>
-    ),
+    Pressable: Box,
     StyleSheet: { create: (value: unknown) => value, absoluteFill: {}, hairlineWidth: 1 },
   };
 });
@@ -114,84 +112,3 @@ it("auto-completes a mock WeChat scan order without Nest polling", async () => {
 vi.mock("@tabler/icons-react-native/IconCircleCheck", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconRefresh", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconX", () => ({ default: () => null }));
-
-it("exposes a failed status read and retries the same order without reporting failure or success", async () => {
-  mocks.get
-    .mockRejectedValueOnce(new Error("Payment status temporarily unavailable"))
-    .mockResolvedValue(order("fulfilled"));
-  await render();
-  expect(host.textContent).toContain("Payment status temporarily unavailable");
-  expect(host.textContent).toContain("QR");
-  expect(host.textContent).not.toContain("paywall.wechat.failed");
-  expect(mocks.paid).not.toHaveBeenCalled();
-  await act(async () => vi.advanceTimersByTimeAsync(10000));
-  expect(mocks.get).toHaveBeenCalledTimes(1);
-  const retry = [...host.querySelectorAll("button")].find(
-    (button) => button.textContent === "inbox.retry"
-  )!;
-  await act(async () => retry.click());
-  expect(mocks.get).toHaveBeenCalledTimes(2);
-  expect(mocks.get.mock.calls.map((call) => call[0])).toEqual([
-    "/billing/orders/order",
-    "/billing/orders/order",
-  ]);
-  expect(host.textContent).not.toContain("Payment status temporarily unavailable");
-  expect(mocks.paid).toHaveBeenCalledTimes(1);
-});
-
-async function renderOrder(orderId: string) {
-  await act(async () =>
-    root.render(
-      <WechatScanPay
-        orderId={orderId}
-        codeUrl="weixin://pay"
-        onClose={() => {}}
-        onPaid={mocks.paid}
-      />
-    )
-  );
-}
-
-it("starts a new order after the previous order was fulfilled", async () => {
-  mocks.get.mockResolvedValueOnce(order("fulfilled")).mockResolvedValue(order("pending"));
-  await renderOrder("first");
-  expect(mocks.paid).toHaveBeenCalledTimes(1);
-  await renderOrder("second");
-  expect(host.textContent).toContain("QR");
-  expect(host.textContent).not.toContain("paywall.wechat.success");
-  expect(mocks.get.mock.calls.map((call) => call[0])).toEqual([
-    "/billing/orders/first",
-    "/billing/orders/second",
-  ]);
-  expect(mocks.paid).toHaveBeenCalledTimes(1);
-});
-
-it("clears a previous order's error when another order opens", async () => {
-  mocks.get
-    .mockRejectedValueOnce(new Error("First order unavailable"))
-    .mockResolvedValue(order("pending"));
-  await renderOrder("first");
-  expect(host.textContent).toContain("First order unavailable");
-  await renderOrder("second");
-  expect(host.textContent).not.toContain("First order unavailable");
-  expect(host.textContent).toContain("QR");
-  expect(mocks.paid).not.toHaveBeenCalled();
-});
-
-it("ignores a previous order response after switching orders", async () => {
-  let finish!: (value: ReturnType<typeof order>) => void;
-  mocks.get
-    .mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        })
-    )
-    .mockResolvedValue(order("pending"));
-  await renderOrder("first");
-  await renderOrder("second");
-  await act(async () => finish(order("fulfilled")));
-  expect(mocks.paid).not.toHaveBeenCalled();
-  expect(host.textContent).toContain("QR");
-  expect(vi.getTimerCount()).toBe(1);
-});

@@ -60,7 +60,6 @@ const row = {
 const page = {
   applicationStatus: "pending",
   canUpdate: true,
-  canMessage: true,
   version: 1,
   state: "proposed",
   scheduledAt: row.scheduledAt,
@@ -162,12 +161,7 @@ it("does not write after account change", async () => {
   expect(h.post).not.toHaveBeenCalled();
 });
 it("shows reviewed applications as read only", async () => {
-  h.get.mockResolvedValue({
-    ...page,
-    applicationStatus: "approved",
-    canUpdate: false,
-    canMessage: false,
-  });
+  h.get.mockResolvedValue({ ...page, applicationStatus: "approved", canUpdate: false });
   await render();
   expect(host.querySelector("textarea")).toBeNull();
   expect(host.textContent).toContain("crewInterview.readOnly");
@@ -330,55 +324,4 @@ it("labels applicant history correctly when read by a reviewer", async () => {
   h.get.mockResolvedValue({ ...page, items: [{ ...row, actorUserId: "creator" }] });
   await renderReviewer();
   expect(host.textContent).toContain("crewInterview.applicant");
-});
-
-it.each([false, true])(
-  "allows accepted participants to message without interview mutations (reviewer=%s)",
-  async (reviewer) => {
-    h.get.mockResolvedValue({
-      ...page,
-      applicationStatus: "approved",
-      canUpdate: false,
-      canMessage: true,
-    });
-    h.post.mockImplementation(async (_path, options) => ({
-      ...row,
-      ...options.data,
-      version: 2,
-      actorUserId: reviewer ? "manager" : "creator",
-    }));
-    await (reviewer ? renderReviewer() : render());
-    expect(host.querySelectorAll("textarea")).toHaveLength(1);
-    for (const action of ["schedule", "confirm", "complete", "cancel"])
-      expect(button(`crewInterview.${action}`)).toBeUndefined();
-    expect(host.textContent).not.toContain("crewInterview.readOnly");
-    await type();
-    await click("crewInterview.message");
-    expect(h.post).toHaveBeenCalledWith(
-      "/applications/app/interview",
-      expect.objectContaining({
-        data: expect.objectContaining({ action: "message", expectedVersion: 1, message: "Agreed" }),
-      })
-    );
-  }
-);
-it("removes accepted messaging after permission is revoked on refresh", async () => {
-  h.get
-    .mockResolvedValueOnce({
-      ...page,
-      applicationStatus: "approved",
-      canUpdate: false,
-      canMessage: true,
-    })
-    .mockResolvedValue({
-      ...page,
-      applicationStatus: "approved",
-      canUpdate: false,
-      canMessage: false,
-    });
-  await render();
-  expect(button("crewInterview.message")).toBeTruthy();
-  await click("crewInterview.refresh");
-  expect(host.querySelector("textarea")).toBeNull();
-  expect(button("crewInterview.message")).toBeUndefined();
 });

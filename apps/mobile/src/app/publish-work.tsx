@@ -1,10 +1,8 @@
-import { workDraft, type WorkDraft } from "@/features/profile/work-draft";
-import { inquiryKey } from "@/features/services/inquiry-api";
 import { findMyWork, type MyWork } from "@/data/mine-api";
 import { Stack, useIsFocused, useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
-import { useAuth, useAuthGate, useLoginGateOnFocus } from "@/auth";
+import { useAuth, useLoginGateOnFocus } from "@/auth";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -19,10 +17,8 @@ import {
   type WorkTag,
 } from "@/features/profile/publish-work-api";
 import { refreshPersonalWorks } from "@/features/profile/work-refresh";
-import { WorkCreationRecovery } from "@/features/profile/work-creation-recovery";
 export default function PublishWorkScreen() {
   const auth = useAuth(),
-    gate = useAuthGate(),
     theme = useTheme(),
     t = useTranslations();
   useLoginGateOnFocus();
@@ -42,77 +38,39 @@ export default function PublishWorkScreen() {
           key={JSON.stringify([auth.generation, workId])}
           workId={typeof workId === "string" ? workId : undefined}
         />
-      ) : auth.status === "hydrating" ? (
-        <ActivityIndicator />
       ) : (
-        <Pressable
-          accessibilityRole="button"
-          style={{ padding: 16 }}
-          onPress={() => gate.requireAuth()}
-        >
-          <ThemedText>{t("login.signIn")}</ThemedText>
-        </Pressable>
+        <ActivityIndicator />
       )}
     </View>
   );
 }
 function OwnedWorkForm({ workId }: { workId?: string }) {
-  const t = useTranslations(),
-    auth = useAuth();
-  const [store] = useState(() =>
-    workDraft(String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation, workId)
-  );
-  const [recovery, setRecovery] = useState(() => {
-    try {
-      return { draft: store.read(), error: undefined };
-    } catch (cause) {
-      return { draft: null, error: cause instanceof Error ? cause.message : String(cause) };
-    }
-  });
-  const resolvedId = workId ?? recovery.draft?.workId;
+  const t = useTranslations();
   const [work, setWork] = useState<MyWork>();
-  const [failed, setFailed] = useState<string>();
+  const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    if (!resolvedId || recovery.error) return;
+    if (!workId) return;
     const controller = new AbortController();
-    void findMyWork(resolvedId, controller.signal)
+    void findMyWork(workId, controller.signal)
       .then((value) => {
         if (!controller.signal.aborted) setWork(value);
       })
-      .catch((cause) => {
-        if (!controller.signal.aborted)
-          setFailed(
-            cause instanceof Error && cause.message ? cause.message : t("publishWork.loadFailed")
-          );
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [resolvedId, recovery.error, attempt, t]);
-  if (recovery.error) return <ThemedText accessibilityRole="alert">{recovery.error}</ThemedText>;
-  const onRecovered = (draft: WorkDraft, owned: MyWork) => {
-    setWork(owned);
-    setRecovery({ draft, error: undefined });
-  };
-  if (!resolvedId)
-    return <PublishForm store={store} recovered={recovery.draft} onRecovered={onRecovered} />;
-  if (work?.id === resolvedId)
-    return (
-      <PublishForm
-        key={work.id}
-        initial={work}
-        store={store}
-        recovered={recovery.draft}
-        onRecovered={onRecovered}
-      />
-    );
+  }, [workId, attempt]);
+  if (!workId) return <PublishForm />;
+  if (work) return <PublishForm initial={work} />;
   if (failed)
     return (
       <View style={{ padding: 16 }}>
-        <ThemedText accessibilityRole="alert">{failed}</ThemedText>
+        <ThemedText accessibilityRole="alert">{t("publishWork.loadFailed")}</ThemedText>
         <Pressable
           accessibilityRole="button"
           onPress={() => {
-            setFailed(undefined);
+            setFailed(false);
             setAttempt((n) => n + 1);
           }}
         >
@@ -122,38 +80,24 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
     );
   return <ActivityIndicator />;
 }
-function PublishForm({
-  initial,
-  store,
-  recovered,
-  onRecovered,
-}: {
-  initial?: MyWork;
-  store: ReturnType<typeof workDraft>;
-  recovered: WorkDraft | null;
-  onRecovered: (draft: WorkDraft, work: MyWork) => void;
-}) {
+function PublishForm({ initial }: { initial?: MyWork }) {
   const auth = useAuth(),
     theme = useTheme(),
     t = useTranslations(),
     router = useRouter(),
     focused = useIsFocused();
   const op = useAuthFormOperation("publish-work", focused);
-  const [title, setTitle] = useState(recovered?.title ?? initial?.title ?? ""),
-    [description, setDescription] = useState(recovered?.description ?? initial?.introduction ?? ""),
-    [selected, setSelected] = useState<number[]>(recovered?.tagIds ?? []);
+  const [title, setTitle] = useState(initial?.title ?? ""),
+    [description, setDescription] = useState(initial?.introduction ?? ""),
+    [selected, setSelected] = useState<number[]>([]);
   const [tags, setTags] = useState<WorkTag[]>(),
-    [tagError, setTagError] = useState<string>(),
+    [tagError, setTagError] = useState(false),
     [attempt, setAttempt] = useState(0);
   const [id, setId] = useState<string | undefined>(initial?.id),
     [video, setVideo] = useState(initial?.hasVideo ?? false),
     [cover, setCover] = useState(!!initial?.coverUrl),
     [error, setError] = useState<string>();
-  const [basic, setBasic] = useState(recovered?.phase !== "uploading");
-  const [pending, setPending] = useState<WorkDraft | null>(recovered);
-  const pendingRef = useRef<WorkDraft | null>(recovered);
-  const creationUnknown = pending?.phase === "creating";
-  const frozen = !!pending || op.busy;
+  const [basic, setBasic] = useState(true);
   const scope = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     const controller = new AbortController();
@@ -170,48 +114,22 @@ function PublishForm({
       .then((value) => {
         if (!controller.signal.aborted) setTags(value);
       })
-      .catch((cause) => {
-        if (!controller.signal.aborted)
-          setTagError(
-            cause instanceof Error && cause.message ? cause.message : t("profileEdit.failed")
-          );
+      .catch(() => {
+        if (!controller.signal.aborted) setTagError(true);
       });
     return () => controller.abort();
-  }, [attempt, initial, t]);
+  }, [attempt, initial]);
   const next = () => {
     const request = scope.current;
     if (!request) return;
     void op.run(
       async () => {
         setError(undefined);
-        if (pendingRef.current?.phase === "creating")
-          throw new Error(t("publishWork.creationUnknown"));
-        const draft =
-          pendingRef.current ??
-          store.start({
-            key: inquiryKey(),
-            phase: initial ? "updating" : "creating",
-            ...(initial ? { workId: initial.id } : {}),
-            title,
-            description,
-            tagIds: selected,
-          });
-        pendingRef.current = draft;
-        setPending(draft);
-        let workId: string;
-        if (draft.workId) {
-          await updateWork(draft.workId, draft.title, draft.description, request.signal);
-          workId = draft.workId;
-        } else {
-          workId = await createWork(
-            { title: draft.title, description: draft.description, tagIds: draft.tagIds },
-            request.signal
-          );
+        if (initial) {
+          await updateWork(initial.id, title, description, request.signal);
+          return initial.id;
         }
-        const saved = store.confirm(draft.key, workId);
-        pendingRef.current = saved;
-        setPending(saved);
-        return workId;
+        return createWork({ title, description, tagIds: selected }, request.signal);
       },
       (value) => {
         setId(value);
@@ -265,7 +183,7 @@ function PublishForm({
             accessibilityLabel={t("publishWork.name")}
             value={title}
             onChangeText={setTitle}
-            editable={!frozen}
+            editable={!op.busy}
             maxLength={80}
             style={fieldStyle}
           />
@@ -274,7 +192,7 @@ function PublishForm({
             accessibilityLabel={t("publishWork.description")}
             value={description}
             onChangeText={setDescription}
-            editable={!frozen}
+            editable={!op.busy}
             multiline
             maxLength={500}
             style={fieldStyle}
@@ -283,18 +201,15 @@ function PublishForm({
             <>
               <ThemedText>{t("publishWork.tags")}</ThemedText>
               {tagError ? (
-                <View style={{ gap: 8 }}>
-                  <ThemedText accessibilityRole="alert">{tagError}</ThemedText>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      setTagError(undefined);
-                      setAttempt((n) => n + 1);
-                    }}
-                  >
-                    <ThemedText>{t("profileEdit.retry")}</ThemedText>
-                  </Pressable>
-                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setTagError(false);
+                    setAttempt((n) => n + 1);
+                  }}
+                >
+                  <ThemedText>{t("profileEdit.retry")}</ThemedText>
+                </Pressable>
               ) : !tags ? (
                 <ActivityIndicator />
               ) : (
@@ -304,7 +219,7 @@ function PublishForm({
                       key={tag.id}
                       accessibilityRole="checkbox"
                       accessibilityState={{ checked: selected.includes(tag.id) }}
-                      disabled={frozen || (!selected.includes(tag.id) && selected.length >= 5)}
+                      disabled={op.busy || (!selected.includes(tag.id) && selected.length >= 5)}
                       onPress={() =>
                         setSelected((current) =>
                           current.includes(tag.id)
@@ -329,7 +244,9 @@ function PublishForm({
           )}
           <Pressable
             accessibilityRole="button"
-            disabled={op.busy || creationUnknown || !title.trim()}
+            disabled={
+              op.busy || !title.trim() || !description.trim() || (!initial && !selected.length)
+            }
             onPress={next}
           >
             <ThemedText>{t("publishWork.next")}</ThemedText>
@@ -355,38 +272,10 @@ function PublishForm({
           <Pressable
             accessibilityRole="button"
             disabled={op.busy || !video}
-            onPress={() => {
-              try {
-                if (pendingRef.current) store.clear(pendingRef.current.key);
-                router.back();
-              } catch (cause) {
-                setError(cause instanceof Error ? cause.message : String(cause));
-              }
-            }}
+            onPress={() => router.back()}
           >
             <ThemedText>{t("publishWork.done")}</ThemedText>
           </Pressable>
-        </>
-      )}
-      {creationUnknown && !op.busy && (
-        <>
-          <ThemedText accessibilityRole="alert">{t("publishWork.creationUnknown")}</ThemedText>
-          <WorkCreationRecovery
-            owner={JSON.stringify([auth.generation, auth.user?.userId ?? auth.user?.id])}
-            onSelect={(workId) => {
-              const request = scope.current;
-              const draft = pendingRef.current;
-              if (!request || draft?.phase !== "creating") return;
-              void op.run(
-                () => findMyWork(workId, request.signal),
-                (owned) => {
-                  const saved = store.confirm(draft.key, owned.id);
-                  onRecovered(saved, owned);
-                },
-                (cause) => setError(cause instanceof Error ? cause.message : String(cause))
-              );
-            }}
-          />
         </>
       )}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

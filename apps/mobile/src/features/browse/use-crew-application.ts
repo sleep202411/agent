@@ -6,25 +6,20 @@ import { applyToCrewPosition } from "@/data/browse-service";
 export function useCrewApplication(crewId: string) {
   const scope = useMemo(() => ({ crewId }), [crewId]);
   const active = useRef<typeof scope | null>(null);
-  const pending = useRef<AbortController | null>(null);
+  const pending = useRef<object | null>(null);
   const [displayed, setDisplayed] = useState<typeof scope | null>(null);
   useLayoutEffect(() => {
     active.current = scope;
     return () => {
       active.current = null;
-      pending.current?.abort();
       pending.current = null;
     };
   }, [scope]);
 
   const submit = useCallback(
-    async (
-      positionId: string,
-      onSuccess: (applicationId: string) => void,
-      onError: (error: unknown) => void
-    ) => {
+    async (positionId: string, onSuccess: () => void, onError: (error: unknown) => void) => {
       if (active.current !== scope || pending.current) return;
-      const operation = new AbortController();
+      const operation = {};
       const generation = getAuthGeneration();
       pending.current = operation;
       setDisplayed(scope);
@@ -33,8 +28,8 @@ export function useCrewApplication(crewId: string) {
         pending.current === operation &&
         generation === getAuthGeneration();
       try {
-        const applicationId = await applyToCrewPosition(crewId, positionId, operation.signal);
-        if (current()) onSuccess(applicationId);
+        await applyToCrewPosition(crewId, positionId);
+        if (current()) onSuccess();
       } catch (error) {
         if (current()) onError(error);
       } finally {

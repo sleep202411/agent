@@ -42,7 +42,6 @@ export async function fetchApplicationInterview(
     .object({
       applicationStatus: z.enum(["pending", "approved", "rejected"]),
       canUpdate: z.boolean(),
-      canMessage: z.boolean(),
       version: z.number().int().nonnegative(),
       state,
       scheduledAt: date.nullable(),
@@ -58,8 +57,6 @@ export async function fetchApplicationInterview(
     );
   if (
     page.canUpdate !== (page.applicationStatus === "pending") ||
-    (page.applicationStatus === "pending" && !page.canMessage) ||
-    (page.applicationStatus === "rejected" && page.canMessage) ||
     page.items.some(
       (row, i) =>
         row.applicationId !== applicationId ||

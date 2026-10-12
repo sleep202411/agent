@@ -19,7 +19,7 @@ function WorkList({ creatorId }: { creatorId: string }) {
   const [attempt, setAttempt] = useState(0);
   const [works, setWorks] = useState<PublicPersonalWork[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
+  const [failed, setFailed] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -35,20 +35,16 @@ function WorkList({ creatorId }: { creatorId: string }) {
         pending.current = false;
         setLoading(false);
       })
-      .catch((cause) => {
+      .catch(() => {
         if (!controller.signal.aborted) {
           pending.current = false;
-          setError(
-            cause instanceof Error && cause.message
-              ? cause.message
-              : t("creatorDetail.personalWorksError")
-          );
+          setFailed(true);
           setLoading(false);
         }
       });
     return () => controller.abort();
-  }, [creatorId, page, attempt, t]);
-  if (!loading && !error && !works.length && !hasMore) return null;
+  }, [creatorId, page, attempt]);
+  if (!loading && !failed && !works.length && !hasMore) return null;
   return (
     <View style={styles.section}>
       <SectionHeader title={t("creatorDetail.personalWorksTitle")} />
@@ -68,16 +64,16 @@ function WorkList({ creatorId }: { creatorId: string }) {
       ))}
       {loading ? (
         <ActivityIndicator />
-      ) : error ? (
+      ) : failed ? (
         <View>
-          <ThemedText accessibilityRole="alert">{error}</ThemedText>
+          <ThemedText accessibilityRole="alert">{t("creatorDetail.personalWorksError")}</ThemedText>
           <Pressable
             accessibilityRole="button"
             onPress={() => {
               if (pending.current) return;
               pending.current = true;
               setLoading(true);
-              setError(undefined);
+              setFailed(false);
               setAttempt((value) => value + 1);
             }}
           >

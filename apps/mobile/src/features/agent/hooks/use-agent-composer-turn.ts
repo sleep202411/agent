@@ -47,29 +47,11 @@ export function useAgentComposerTurn(
   projectId: string,
   workbenchMode: string,
   disabled: boolean,
-  chapterId?: string,
-  configured = true
+  chapterId?: string
 ) {
-  // A temporarily unresolved chapter is not a new draft destination. Keep its
-  // completed attachments hidden/locked until the workbench is authorized again.
-  const [selection, setSelection] = useState({ projectId, workbenchMode, chapterId });
-  const selectedChapter =
-    !configured &&
-    !chapterId &&
-    selection.projectId === projectId &&
-    selection.workbenchMode === workbenchMode
-      ? selection.chapterId
-      : chapterId;
-  if (
-    selection.projectId !== projectId ||
-    selection.workbenchMode !== workbenchMode ||
-    selection.chapterId !== selectedChapter
-  )
-    setSelection({ projectId, workbenchMode, chapterId: selectedChapter });
-  const scope = useStoryRequestScope(JSON.stringify([projectId, workbenchMode, selectedChapter]));
-  const locked = disabled || !configured;
+  const scope = useStoryRequestScope(JSON.stringify([projectId, workbenchMode, chapterId]));
   const scopeRef = useRef<typeof scope | null>(scope);
-  const disabledRef = useRef(locked);
+  const disabledRef = useRef(disabled);
   const uploadRef = useRef<AbortController | null>(null);
   const preferenceVersion = useRef(0);
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
@@ -107,18 +89,18 @@ export function useAgentComposerTurn(
       uploadRef.current = null;
     };
   }, [scope]);
-  const [previousDisabled, setPreviousDisabled] = useState(locked);
-  if (previousDisabled !== locked) {
-    setPreviousDisabled(locked);
-    if (locked) setUploading(false);
+  const [previousDisabled, setPreviousDisabled] = useState(disabled);
+  if (previousDisabled !== disabled) {
+    setPreviousDisabled(disabled);
+    if (disabled) setUploading(false);
   }
   useLayoutEffect(() => {
-    disabledRef.current = locked;
-    if (locked) {
+    disabledRef.current = disabled;
+    if (disabled) {
       uploadRef.current?.abort();
       uploadRef.current = null;
     }
-  }, [locked]);
+  }, [disabled]);
   const canEdit = useCallback(
     () => scopeRef.current === scope && scope.enabled && !disabledRef.current,
     [scope]
@@ -149,7 +131,7 @@ export function useAgentComposerTurn(
   );
 
   useEffect(() => {
-    if (!configured || !projectId || !scope.enabled) return;
+    if (!projectId || !scope.enabled) return;
     const request = new AbortController();
     void agentOsApi
       .listSkills(projectId, workbenchMode, request.signal)
@@ -164,7 +146,7 @@ export function useAgentComposerTurn(
         if (!request.signal.aborted) setInvocableSkills([]);
       });
     return () => request.abort();
-  }, [configured, projectId, workbenchMode, scope]);
+  }, [projectId, workbenchMode, scope]);
 
   const skillsKey = `${projectId}:${skillsTick}`;
   const [previousSkillsKey, setPreviousSkillsKey] = useState(skillsKey);
@@ -175,7 +157,7 @@ export function useAgentComposerTurn(
   }
 
   useEffect(() => {
-    if (!configured || !projectId || !scope.enabled) return;
+    if (!projectId || !scope.enabled) return;
     const request = new AbortController();
     void listProjectSkillInstallations("story", projectId, request.signal)
       .then((payload) => {
@@ -189,7 +171,7 @@ export function useAgentComposerTurn(
         setProjectSkillsError(true);
       });
     return () => request.abort();
-  }, [configured, projectId, skillsTick, scope]);
+  }, [projectId, skillsTick, scope]);
 
   const projectSkillEntries = useMemo((): ProjectSkillComposerEntry[] => {
     const expectedSource = `agent_os:${workbenchMode}`;
@@ -351,46 +333,44 @@ export function useAgentComposerTurn(
       });
       if (accepted.length === 0) return;
 
-      const uploadOrder = new Map<string, number>();
+      const uploaded: AgentOsAttachmentSummary[] = [];
       for (let index = 0; index < accepted.length; index += UPLOAD_CONCURRENCY) {
         if (!isCurrent()) return;
         const batch = accepted.slice(index, index + UPLOAD_CONCURRENCY);
-        await Promise.all(
-          batch.map(async (file, batchIndex) => {
-            try {
-              const uploaded = await agentOsApi.uploadAttachment(projectId, file, operation.signal);
-              if (!isCurrent()) return;
-              if (uploaded.status !== "ready") {
-                Alert.alert(
-                  t("agent.composer.attachFile"),
-                  uploaded.errorMessage?.trim() ||
-                    fillMessageTemplate(t("agent.composer.attachmentFailed"), {
-                      name: uploaded.filename,
-                    })
-                );
-                return;
-              }
-              uploadOrder.set(uploaded.id, index + batchIndex);
-              // Preserve each confirmed file even if another upload is interrupted.
-              setPendingFiles((prev) => {
-                const byId = new Map(prev.map((item) => [item.id, item]));
-                byId.set(uploaded.id, uploaded);
-                return [...byId.values()].sort(
-                  (left, right) =>
-                    (uploadOrder.get(left.id) ?? -1) - (uploadOrder.get(right.id) ?? -1)
-                );
-              });
-            } catch (error) {
-              if (isCurrent())
-                Alert.alert(
-                  t("agent.composer.attachFile"),
-                  error instanceof Error
-                    ? error.message
-                    : fillMessageTemplate(t("agent.composer.attachmentFailed"), { name: file.name })
-                );
-            }
-          })
+        const results = await Promise.allSettled(
+          batch.map((file) => agentOsApi.uploadAttachment(projectId, file, operation.signal))
         );
+        if (!isCurrent()) return;
+        results.forEach((result, batchIndex) => {
+          const file = batch[batchIndex];
+          if (result.status === "rejected") {
+            Alert.alert(
+              t("agent.composer.attachFile"),
+              result.reason instanceof Error
+                ? result.reason.message
+                : fillMessageTemplate(t("agent.composer.attachmentFailed"), { name: file.name })
+            );
+            return;
+          }
+          if (result.value.status !== "ready") {
+            Alert.alert(
+              t("agent.composer.attachFile"),
+              result.value.errorMessage?.trim() ||
+                fillMessageTemplate(t("agent.composer.attachmentFailed"), {
+                  name: result.value.filename,
+                })
+            );
+            return;
+          }
+          uploaded.push(result.value);
+        });
+      }
+      if (uploaded.length > 0) {
+        setPendingFiles((prev) => {
+          const byId = new Map(prev.map((item) => [item.id, item]));
+          for (const item of uploaded) byId.set(item.id, item);
+          return [...byId.values()];
+        });
       }
     } catch (error) {
       if (isCurrent())

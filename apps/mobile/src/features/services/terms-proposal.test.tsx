@@ -57,7 +57,6 @@ const app = {
   id: "app",
   crewId: "crew",
   positionId: "position",
-  taskId: null,
   applicantId: "creator",
   message: "Hello",
   portfolioUrl: null,
@@ -124,7 +123,6 @@ beforeEach(() => {
           ? {
               applicationStatus: "pending",
               canUpdate: true,
-              canMessage: true,
               version: 0,
               state: "not_started",
               scheduledAt: null,
@@ -154,7 +152,6 @@ it("proposes exact amounts and the loaded version", async () => {
   await type("crewTerms.share", "2.50");
   await type("crewTerms.basis", "Net receipts");
   await click("crewTerms.episode");
-  await click("○ taskPaymentTerms.half_upfront");
   await click("crewTerms.propose");
   expect(h.post).toHaveBeenCalledWith("/applications/app/terms", {
     service: "aurora",
@@ -164,7 +161,6 @@ it("proposes exact amounts and the loaded version", async () => {
       feeAmount: "12345",
       currency: "USD",
       feePeriod: "episode",
-      paymentTerms: "half_upfront",
       revenueShareBp: 250,
       shareBasis: "Net receipts",
     },
@@ -246,7 +242,9 @@ it("uses project-only bounded fees for task-linked positions", async () => {
 it("shows closed applications as read only", async () => {
   const previous = h.get.getMockImplementation()!;
   h.get.mockImplementation(async (path, options) =>
-    path === "/applications/app" ? { ...app, status: "approved" } : previous(path, options)
+    path === "/crews/crew/applications/app"
+      ? { ...app, status: "approved" }
+      : previous(path, options)
   );
   await render();
   expect(host.querySelector("textarea")).toBeNull();
@@ -283,39 +281,3 @@ it("older terms are read only and use the server version cursor", async () => {
     expect.objectContaining({ params: { limit: 20, beforeVersion: 2 } })
   );
 });
-
-it.each([null, "half_upfront"] as const)(
-  "preserves latest payment terms %s over today's advertised monthly terms",
-  async (paymentTerms) => {
-    const previous = h.get.getMockImplementation()!;
-    h.get.mockImplementation(async (path, options) =>
-      path.endsWith("/positions")
-        ? {
-            items: [{ id: "position", crewId: "crew", taskId: null, paymentTerms: "monthly" }],
-            nextCursor: null,
-          }
-        : path.endsWith("/terms")
-          ? {
-              currentVersion: 1,
-              items: [
-                receipt({
-                  scope: "Prior work",
-                  feeAmount: "100",
-                  currency: "USD",
-                  feePeriod: "project",
-                  revenueShareBp: 0,
-                  shareBasis: null,
-                  paymentTerms,
-                }),
-              ],
-              nextBeforeVersion: null,
-            }
-          : previous(path, options)
-    );
-    await render();
-    expect(button(`● taskPaymentTerms.${paymentTerms ?? "unspecified"}`)).toBeDefined();
-    await fill();
-    await click("crewTerms.propose");
-    expect(h.post.mock.calls[0]![1].data.paymentTerms).toBe(paymentTerms);
-  }
-);

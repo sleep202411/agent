@@ -13,7 +13,6 @@ import {
   type PositionAction,
 } from "./position-lifecycle-api";
 export function PositionLifecycle(props: {
-  active?: boolean;
   position: ManagedPosition;
   userId: string;
   generation: number;
@@ -27,17 +26,7 @@ export function PositionLifecycle(props: {
     [action, setAction] = useState<PositionAction>(),
     [attempted, setAttempted] = useState(false),
     [done, setDone] = useState(false);
-  const [readError, setReadError] = useState<string>();
-  const [readRevision, setReadRevision] = useState(0);
-  const readKey = `${props.active !== false}:${readRevision}`;
-  const [previousReadKey, setPreviousReadKey] = useState(readKey);
-  if (previousReadKey !== readKey) {
-    setPreviousReadKey(readKey);
-    setPosition(undefined);
-    setReadError(undefined);
-  }
   useEffect(() => {
-    if (props.active === false) return;
     const c = new AbortController();
     void fetchLifecyclePosition(props.position, props.userId, props.generation, c.signal).then(
       (value) => {
@@ -45,11 +34,11 @@ export function PositionLifecycle(props: {
       },
       (cause) => {
         if (!c.signal.aborted && props.generation === getAuthGeneration())
-          setReadError(cause instanceof Error ? cause.message : String(cause));
+          setError(cause instanceof Error ? cause.message : String(cause));
       }
     );
     return () => c.abort();
-  }, [props.position, props.userId, props.generation, props.active, readRevision]);
+  }, [props.position, props.userId, props.generation]);
   const button = (label: string, onPress: () => void) => (
     <Pressable
       accessibilityRole="button"
@@ -68,14 +57,7 @@ export function PositionLifecycle(props: {
     </Pressable>
   );
   const confirm = () => {
-    if (
-      props.active === false ||
-      !position ||
-      !action ||
-      attempted ||
-      props.generation !== getAuthGeneration()
-    )
-      return;
+    if (!position || !action || attempted || props.generation !== getAuthGeneration()) return;
     void op.run(
       () => {
         setAttempted(true);
@@ -86,12 +68,10 @@ export function PositionLifecycle(props: {
       (cause) => setError(cause instanceof Error ? cause.message : String(cause))
     );
   };
-  if (props.active === false) return null;
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("positionLifecycle.title")}</ThemedText>
-      {!position && !readError && <ActivityIndicator />}
-      {readError && <ThemedText accessibilityRole="alert">{readError}</ThemedText>}
+      {!position && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {position && !attempted && (
         <>
@@ -127,7 +107,6 @@ export function PositionLifecycle(props: {
             {button(t("positionLifecycle.cancel"), () => setAction(undefined))}
           </>
         ))}
-      {!position && readError && button(t("common.retry"), () => setReadRevision((n) => n + 1))}
       {op.busy && <ActivityIndicator />}
       {attempted && !op.busy && (
         <ThemedText>{t(done ? "positionLifecycle.saved" : "positionLifecycle.recheck")}</ThemedText>

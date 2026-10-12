@@ -8,7 +8,7 @@
  */
 import { appEnv, resolveAssetUrl } from "@/config";
 import { PRESET_POSITIONS } from "@repo/shared/crew";
-import { api, ApiRequestError } from "@/lib/api-client";
+import { api } from "@/lib/api-client";
 
 import type { IpReportReason } from "./ip-api";
 import type { CrewDetail, CrewFeedPage, CrewRoleOpening, CrewStatus, CrewSummary } from "./types";
@@ -66,32 +66,34 @@ function mapSummary(dto: CrewDto): CrewSummary {
   };
 }
 
-async function fetchPositions(crewId: string, signal?: AbortSignal): Promise<CrewRoleOpening[]> {
-  const list: PositionDto[] = [];
-  const cursors = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    signal?.throwIfAborted();
-    const page = await api.get<{ items: PositionDto[]; nextCursor: string | null }>(
-      `/crews/${encodeURIComponent(crewId)}/positions`,
-      { ...AURORA, params: { cursor }, signal, retry: false }
-    );
-    signal?.throwIfAborted();
-    list.push(...page.items);
-    cursor = page.nextCursor ?? undefined;
-    if (cursor && cursors.has(cursor)) throw new Error("Repeated crew positions cursor");
-    if (cursor) cursors.add(cursor);
-  } while (cursor);
-  return list
-    .filter((position) => position.status === "open")
-    .map((position) => ({
-      id: position.id,
-      title: prettyRole(position.positionType),
-      positionType: position.positionType ?? undefined,
-      count: position.targetCount ?? 1,
-      location: position.location ?? undefined,
-      employmentType: position.employmentType ?? undefined,
-    }));
+async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
+  try {
+    const list: PositionDto[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await api.get<{ items: PositionDto[]; nextCursor: string | null }>(
+        `/crews/${crewId}/positions`,
+        { ...AURORA, params: { cursor } }
+      );
+      list.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+      if (cursor && cursors.has(cursor)) throw new Error("Repeated crew positions cursor");
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
+    return list
+      .filter((position) => position.status === "open")
+      .map((position) => ({
+        id: position.id,
+        title: prettyRole(position.positionType),
+        positionType: position.positionType ?? undefined,
+        count: position.targetCount ?? 1,
+        location: position.location ?? undefined,
+        employmentType: position.employmentType ?? undefined,
+      }));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -127,32 +129,24 @@ export async function fetchCrewFeed(): Promise<CrewSummary[]> {
 
 /** A user's publicly LISTED crews (visitor profile tab; @Public by-user route). */
 export async function fetchCrewsByUser(userId: string): Promise<CrewSummary[]> {
-  const res = await api.get<{ items?: CrewDto[] } | CrewDto[]>(`/crews/by-user/${userId}`, {
-    ...AURORA,
-  });
-  const list = Array.isArray(res) ? res : (res.items ?? []);
-  return list.map(mapSummary);
+  try {
+    const res = await api.get<{ items?: CrewDto[] } | CrewDto[]>(`/crews/by-user/${userId}`, {
+      ...AURORA,
+    });
+    const list = Array.isArray(res) ? res : (res.items ?? []);
+    return list.map(mapSummary);
+  } catch {
+    return [];
+  }
 }
 
-export async function fetchCrewById(
-  id: string,
-  signal?: AbortSignal
-): Promise<CrewDetail | undefined> {
-  signal?.throwIfAborted();
-  let crew: CrewDto;
-  try {
-    crew = await api.get<CrewDto>(`/crews/${encodeURIComponent(id)}`, {
-      ...AURORA,
-      signal,
-      retry: false,
-    });
-  } catch (error) {
-    signal?.throwIfAborted();
-    if (error instanceof ApiRequestError && error.status === 404) return undefined;
-    throw error;
-  }
-  signal?.throwIfAborted();
-  const roles = await fetchPositions(id, signal);
+export async function fetchCrewById(id: string): Promise<CrewDetail | undefined> {
+  const [crew, roles] = await Promise.all([
+    api.get<CrewDto>(`/crews/${id}`, { ...AURORA }).catch(() => undefined),
+    fetchPositions(id),
+  ]);
+  if (!crew) return undefined;
+
   return {
     ...mapSummary(crew),
     description: crew.description ?? "",
@@ -163,18 +157,20 @@ export async function fetchCrewById(
 }
 
 /** The signed-in user's crews — owned + joined (auth'd; `/aurora/crews/my`). */
-export async function fetchMyCrews(signal?: AbortSignal): Promise<CrewSummary[]> {
-  signal?.throwIfAborted();
-  const res = await api.get<{ founded: CrewDto[]; joined: CrewDto[] }>("/crews/my", {
-    ...AURORA,
-    signal,
-    retry: false,
-  });
-  signal?.throwIfAborted();
-  const list = [...res.founded, ...res.joined];
-  // A Crew can be both owned and joined; community subscriptions are not membership.
-  const seen = new Set<string>();
-  return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);
+export async function fetchMyCrews(): Promise<CrewSummary[]> {
+  try {
+    const res = await api.get<
+      { items?: CrewDto[]; founded?: CrewDto[]; joined?: CrewDto[] } | CrewDto[]
+    >("/crews/my", { ...AURORA });
+    const list = Array.isArray(res)
+      ? res
+      : (res.items ?? [...(res.founded ?? []), ...(res.joined ?? [])]);
+    // De-dupe (a crew can be both owned and joined).
+    const seen = new Set<string>();
+    return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);
+  } catch {
+    return [];
+  }
 }
 
 /** File a content report against a crew (auth'd; same reason set as IPs). */
@@ -185,4 +181,10 @@ export async function reportCrew(crewId: string, reason: IpReportReason): Promis
 /** Hide a crew for the signed-in viewer (auth'd; lists/detail filter it server-side). */
 export async function blockCrew(crewId: string): Promise<void> {
   await api.post(`/crews/${crewId}/blocks`, { ...AURORA });
+}
+
+/** Apply to a crew position (auth'd). Backend dedups one pending application
+ *  per position/user and notifies the crew owner; approval creates a member. */
+export async function applyToCrewPosition(crewId: string, positionId: string): Promise<void> {
+  await api.post(`/crews/${crewId}/positions/${positionId}/apply`, { ...AURORA, data: {} });
 }

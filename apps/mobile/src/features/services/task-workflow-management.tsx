@@ -1,4 +1,3 @@
-import { taskWorkflowLabel } from "./task-workflow-label";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -75,7 +74,7 @@ function Session(props: Props) {
           {visible.rows.map((row) => (
             <Button
               key={row.id}
-              label={`${taskWorkflowLabel(row, t)} · ${t(`taskWorkflowManagement.${row.archived ? "archived" : "active"}`)} · ${row.taskCount}`}
+              label={`${row.name} · ${t(`taskWorkflowManagement.${row.archived ? "archived" : "active"}`)} · ${row.taskCount}`}
               onPress={() => setSelection(row)}
             />
           ))}
@@ -214,7 +213,7 @@ function Form(
           {active.map((row) => (
             <Choice
               key={row.id}
-              label={taskWorkflowLabel(row, t)}
+              label={row.name}
               selected={after === row.id}
               disabled={locked}
               onPress={() => setAfter(row.id)}
@@ -255,7 +254,7 @@ function Form(
                       {candidates.map((row) => (
                         <Choice
                           key={row.id}
-                          label={taskWorkflowLabel(row, t)}
+                          label={row.name}
                           selected={replacement === row.id}
                           disabled={locked}
                           onPress={() => setReplacement(row.id)}

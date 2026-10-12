@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Pressable, RefreshControl, StyleSheet, TextInput, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 
 import { useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -24,8 +24,6 @@ export default function CreatorsScreen() {
   const theme = useTheme();
   const { topInset, contentPadding } = useTabScreenInsets();
   const { isAuthenticated, openLogin } = useAuthGate();
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const offsetRef = useRef(0);
@@ -51,15 +49,12 @@ export default function CreatorsScreen() {
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
-      const page = await getCreators(PAGE_SIZE, 0, query);
+      const page = await getCreators(PAGE_SIZE);
       if (seq !== sequenceRef.current) return;
       hasDataRef.current = true;
       setCreators(page.creators);
-      offsetRef.current = page.nextOffset ?? page.creators.length;
-      setHasMore(
-        (page.nextOffset !== undefined ? page.nextOffset > 0 : page.creators.length > 0) &&
-          offsetRef.current < page.total
-      );
+      offsetRef.current = page.creators.length;
+      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
       setRequiresLogin(page.requiresLogin);
     } catch (loadError) {
       if (seq === sequenceRef.current && !hasDataRef.current) {
@@ -71,7 +66,7 @@ export default function CreatorsScreen() {
         setLoading(false);
       }
     }
-  }, [t, query]);
+  }, [t]);
 
   useEffect(() => {
     // Synchronize the directory and its request indicators with the current browse scope.
@@ -86,7 +81,7 @@ export default function CreatorsScreen() {
 
   // Authed users keep loading by offset until `total` is reached. Guests stop
   // at the public cap and get the "Sign in to see more" button instead.
-  const canLoadMore = (isAuthenticated || !!query) && !requiresLogin && hasMore;
+  const canLoadMore = isAuthenticated && !requiresLogin && hasMore;
 
   const loadMore = useCallback(async () => {
     if (!canLoadMore || replacingRef.current || loadingMoreRef.current) return;
@@ -95,7 +90,7 @@ export default function CreatorsScreen() {
     loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
-      const page = await getCreators(PAGE_SIZE, offsetRef.current, query);
+      const page = await getCreators(PAGE_SIZE, offsetRef.current);
       if (seq !== sequenceRef.current) return;
       setCreators((current) => {
         const seen = new Set(current.map((creator) => creator.id));
@@ -108,9 +103,8 @@ export default function CreatorsScreen() {
           }),
         ];
       });
-      const previousOffset = offsetRef.current;
-      offsetRef.current = page.nextOffset ?? previousOffset + page.creators.length;
-      setHasMore(offsetRef.current > previousOffset && offsetRef.current < page.total);
+      offsetRef.current += page.creators.length;
+      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
       setRequiresLogin(page.requiresLogin);
     } catch {
       // Retain the loaded directory and position for the next pagination retry.
@@ -120,7 +114,7 @@ export default function CreatorsScreen() {
         setLoadingMore(false);
       }
     }
-  }, [canLoadMore, query]);
+  }, [canLoadMore]);
 
   const onRefresh = useCallback(async () => {
     const pending = load();
@@ -139,54 +133,11 @@ export default function CreatorsScreen() {
     paddingRight: contentPadding.paddingRight,
   };
 
-  const submitSearch = () => {
-    const next = search.trim();
-    if (next === query) {
-      void load();
-      return;
-    }
-    // Invalidate the old query before its next page can arrive.
-    sequenceRef.current += 1;
-    replacingRef.current = true;
-    hasDataRef.current = false;
-    setCreators([]);
-    setError(undefined);
-    setHasMore(false);
-    setRequiresLogin(false);
-    setQuery(next);
-  };
-  const header = (
-    <View style={{ gap: Spacing.three }}>
-      <ScreenHeader title={t("creators.title")} />
-      <Pressable accessibilityRole="button" onPress={() => router.push(toHref("/studios"))}>
-        <ThemedText>{t("studioDiscovery.title")}</ThemedText>
-      </Pressable>
-      <TextInput
-        accessibilityLabel={t("creators.search")}
-        placeholder={t("creators.search")}
-        placeholderTextColor={theme.textSecondary}
-        value={search}
-        onChangeText={setSearch}
-        onSubmitEditing={submitSearch}
-        returnKeyType="search"
-        autoCorrect={false}
-        style={{
-          color: theme.text,
-          backgroundColor: theme.backgroundElement,
-          borderRadius: 8,
-          padding: 12,
-        }}
-      />
-      <Pressable accessibilityRole="button" onPress={submitSearch}>
-        <ThemedText>{t("creators.searchAction")}</ThemedText>
-      </Pressable>
-    </View>
-  );
   if (loading) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
         <View style={[styles.stateContainer, headerPadding]}>
-          {header}
+          <ScreenHeader title={t("creators.title")} />
           <View style={styles.grid}>
             {[0, 1].map((rowIndex) => (
               <View key={rowIndex} style={styles.gridRow}>
@@ -211,7 +162,7 @@ export default function CreatorsScreen() {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
         <View style={[styles.stateContainer, headerPadding]}>
-          {header}
+          <ScreenHeader title={t("creators.title")} />
           <EmptyState
             title={t("creators.loadErrorTitle")}
             detail={error}
@@ -232,7 +183,7 @@ export default function CreatorsScreen() {
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[styles.listContent, contentPadding]}
-        ListHeaderComponent={header}
+        ListHeaderComponent={<ScreenHeader title={t("creators.title")} />}
         ListHeaderComponentStyle={styles.listHeader}
         ListEmptyComponent={
           <EmptyState

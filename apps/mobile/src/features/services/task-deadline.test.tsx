@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { TaskDeadline, TaskStateLabel, taskDeadlineState } from "./task-deadline";
+import { TaskDeadline, taskDeadlineState } from "./task-deadline";
 import en from "@/i18n/messages/en-US.json";
 import cn from "@/i18n/messages/zh-CN.json";
 import hk from "@/i18n/messages/zh-HK.json";
@@ -47,7 +47,7 @@ it("advances due-soon to overdue without a network request", () => {
   act(() => vi.advanceTimersByTime(60_000));
   expect(host.textContent).toContain("Overdue · 1 h");
 });
-it.each(["approved", "cancelled", "submitted"])("does not count down closed %s tasks", (status) => {
+it.each(["approved", "cancelled"])("does not count down closed %s tasks", (status) => {
   act(() => root.render(<TaskDeadline dueAt="2026-09-29T12:00:00Z" status={status} />));
   expect(host.textContent).toBe("");
   expect(vi.getTimerCount()).toBe(0);
@@ -77,38 +77,3 @@ it("honors warning windows and timezone offsets", () => {
     hours: 1,
   });
 });
-
-it("uses the official three-day default without changing explicit warning preferences", () => {
-  const due = new Date(now + 60 * 3_600_000).toISOString();
-  expect(taskDeadlineState(due, "open", now)?.state).toBe("soon");
-  expect(taskDeadlineState(due, "open", now, 48)?.state).toBe("upcoming");
-});
-it.each(["en-US", "zh-CN", "zh-HK"])(
-  "keeps review states and prioritizes live urgency in %s",
-  (locale) => {
-    h.locale = locale;
-    const m = { "en-US": en, "zh-CN": cn, "zh-HK": hk }[locale as "en-US"];
-    const dueAt = "2026-09-30T12:00:30Z";
-    act(() => root.render(<TaskStateLabel dueAt={dueAt} status="open" label="Custom workflow" />));
-    expect(host.textContent).toBe(m["crewDeadline.urgentLabel"]);
-    act(() => vi.advanceTimersByTime(60_000));
-    expect(host.textContent).toBe(m["crewDeadline.overdueLabel"]);
-    for (const status of ["submitted", "approved", "cancelled"]) {
-      act(() =>
-        root.render(<TaskStateLabel dueAt={dueAt} status={status} label="Review workflow" />)
-      );
-      expect(host.textContent).toBe("Review workflow");
-      expect(vi.getTimerCount()).toBe(0);
-    }
-    act(() =>
-      root.render(
-        <TaskStateLabel
-          dueAt="2026-10-01T12:00:00Z"
-          status="revision_requested"
-          label="Revision required"
-        />
-      )
-    );
-    expect(host.textContent).toBe("Revision required");
-  }
-);

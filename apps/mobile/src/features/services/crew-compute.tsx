@@ -17,13 +17,7 @@ import {
   type ComputeInput,
 } from "./crew-compute-api";
 import { formatFinanceMoney } from "./crew-finance-api";
-type Props = {
-  initialTaskId?: string;
-  crewId: string;
-  userId: string;
-  generation: number;
-  onClose: () => void;
-};
+type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function CrewCompute(props: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
@@ -106,54 +100,6 @@ function Panel(props: Props & { onSaved: () => void }) {
             )
           </ThemedText>
           <ThemedText>{t("crewComputeFinance.equivalent")}</ThemedText>
-          {page.projectBudget && (
-            <View style={{ gap: 8 }}>
-              <ThemedText>
-                {t("crewComputeFinance.projectBudgetSummary")
-                  .replace("{total}", page.projectBudget.totalPoints)
-                  .replace("{released}", page.projectBudget.releasedPoints)
-                  .replace("{rate}", String(page.projectBudget.pointsPerMinute))}
-              </ThemedText>
-              {page.projectBudget.closed && (
-                <ThemedText>{t("crewComputeFinance.projectBudgetClosed")}</ThemedText>
-              )}
-              {page.projectBudget.producerSettlement && (
-                <>
-                  <ThemedText>
-                    {t("crewComputeFinance.producerDeduction")
-                      .replace("{amount}", page.projectBudget.producerSettlement.deductionMinor)
-                      .replace("{currency}", page.projectBudget.producerSettlement.currency)}
-                  </ThemedText>
-                  <ThemedText>{page.projectBudget.producerSettlement.note}</ThemedText>
-                </>
-              )}
-            </View>
-          )}
-          <ThemedText>{t("crewComputeFinance.usageByTask")}</ThemedText>
-          {page.taskUsage
-            .filter((row) => !props.initialTaskId || row.taskId === props.initialTaskId)
-            .map((row) => (
-              <View key={`${row.taskId}:${row.userId}`} style={{ paddingVertical: 8, gap: 4 }}>
-                <ThemedText>
-                  {row.taskTitle} · {row.userId}
-                </ThemedText>
-                <ThemedText>
-                  {t("crewComputeFinance.approvedTotal")} · {row.approvedPoints}
-                </ThemedText>
-                <ThemedText>
-                  {t("mobileProduction.credited")} · {row.creditedPoints}
-                </ThemedText>
-                <ThemedText>
-                  {t("crewComputeFinance.pending")} · {row.pendingPoints}
-                </ThemedText>
-                <ThemedText>
-                  {t("crewComputeFinance.consumed")} · {row.consumedPoints}
-                </ThemedText>
-                <ThemedText>
-                  {t("crewComputeFinance.committed")} · {row.committedPoints}
-                </ThemedText>
-              </View>
-            ))}
           <RequestForm {...props} page={page} />
           {!page.items.length && <ThemedText>{t("crewComputeFinance.empty")}</ThemedText>}
           {page.items.map((row) => (
@@ -181,7 +127,6 @@ function Panel(props: Props & { onSaved: () => void }) {
                     : row.workloadUnit}
                 </ThemedText>
               )}
-              <ThemedText>{t(`mobileProduction.${row.kind}`)}</ThemedText>
               <ThemedText>{row.reason}</ThemedText>
               <ThemedText>{new Date(row.createdAt).toLocaleString()}</ThemedText>
               {row.decidedByAdminId ? (
@@ -217,7 +162,7 @@ function RequestForm(props: Props & { page: ComputePage; onSaved: () => void }) 
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
-  const [taskId, setTaskId] = useState(props.initialTaskId ?? ""),
+  const [taskId, setTaskId] = useState(""),
     [points, setPoints] = useState(""),
     [reason, setReason] = useState(""),
     [beneficiary, setBeneficiary] = useState(""),

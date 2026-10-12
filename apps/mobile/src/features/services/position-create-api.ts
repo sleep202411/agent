@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   ALL_CURRENCIES,
-  TASK_PAYMENT_TERMS,
   WORK_MODES,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
@@ -53,14 +52,13 @@ const salary = z
 export const newPosition = z
   .object({
     positionType: z.string().refine(isPresetPosition),
-    description: z.string().trim().min(1).max(10000),
+    description: z.string().trim().min(1).max(1000),
     targetCount: z.number().int().min(1).max(99),
     workMode: z.enum(WORK_MODES),
     location: z.string().trim().min(1).max(128).nullable(),
     employmentType: z.enum(EMPLOYMENT_TYPES),
     experienceLevel: z.enum(EXPERIENCE_LEVELS),
     requiredSkills: z.array(z.string().trim().min(1).max(64)).max(20),
-    paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
     salary,
     durationMonths: z.number().int().min(1).max(60).nullable(),
     revenueSharePercent: z.number().min(0.5).max(50).multipleOf(0.5).nullable(),
@@ -90,7 +88,6 @@ export const positionReceipt = z.object({
   employmentType: z.enum(EMPLOYMENT_TYPES),
   experienceLevel: z.enum(EXPERIENCE_LEVELS),
   requiredSkills: z.array(z.string()),
-  paymentTerms: z.enum(TASK_PAYMENT_TERMS).nullable().optional(),
   salary: z.object({
     period: z.enum(SALARY_PERIODS).nullable(),
     currency: z.enum(ALL_CURRENCIES).nullable(),

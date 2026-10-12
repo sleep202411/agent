@@ -4,31 +4,22 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { useComputeWalletBalance } from "./use-compute-wallet-balance";
 
-const harness = vi.hoisted(() => ({
-  active: true,
-  status: "authenticated",
-  generation: 1,
-  get: vi.fn(),
-}));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => harness.active }));
+const harness = vi.hoisted(() => ({ status: "authenticated", generation: 1, get: vi.fn() }));
 vi.mock("@/auth", () => ({ useAuth: () => harness }));
 vi.mock("@/lib/api-client", () => ({ api: { get: (...args: unknown[]) => harness.get(...args) } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let latest: string | null;
-let state: ReturnType<typeof useComputeWalletBalance>;
 function Harness() {
   const balance = useComputeWalletBalance();
   useLayoutEffect(() => {
-    state = balance;
-    latest = balance.balance;
+    latest = balance;
   });
   return null;
 }
 const render = () => act(() => root.render(<Harness />));
 const balance = (value: string) => ({ accounts: [{ status: "active", availableBalance: value }] });
 beforeEach(() => {
-  harness.active = true;
   harness.status = "authenticated";
   harness.generation = 1;
   harness.get.mockReset();
@@ -83,39 +74,4 @@ it("does not read for guests and aborts an authenticated read when the view leav
   const { signal } = harness.get.mock.calls[0][1] as { signal: AbortSignal };
   act(() => root.render(null));
   expect(signal.aborted).toBe(true);
-});
-
-it("exposes failures and recovers with explicit retry", async () => {
-  harness.get.mockRejectedValueOnce(Error("Wallet offline")).mockResolvedValueOnce(balance("17"));
-  await act(async () => render());
-  expect(state.error).toBe("Wallet offline");
-  expect(latest).toBeNull();
-  await act(async () => state.refresh());
-  expect(state.error).toBeNull();
-  expect(latest).toBe("17");
-});
-it("refreshes after returning to the screen and cancels hidden reads", async () => {
-  harness.get.mockResolvedValueOnce(balance("10")).mockResolvedValueOnce(balance("22"));
-  await act(async () => render());
-  harness.active = false;
-  await act(async () => render());
-  expect(harness.get.mock.calls[0][1].signal.aborted).toBe(true);
-  harness.active = true;
-  await act(async () => render());
-  expect(latest).toBe("22");
-});
-it("does not allow an older retry to overwrite the latest balance", async () => {
-  let old!: (value: unknown) => void;
-  harness.get
-    .mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          old = resolve;
-        })
-    )
-    .mockResolvedValueOnce(balance("3"));
-  render();
-  await act(async () => state.refresh());
-  await act(async () => old(balance("500")));
-  expect(latest).toBe("3");
 });

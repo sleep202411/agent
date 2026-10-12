@@ -1,11 +1,8 @@
-import { VideoChannelPicker } from "@/features/ip-community/video-channel-picker";
-import { Stack, useLocalSearchParams, router } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ThemedText } from "@/components/themed-text";
-import { toHref } from "@/lib/navigation";
 import { IpGridCard } from "@/components/ip-grid";
 import { ThemedView } from "@/components/themed-view";
 import { ChipRail, EmptyState, ListFooter, ScreenHeader, Skeleton } from "@/components/ui";
@@ -58,8 +55,6 @@ export default function AllIpsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
-  const [refreshError, setRefreshError] = useState<string>();
-  const [pageError, setPageError] = useState<string>();
   const hasDataRef = useRef(false);
   // Guards onEndReached from firing a second page-2 fetch before the first
   // resolves (FlatList can call onEndReached repeatedly during a fling).
@@ -74,16 +69,7 @@ export default function AllIpsScreen() {
     replacingRef.current = true;
     loadingMoreRef.current = null;
     setLoadingMore(false);
-    setPageError(undefined);
-    setRefreshError(undefined);
     setRefreshing(false);
-    if (loadedFilterRef.current !== filterKey) {
-      // A new filter must never display results belonging to the previous one.
-      hasDataRef.current = false;
-      loadedFilterRef.current = null;
-      setIps([]);
-      setNextCursor(null);
-    }
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
@@ -102,11 +88,8 @@ export default function AllIpsScreen() {
       setTypeTags(page.typeTags);
       setRegions((current) => mergeRegions(current, page.regions));
     } catch (loadError) {
-      if (seq === sequenceRef.current) {
-        const message =
-          (loadError instanceof Error && loadError.message) || t("ips.loadErrorFallback");
-        if (hasDataRef.current) setRefreshError(message);
-        else setError(message);
+      if (seq === sequenceRef.current && !hasDataRef.current) {
+        setError(loadError instanceof Error ? loadError.message : t("ips.loadErrorFallback"));
       }
     } finally {
       if (seq === sequenceRef.current) {
@@ -150,60 +133,51 @@ export default function AllIpsScreen() {
     : 0;
   const hasActiveFilters = Boolean(selectedGenreCode || selectedRegionCode || selectedTypeCode);
 
-  const loadMore = useCallback(
-    async (retry = false) => {
-      if (
-        !nextCursor ||
-        (pageError && !retry) ||
-        replacingRef.current ||
-        loadingMoreRef.current ||
-        loadedFilterRef.current !== filterKey
-      )
-        return;
-      const seq = sequenceRef.current;
-      const operation = {};
-      loadingMoreRef.current = operation;
-      setLoadingMore(true);
-      setPageError(undefined);
-      try {
-        const page = await getIpCatalogPage({
-          cursor: nextCursor,
-          genreCode: selectedGenreCode,
-          limit: PAGE_SIZE,
-          regionCode: selectedRegionCode,
-          typeCode: selectedTypeCode,
-        });
-        if (seq !== sequenceRef.current) return;
-        setIps((current) => {
-          const seen = new Set(current.map((ip) => ip.id));
-          return [
-            ...current,
-            ...page.items.filter((ip) => {
-              if (seen.has(ip.id)) return false;
-              seen.add(ip.id);
-              return true;
-            }),
-          ];
-        });
-        setNextCursor(page.nextCursor);
-        setGenres(page.genres);
-        setTypeTags(page.typeTags);
-        setRegions((current) => mergeRegions(current, page.regions));
-      } catch (loadError) {
-        if (seq === sequenceRef.current) {
-          setPageError(
-            (loadError instanceof Error && loadError.message) || t("ips.loadErrorFallback")
-          );
-        }
-      } finally {
-        if (loadingMoreRef.current === operation) {
-          loadingMoreRef.current = null;
-          setLoadingMore(false);
-        }
+  const loadMore = useCallback(async () => {
+    if (
+      !nextCursor ||
+      replacingRef.current ||
+      loadingMoreRef.current ||
+      loadedFilterRef.current !== filterKey
+    )
+      return;
+    const seq = sequenceRef.current;
+    const operation = {};
+    loadingMoreRef.current = operation;
+    setLoadingMore(true);
+    try {
+      const page = await getIpCatalogPage({
+        cursor: nextCursor,
+        genreCode: selectedGenreCode,
+        limit: PAGE_SIZE,
+        regionCode: selectedRegionCode,
+        typeCode: selectedTypeCode,
+      });
+      if (seq !== sequenceRef.current) return;
+      setIps((current) => {
+        const seen = new Set(current.map((ip) => ip.id));
+        return [
+          ...current,
+          ...page.items.filter((ip) => {
+            if (seen.has(ip.id)) return false;
+            seen.add(ip.id);
+            return true;
+          }),
+        ];
+      });
+      setNextCursor(page.nextCursor);
+      setGenres(page.genres);
+      setTypeTags(page.typeTags);
+      setRegions((current) => mergeRegions(current, page.regions));
+    } catch {
+      // Preserve the loaded catalog and cursor for the next pagination retry.
+    } finally {
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
       }
-    },
-    [nextCursor, selectedGenreCode, selectedRegionCode, selectedTypeCode, filterKey, pageError, t]
-  );
+    }
+  }, [nextCursor, selectedGenreCode, selectedRegionCode, selectedTypeCode, filterKey]);
 
   const onRefresh = useCallback(async () => {
     const pending = loadFirstPage();
@@ -219,21 +193,6 @@ export default function AllIpsScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("ips.title")} />
-      <VideoChannelPicker />
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.push(toHref("/content-gps"))}
-        style={{ minHeight: 44, paddingVertical: 12 }}
-      >
-        <ThemedText>{t("contentGpsDiscovery.title")}</ThemedText>
-      </Pressable>
-      {refreshError ? (
-        <EmptyState
-          title={t("ips.loadErrorTitle")}
-          detail={refreshError}
-          action={{ label: t("common.retry"), onPress: () => void loadFirstPage() }}
-        />
-      ) : null}
       <View style={styles.filterStack}>
         {genreChips.length > 1 ? (
           <ChipRail
@@ -298,7 +257,6 @@ export default function AllIpsScreen() {
           <EmptyState
             title={t("ips.loadErrorTitle")}
             detail={error}
-            action={{ label: t("common.retry"), onPress: () => void loadFirstPage() }}
             symbol={{ ios: "exclamationmark.triangle", android: "warning", web: "warning" }}
           />
         </View>
@@ -328,17 +286,7 @@ export default function AllIpsScreen() {
               detail={hasActiveFilters ? t("home.emptyFilteredDetail") : t("ips.emptyDetail")}
             />
           }
-          ListFooterComponent={
-            pageError ? (
-              <EmptyState
-                title={t("ips.loadErrorTitle")}
-                detail={pageError}
-                action={{ label: t("common.retry"), onPress: () => void loadMore(true) }}
-              />
-            ) : (
-              <ListFooter loading={loadingMore} />
-            )
-          }
+          ListFooterComponent={<ListFooter loading={loadingMore} />}
           onEndReached={() => void loadMore()}
           onEndReachedThreshold={0.5}
           refreshControl={

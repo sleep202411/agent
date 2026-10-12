@@ -4,8 +4,6 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { EpisodeOrganization } from "./episode-organization";
 const h = vi.hoisted(() => ({
   generation: 1,
-  active: true,
-  focused: true,
   rows: vi.fn(),
   access: vi.fn(),
   move: vi.fn(),
@@ -15,18 +13,15 @@ const h = vi.hoisted(() => ({
 vi.mock("./episode-create-api", () => ({ fetchEpisodeCreateAccess: h.access }));
 vi.mock("./episode-management-api", () => ({ fetchCrewEpisodes: h.rows }));
 vi.mock("./episode-organization-api", () => ({ moveEpisode: h.move, removeEpisode: h.remove }));
-vi.mock("expo-router", () => ({ useIsFocused: () => h.focused }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white" }) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
-  View: ({ children, style }: { children: ReactNode; style?: { display?: "none" | "flex" } }) => (
-    <div style={{ display: style?.display }}>{children}</div>
-  ),
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -80,8 +75,6 @@ const render = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
-  h.active = true;
-  h.focused = true;
   h.rows.mockResolvedValue(rows);
   h.access.mockResolvedValue(true);
   host = document.createElement("div");
@@ -147,18 +140,4 @@ it("blocks writes after an account change", async () => {
   expect(h.move).not.toHaveBeenCalled();
   await render();
   expect(host.textContent).toBe("");
-});
-
-it("preserves an uncertain removal through background without enabling another write", async () => {
-  h.remove.mockRejectedValue(new Error("Response lost"));
-  await render();
-  await click("episodeOrganization.remove");
-  await click("episodeOrganization.confirm");
-  h.active = false;
-  await render();
-  h.active = true;
-  await render();
-  expect(host.textContent).toContain("Response lost");
-  expect(buttons("episodeOrganization.confirm")[0]!.disabled).toBe(true);
-  expect(h.remove).toHaveBeenCalledTimes(1);
 });

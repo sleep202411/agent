@@ -1,5 +1,3 @@
-import { fetchTaskDetail, type TaskDetail } from "./task-detail-api";
-import { fetchTaskCommentAccess } from "./task-comment-api";
 import { TaskViewLifecycle } from "./task-view-lifecycle";
 import { TaskViewEditor } from "./task-view-editor";
 import { useEffect, useRef, useState } from "react";
@@ -18,7 +16,7 @@ type Props = {
   generation: number;
   viewId?: string;
   onViewChange: (id: string) => void;
-  onSelect: (task: TaskOption, action?: "edit" | "invite" | "recruit") => void;
+  onSelect: (task: TaskOption) => void;
   onClose: () => void;
 };
 export function TaskViewBrowser(props: Props) {
@@ -144,37 +142,6 @@ function Rows(props: Props & { view: TaskView }) {
     [search, setSearch] = useState(""),
     [priority, setPriority] = useState<TaskViewQuery["priority"]>(),
     [selecting, setSelecting] = useState(false);
-  const [menu, setMenu] = useState<string>();
-  const [canInvite, setCanInvite] = useState(false);
-  const [canManage, setCanManage] = useState(false);
-  const [menuTask, setMenuTask] = useState<TaskDetail>();
-  const [menuError, setMenuError] = useState<string>();
-  useEffect(() => {
-    if (!menu) return;
-    const c = new AbortController();
-    void fetchTaskDetail(props.crewId, menu, c.signal)
-      .then((task) => {
-        if (!c.signal.aborted && props.generation === getAuthGeneration()) setMenuTask(task);
-      })
-      .catch((e) => {
-        if (!c.signal.aborted) setMenuError(e instanceof Error ? e.message : String(e));
-      });
-    return () => c.abort();
-  }, [menu, props.crewId, props.generation]);
-  useEffect(() => {
-    const c = new AbortController();
-    void fetchTaskCommentAccess(props.crewId, props.userId, c.signal)
-      .then((v) => {
-        if (!c.signal.aborted && props.generation === getAuthGeneration()) {
-          setCanManage(v.canManage);
-          setCanInvite(v.canInvite);
-        }
-      })
-      .catch(() => {
-        if (!c.signal.aborted) setCanManage(false);
-      });
-    return () => c.abort();
-  }, [props.crewId, props.userId, props.generation]);
   const selected = useRef(false);
   const tasks = useTaskViewTasks(String(props.generation), props.crewId, {
     viewId: props.view.id,
@@ -222,62 +189,19 @@ function Rows(props: Props & { view: TaskView }) {
         data={tasks.items}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View>
-            <Pressable
-              accessibilityRole="button"
-              disabled={selected.current}
-              onPress={() => {
-                if (!selected.current && props.generation === getAuthGeneration()) {
-                  selected.current = true;
-                  props.onSelect(item);
-                }
-              }}
-              style={{ padding: 12 }}
-            >
-              <ThemedText>{taskLabel(item)}</ThemedText>
-            </Pressable>
-            {canManage && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("taskMenu.title")}
-                style={{ padding: 12 }}
-                onPress={() => {
-                  setMenuTask(undefined);
-                  setMenuError(undefined);
-                  setMenu(menu === item.id ? undefined : item.id);
-                }}
-              >
-                <ThemedText>•••</ThemedText>
-              </Pressable>
-            )}
-            {menu === item.id && menuError && (
-              <ThemedText accessibilityRole="alert">{menuError}</ThemedText>
-            )}
-            {menu === item.id && !menuTask && !menuError && <ActivityIndicator />}
-            {canManage &&
-              menu === item.id &&
-              menuTask?.id === item.id &&
-              (["edit", "invite", "recruit"] as const)
-                .filter(
-                  (action) =>
-                    action === "edit" ||
-                    (!menuTask.assignees.length &&
-                      !["approved", "cancelled", "submitted"].includes(menuTask.status) &&
-                      (action !== "invite" || (canInvite && menuTask.isRecruiting === false)))
-                )
-                .map((action) => (
-                  <Pressable
-                    key={action}
-                    accessibilityRole="button"
-                    style={{ padding: 12, minHeight: 44 }}
-                    onPress={() => {
-                      if (props.generation === getAuthGeneration()) props.onSelect(item, action);
-                    }}
-                  >
-                    <ThemedText>{t(`taskMenu.${action}`)}</ThemedText>
-                  </Pressable>
-                ))}
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={selected.current}
+            onPress={() => {
+              if (!selected.current && props.generation === getAuthGeneration()) {
+                selected.current = true;
+                props.onSelect(item);
+              }
+            }}
+            style={{ padding: 12 }}
+          >
+            <ThemedText>{taskLabel(item)}</ThemedText>
+          </Pressable>
         )}
         ListEmptyComponent={
           !tasks.loading && !tasks.error ? <ThemedText>{t("thread.noTasks")}</ThemedText> : null

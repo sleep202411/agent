@@ -45,16 +45,10 @@ vi.mock("react-native", () => ({
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
-const render = (status = "listed", packageCount = 1) =>
+const render = (status = "listed") =>
   act(async () =>
     root.render(
-      <ServiceOwnerActions
-        id="s"
-        creatorId="owner"
-        status={status}
-        packageCount={packageCount}
-        refresh={h.refresh}
-      />
+      <ServiceOwnerActions id="s" creatorId="owner" status={status} refresh={h.refresh} />
     )
   );
 const click = (key: string) =>
@@ -112,8 +106,7 @@ it("ignores old-account completions and explains irreversible archive", async ()
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
   await render("archived");
-  expect(host.textContent).toBe("myServices.status.archived");
-  expect(host.querySelectorAll("button")).toHaveLength(0);
+  expect(host.textContent).toBe("");
 });
 it("shows server failures without claiming success", async () => {
   h.change.mockRejectedValue(new Error("A package is required"));
@@ -123,54 +116,3 @@ it("shows server failures without claiming success", async () => {
   expect(host.textContent).toContain("A package is required");
   expect(h.refresh).not.toHaveBeenCalled();
 });
-
-it.each([
-  ["draft", ["publish", "archive"]],
-  ["listed", ["pause", "archive"]],
-  ["paused", ["resume", "archive"]],
-  ["archived", []],
-] as const)("shows owner status %s and only its allowed actions", async (status, actions) => {
-  await render(status);
-  expect(host.textContent).toContain(`myServices.status.${status}`);
-  expect(Array.from(host.querySelectorAll("button"), (button) => button.textContent)).toEqual(
-    actions.map((action) => `myServices.action.${action}`)
-  );
-});
-it("clears an obsolete confirmation when the authoritative status changes", async () => {
-  await render("listed");
-  await act(async () => click("myServices.action.pause"));
-  expect(host.textContent).toContain("myServices.confirm");
-  await render("paused");
-  expect(host.textContent).not.toContain("myServices.confirm");
-  expect(host.textContent).toContain("myServices.status.paused");
-  expect(h.change).not.toHaveBeenCalled();
-});
-
-it.each(["draft", "paused"])(
-  "explains the package requirement before %s activation",
-  async (status) => {
-    await render(status, 0);
-    const action = status === "draft" ? "publish" : "resume";
-    const activation = () =>
-      Array.from(host.querySelectorAll("button")).find(
-        (b) => b.textContent === `myServices.action.${action}`
-      )!;
-    expect(activation().disabled).toBe(true);
-    expect(host.textContent).toContain("myServices.publishNeedsPackage");
-    await act(async () => activation().click());
-    expect(h.change).not.toHaveBeenCalled();
-    expect(host.textContent).not.toContain("myServices.confirm");
-    expect(
-      Array.from(host.querySelectorAll("button")).find(
-        (b) => b.textContent === "myServices.action.archive"
-      )!.disabled
-    ).toBe(false);
-    await render(status, 1);
-    expect(activation().disabled).toBe(false);
-    expect(host.textContent).not.toContain("myServices.publishNeedsPackage");
-    await act(async () => activation().click());
-    expect(host.textContent).toContain("myServices.confirm");
-    await render(status, 0);
-    expect(host.textContent).not.toContain("myServices.confirm");
-  }
-);

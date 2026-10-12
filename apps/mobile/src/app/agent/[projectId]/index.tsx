@@ -17,7 +17,6 @@ import {
 } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppStoryEntry } from "@/features/agent/components/app-story-entry";
 import { useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -66,10 +65,6 @@ const COMPOSER_BASE_HEIGHT = 128;
 
 /** Agent OS conversation — HTTP start + event polling. */
 export default function AgentChatScreen() {
-  return <AppStoryEntry legacy={<AgentOsChatScreen />} />;
-}
-
-function AgentOsChatScreen() {
   const t = useTranslations();
   const theme = useTheme();
   const router = useRouter();
@@ -86,28 +81,13 @@ function AgentOsChatScreen() {
   const prefillDraft = params.prefill?.trim() ?? "";
   const projectId = params.projectId?.trim() ?? "";
   const chapterFromQuery = params.chapterId?.trim() ?? "";
-  const {
-    chapterId: chapterFromContext,
-    capabilities,
-    loading: chapterLoading,
-    error: chapterError,
-    refresh: refreshChapter,
-  } = useStoryChapterContext();
+  const { chapterId: chapterFromContext } = useStoryChapterContext();
   const chapterId = isAgentOsId(chapterFromQuery) ? chapterFromQuery : chapterFromContext;
   const workbenchMode = params.mode?.trim() || AGENT_OS_STORY_WORKBENCH_MODE;
   const projectOk = isAgentOsId(projectId);
-  const chapterReady =
-    projectOk &&
-    !chapterLoading &&
-    !chapterError &&
-    isAgentOsId(chapterFromContext) &&
-    (!isAgentOsId(chapterFromQuery) || chapterFromQuery === chapterFromContext);
-  const readyProjectId = chapterReady ? projectId : "";
-  const canWrite = chapterReady && capabilities.includes("story.edit");
 
   const live = useAgentOsSession({
-    projectId: readyProjectId,
-    canWrite,
+    projectId: projectOk ? projectId : "",
     workbenchMode,
     chapterId: isAgentOsId(chapterId) ? chapterId : undefined,
   });
@@ -119,8 +99,7 @@ function AgentOsChatScreen() {
     projectId,
     chapterId,
     workbenchMode,
-    configured: !!chapterReady,
-    canWrite,
+    configured: projectOk,
     query: initialQuery,
     prefill: prefillDraft,
     send: live.send,
@@ -137,9 +116,9 @@ function AgentOsChatScreen() {
     live.session.status === "waiting_for_external";
   const restoring = live.session.status === "restoring";
   const showStop = isExecuting && !waitingUser;
-  const authoringRun = useStoryAuthoringRun(readyProjectId, chapterId, isExecuting || waitingUser);
+  const authoringRun = useStoryAuthoringRun(projectId, chapterId, isExecuting || waitingUser);
   const storyApprovalRunId = pendingApproval ? storyAgentRunIdFromApproval(pendingApproval) : null;
-  const approvalRun = useStoryAgentRunById(readyProjectId, storyApprovalRunId);
+  const approvalRun = useStoryAgentRunById(projectId, storyApprovalRunId);
   const proposalRun =
     (storyApprovalRunId && approvalRun?.id === storyApprovalRunId ? approvalRun : null) ??
     (storyApprovalRunId && authoringRun?.id === storyApprovalRunId ? authoringRun : null);
@@ -167,14 +146,8 @@ function AgentOsChatScreen() {
     (showStop || waitingUser) &&
     (authoringActivityKey != null || live.activity != null) &&
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
-  const composerLocked = !canWrite || isExecuting || restoring || waitingUser;
-  const composerTurn = useAgentComposerTurn(
-    projectOk ? projectId : "",
-    workbenchMode,
-    composerLocked,
-    chapterId,
-    chapterReady
-  );
+  const composerLocked = isExecuting || restoring || waitingUser;
+  const composerTurn = useAgentComposerTurn(projectId, workbenchMode, composerLocked, chapterId);
 
   const {
     scrollRef,
@@ -239,30 +212,6 @@ function AgentOsChatScreen() {
     );
   }
 
-  if (!chapterReady) {
-    return (
-      <ThemedView style={styles.screen}>
-        <Stack.Screen options={{ headerTitle: "" }} />
-        <View style={[styles.missing, { paddingTop: topPad }]}>
-          {chapterError ? (
-            <>
-              <ThemedText accessibilityRole="alert">{chapterError}</ThemedText>
-              <Pressable
-                accessibilityRole="button"
-                onPress={refreshChapter}
-                style={{ padding: 12 }}
-              >
-                <ThemedText>{t("common.retry")}</ThemedText>
-              </Pressable>
-            </>
-          ) : (
-            <ActivityIndicator color={theme.brand} />
-          )}
-        </View>
-      </ThemedView>
-    );
-  }
-
   return (
     <ThemedView style={styles.screen}>
       <Stack.Screen
@@ -274,7 +223,7 @@ function AgentOsChatScreen() {
               conversationId={live.session.conversationId}
               status={live.session.status}
               error={live.session.error}
-              busy={!canWrite || isExecuting || restoring}
+              busy={isExecuting || restoring}
               onNewChat={live.newChat}
             />
           ),
@@ -397,10 +346,8 @@ function AgentOsChatScreen() {
           >
             {pendingInput ? (
               <AgentUserInputCard
-                draftScope={{ projectId, chapterId, workbenchMode }}
                 request={pendingInput}
                 busy={live.sending}
-                disabled={!canWrite}
                 onSubmit={(answers) => {
                   scrollToLatest(true);
                   void live.answerUserInput(answers);
@@ -413,7 +360,6 @@ function AgentOsChatScreen() {
                 )}
                 assetCount={proposalRun ? storyProposalAssetCount(proposalRun.proposal) : 0}
                 busy={live.sending}
-                disabled={!canWrite}
                 onResolve={(decision, responseText) => {
                   scrollToLatest(true);
                   void live.approve(decision, responseText);
@@ -423,7 +369,6 @@ function AgentOsChatScreen() {
               <AgentApprovalCard
                 approval={pendingApproval}
                 busy={live.sending}
-                disabled={!canWrite}
                 onResolve={(decision) => {
                   scrollToLatest(true);
                   void live.approve(decision);
@@ -435,9 +380,9 @@ function AgentOsChatScreen() {
               value={draft}
               onChangeText={setDraft}
               onSubmit={onSubmit}
-              placeholder={t(canWrite ? "agent.threadPlaceholder" : "storyRepair.readOnly")}
+              placeholder={t("agent.threadPlaceholder")}
               submitAccessibilityLabel={t("agent.send")}
-              busy={canWrite && showStop}
+              busy={showStop}
               onStop={() => void live.cancel()}
               stopAccessibilityLabel={t("agent.stop")}
               sendDisabled={composerLocked || composerTurn.uploading}

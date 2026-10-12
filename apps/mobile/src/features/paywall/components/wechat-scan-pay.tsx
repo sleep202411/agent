@@ -21,31 +21,22 @@ const QR_SIZE = 224;
  * In-app WeChat Native scan surface. Mirrors the web dialog: render the
  * `weixin://` code as a QR and poll the order (the server 查单-reconciles).
  */
-type WechatScanPayProps = {
-  orderId: string;
-  codeUrl: string;
-  amountLabel?: string;
-  onClose: () => void;
-  onPaid: () => void;
-};
-
-export function WechatScanPay(props: WechatScanPayProps) {
-  return <WechatScanPayOrder key={props.orderId} {...props} />;
-}
-
-function WechatScanPayOrder({
+export function WechatScanPay({
   orderId,
   codeUrl,
   amountLabel,
   onClose,
   onPaid,
-}: WechatScanPayProps) {
+}: {
+  orderId: string;
+  codeUrl: string;
+  amountLabel?: string;
+  onClose: () => void;
+  onPaid: () => void;
+}) {
   const t = useTranslations();
   const [status, setStatus] = useState<ScanStatus>("pending");
-  const [error, setError] = useState<string>();
-  const [retry, setRetry] = useState(0);
   const onPaidRef = useRef(onPaid);
-  const statusError = t("paywall.wechat.statusError");
   useEffect(() => {
     onPaidRef.current = onPaid;
   }, [onPaid]);
@@ -79,9 +70,8 @@ function WechatScanPayOrder({
           setStatus("expired");
           return;
         }
-      } catch (cause) {
-        if (alive) setError(cause instanceof Error && cause.message ? cause.message : statusError);
-        return;
+      } catch {
+        // Transient — keep polling.
       }
       if (alive) timer = setTimeout(() => void tick(), POLL_MS);
     };
@@ -90,7 +80,7 @@ function WechatScanPayOrder({
       alive = false;
       clearTimeout(timer);
     };
-  }, [orderId, status, retry, statusError]);
+  }, [orderId, status]);
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
@@ -117,23 +107,6 @@ function WechatScanPayOrder({
           </View>
 
           <View style={styles.body}>
-            {error && (
-              <View style={styles.result}>
-                <ThemedText accessibilityRole="alert" style={styles.center}>
-                  {error}
-                </ThemedText>
-                <Pressable
-                  accessibilityRole="button"
-                  style={styles.closeButton}
-                  onPress={() => {
-                    setError(undefined);
-                    setRetry((value) => value + 1);
-                  }}
-                >
-                  <ThemedText type="smallBold">{t("inbox.retry")}</ThemedText>
-                </Pressable>
-              </View>
-            )}
             {status === "pending" ? (
               <>
                 <View style={styles.qrFrame}>

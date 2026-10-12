@@ -5,15 +5,11 @@ import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime"
 import { useExperiencePreload } from "./use-experience-preload";
 
 const cache = vi.hoisted(() => ({
-  adaptive: vi.fn((): string | null => null),
   ensureMediaCached: vi.fn(),
   cachedMediaBytes: vi.fn(() => 0),
   clearExperienceMediaPins: vi.fn(),
   pinExperienceMediaSources: vi.fn(),
   maintainExperienceMediaCache: vi.fn(() => Promise.resolve()),
-}));
-vi.mock("../lib/experience-playback-delivery", () => ({
-  adaptivePlaybackEndpoint: cache.adaptive,
 }));
 vi.mock("../lib/experience-media-cache", () => ({ ...cache, EXPERIENCE_MEDIA_BUDGET_BYTES: 1000 }));
 vi.mock("../lib/experience-media", () => ({
@@ -39,7 +35,6 @@ async function render(entry: string) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
-  cache.adaptive.mockReturnValue(null);
   cache.ensureMediaCached.mockReset();
   root = createRoot(document.createElement("div"));
 });
@@ -109,11 +104,4 @@ it("keeps the two-attempt limit and streaming fallback for persistent failures",
   expect(cache.ensureMediaCached).toHaveBeenCalledTimes(2);
   expect(latest.done).toBe(true);
   expect(vi.getTimerCount()).toBe(0);
-});
-
-it("opens the adaptive chapter without downloading progressive clips", async () => {
-  cache.adaptive.mockReturnValue("https://api.test/playback");
-  await render("adaptive");
-  expect(latest.done).toBe(true);
-  expect(cache.ensureMediaCached).not.toHaveBeenCalled();
 });

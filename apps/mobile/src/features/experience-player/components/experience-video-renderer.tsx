@@ -1,11 +1,9 @@
 import { ExperienceSubtitleLayer } from "./experience-subtitles";
-import { PlaybackElapsedClock } from "../lib/playback-elapsed-clock";
-import { usePausableTimeout } from "../hooks/use-pausable-timeout";
 import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { useVideoPlayer, VideoView } from "./experience-video-platform";
-import type { VideoContentFit, VideoSource } from "expo-video";
+import { useVideoPlayer, VideoView } from "expo-video";
+import type { VideoContentFit } from "expo-video";
 
 import {
   ExperienceCoreVideoRendererConfigSchema,
@@ -15,27 +13,24 @@ import {
 
 import { useGatedScreenActive } from "@/hooks/use-app-active";
 
-import { resolveExperienceVideoSource } from "../lib/experience-playback-delivery";
+import { ensureMediaCached, peekCachedMediaUri } from "../lib/experience-media-cache";
 import {
   clipPlaybackEndSeconds,
   clipPlaybackReachedEnd,
   clipPlaybackStalled,
   invalidatePlayableMediaUrl,
   isStillVideoVariant,
+  resolveClipPlaybackUri,
+  resolvePlayableMediaUrl,
   resolveVideoMedia,
   sequenceTimelineOffsetMs,
   stillClipDurationMs,
   EXPERIENCE_PLAY_ORIENTATION,
 } from "../lib/experience-media";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
-import {
-  clampWatchedSeek,
-  mediaPlaybackSignature,
-  type ExperienceMediaCheckpoint,
-} from "../lib/experience-playback-checkpoint";
 
 type CoreVideoTerminalMode =
-  | { kind: "held"; frameTimeSeconds: number }
+  | { kind: "held" }
   | { kind: "loop"; assetId: string; clipStartTime?: number }
   | null;
 
@@ -43,85 +38,38 @@ type CoreVideoPlaybackState = {
   rendererInstanceId: string;
   sequenceIndex: number;
   terminalMode: CoreVideoTerminalMode;
-  checkpoint?: ExperienceMediaCheckpoint;
 };
 
-function initialCoreVideoPlaybackState(
-  rendererInstanceId: string,
-  checkpoint?: ExperienceMediaCheckpoint
-): CoreVideoPlaybackState {
-  const saved = checkpoint?.rendererInstanceId === rendererInstanceId ? checkpoint : undefined;
-  return {
-    rendererInstanceId,
-    sequenceIndex: saved?.sequenceIndex ?? 0,
-    terminalMode:
-      saved?.terminalMode?.kind === "held"
-        ? { kind: "held", frameTimeSeconds: saved.positionMs / 1000 }
-        : (saved?.terminalMode ?? null),
-    checkpoint: saved,
-  };
+function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPlaybackState {
+  return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
 }
 
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
 /** How often a still reports elapsed time, matching a video's timeupdate rate. */
 
 /**
- * Imperative expo-video control lives outside the component so React Compiler
- * does not treat mutations of the hook-returned player as render-time
- * immutability violations. VideoPlayer is a mutable native host by design.
+ * Open the clip now. A file already on disk is used as-is. Otherwise the player
+ * receives the signed media URL immediately, the same bytes the web player
+ * plays, and the download continues behind it.
  */
-async function loadAndPlayClip(
-  player: {
-    loop: boolean;
-    playbackRate: number;
-    currentTime: number;
-    replaceAsync: (uri: VideoSource) => Promise<void>;
-    play: () => void;
-  },
-  options: {
-    sourceUri: string;
-    isLooping: boolean;
-    clipStartTime?: number;
-    shouldAutoplay: boolean;
-    /**
-     * Read *after* the loads resolve, never snapshotted: the app can background
-     * or the screen can be left during the URL resolve / `replaceAsync` round
-     * trip, and starting playback then would run a clip nobody can see.
-     */
-    isPresenting: () => boolean;
-    getPlaybackRate: () => number;
-    onDeferredAutoplay: () => void;
-    onPlayableResolved: (playableUri: string) => void;
-    onReady: () => void;
-    signal: AbortSignal;
-  }
-): Promise<void> {
-  player.loop = options.isLooping;
-  const playable = await resolveExperienceVideoSource(options.sourceUri, options.signal);
-  if (options.signal.aborted) return;
-  options.onPlayableResolved(playable.uri);
-  await player.replaceAsync(playable);
-  if (options.signal.aborted) return;
-  player.playbackRate = options.getPlaybackRate();
-  if (options.clipStartTime !== undefined) {
-    player.currentTime = options.clipStartTime;
-  }
-  options.onReady();
-  if (!options.shouldAutoplay) return;
-  if (!options.isPresenting()) {
-    options.onDeferredAutoplay();
-    return;
-  }
-  player.play();
+function openClip(sourceUri: string, signal: AbortSignal): Promise<string | null> {
+  return resolveClipPlaybackUri(sourceUri, signal, {
+    cached: peekCachedMediaUri,
+    sign: resolvePlayableMediaUrl,
+    warm: (uri) => {
+      void ensureMediaCached(uri).catch(() => undefined);
+    },
+  });
 }
 
-/** Native player properties are mutable host state, not React render state. */
-function applyPlaybackRate(player: { playbackRate: number }, rate: number) {
-  player.playbackRate = rate;
-}
-
-function restoreHeldFrame(player: { currentTime: number }, seconds: number) {
-  player.currentTime = seconds;
+function footageUri(
+  manifest: ExperienceRuntimeManifest,
+  assetId: string | undefined
+): string | null {
+  if (!assetId) return null;
+  const resolved = resolveVideoMedia(manifest.assets, assetId, EXPERIENCE_PLAY_ORIENTATION);
+  if (!resolved || isStillVideoVariant(resolved.variant.mediaType)) return null;
+  return resolved.variant.uri;
 }
 
 function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
@@ -134,47 +82,231 @@ function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
 
 export type ExperienceMediaPlaybackHandle = {
   readonly playbackIdentity: string;
-  play(options?: { userGesture?: boolean }): Promise<void>;
+  play(): Promise<void>;
   pause(): void;
-  seek(seconds: number): boolean | void;
+  seek(seconds: number): void;
 };
 
-type ExperienceVideoRendererProps = {
-  manifest: ExperienceRuntimeManifest;
-  renderer: ExperienceRendererInstance;
-  copy: ExperiencePlayerCopy;
-  onTimelineTimeMs: (timeMs: number) => void;
-  onCompleted: () => void;
-  onRuntimeError: (message: string) => void;
-  onPlaybackRefused?: () => void;
-  onPlaybackInterrupted?: () => void;
+/**
+ * One native player per clip. Replacing the source on a single AVPlayer wedges
+ * after a few cuts — the next file is accepted and then the playhead never moves.
+ * The previous player stays up until this file is ready, then unmounts.
+ */
+function ExperienceClipPlayer({
+  fileUri,
+  active,
+  isLooping,
+  clipStartTime,
+  shouldAutoplay,
+  durationMs,
+  presenting,
+  contentFit,
+  playbackIdentity,
+  instanceId,
+  onTime,
+  onEnded,
+  onError,
+  onPlaybackHandle,
+}: {
+  fileUri: string;
+  active: boolean;
+  isLooping: boolean;
+  clipStartTime?: number;
+  shouldAutoplay: boolean;
+  durationMs?: number;
+  presenting: boolean;
+  contentFit: VideoContentFit;
+  playbackIdentity: string;
+  instanceId: string;
+  onTime: (currentTimeSeconds: number) => void;
+  onEnded: () => void;
+  onError: (message: string) => void;
   onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
-  checkpoint?: ExperienceMediaCheckpoint;
-  playbackRate?: number;
-  onPlaybackProgress?: (checkpoint: ExperienceMediaCheckpoint) => void;
-};
+}) {
+  const player = useVideoPlayer(fileUri, (instance) => {
+    instance.timeUpdateEventInterval = 0.25;
+    instance.loop = isLooping;
+    instance.staysActiveInBackground = false;
+    if (clipStartTime !== undefined) instance.currentTime = clipStartTime;
+  });
+  const heldRef = useRef(!shouldAutoplay || !presenting || !active);
+  const stallRef = useRef<{ time: number; since: number; moved: boolean } | null>(null);
+  const endedRef = useRef(false);
+  const presentingRef = useRef(presenting);
+  presentingRef.current = presenting;
 
-export function ExperienceVideoRenderer(props: ExperienceVideoRendererProps) {
-  return <ExperienceVideoSequence key={props.renderer.instanceId} {...props} />;
-}
+  const finish = useEffectEvent(() => {
+    if (!active || endedRef.current || isLooping || !shouldAutoplay) return;
+    endedRef.current = true;
+    onEnded();
+  });
 
-function ExperienceVideoSequence(props: ExperienceVideoRendererProps) {
-  const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
-    initialCoreVideoPlaybackState(props.renderer.instanceId, props.checkpoint)
-  );
-  const mode = playbackState.terminalMode;
-  const clipKey = `${props.renderer.instanceId}:${playbackState.sequenceIndex}:${mode?.kind === "loop" ? `loop:${mode.assetId}:${mode.clipStartTime ?? 0}` : "sequence"}`;
+  const watch = useEffectEvent(() => {
+    if (!active || isLooping || !shouldAutoplay) {
+      stallRef.current = null;
+      return;
+    }
+    let currentTime = 0;
+    let playerDuration = 0;
+    try {
+      currentTime = player.currentTime;
+      playerDuration = player.duration;
+    } catch {
+      return;
+    }
+    const endSeconds = clipPlaybackEndSeconds(durationMs, playerDuration);
+    if (clipPlaybackReachedEnd(currentTime, endSeconds)) {
+      finish();
+      return;
+    }
+    if (heldRef.current) {
+      stallRef.current = null;
+      return;
+    }
+    const now = Date.now();
+    const stall = stallRef.current;
+    const advanced = stall !== null && Math.abs(currentTime - stall.time) > 0.05;
+    const jumpedBackward = stall !== null && currentTime + 0.05 < stall.time;
+    if (!stall || advanced || jumpedBackward) {
+      stallRef.current = {
+        time: currentTime,
+        since: now,
+        moved: jumpedBackward ? currentTime > 0.05 : (stall?.moved ?? false) || currentTime > 0.05,
+      };
+      return;
+    }
+    if (
+      clipPlaybackStalled({
+        currentTimeSeconds: currentTime,
+        anchoredTimeSeconds: stall.time,
+        anchoredForMs: now - stall.since,
+        endSeconds,
+        moved: stall.moved,
+        held: false,
+      })
+    ) {
+      finish();
+    }
+  });
+
+  const reportTime = useEffectEvent((currentTime: number) => {
+    if (!active) return;
+    onTime(currentTime);
+    watch();
+  });
+  const reportNativeEnd = useEffectEvent(() => {
+    if (active) finish();
+  });
+  const reportError = useEffectEvent((message: string) => {
+    if (active) onError(message);
+  });
+
+  useLayoutEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch {
+        // Player already released.
+      }
+    };
+  }, [player]);
+
+  useEffect(() => {
+    if (!active || !presenting || !shouldAutoplay) {
+      heldRef.current = true;
+      stallRef.current = null;
+      if (player.playing) {
+        try {
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      }
+      return;
+    }
+    heldRef.current = false;
+    try {
+      player.play();
+    } catch {
+      // Player already released.
+    }
+  }, [active, player, presenting, shouldAutoplay]);
+
+  useEffect(() => {
+    if (!active || !presenting || !shouldAutoplay || isLooping) return;
+    const timer = setInterval(() => watch(), 250);
+    return () => clearInterval(timer);
+  }, [active, isLooping, player, presenting, shouldAutoplay]);
+
+  useEffect(() => {
+    const endSubscription = player.addListener("playToEnd", () => reportNativeEnd());
+    const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
+      reportTime(currentTime);
+    });
+    const statusSubscription = player.addListener("statusChange", ({ status, error }) => {
+      if (status === "error") reportError(error?.message?.trim() || "Playback failed");
+    });
+    return () => {
+      endSubscription.remove();
+      timeSubscription.remove();
+      statusSubscription.remove();
+    };
+  }, [player]);
+
+  useEffect(() => {
+    if (!onPlaybackHandle) return;
+    if (!active || !shouldAutoplay) {
+      onPlaybackHandle(instanceId, null);
+      return () => onPlaybackHandle(instanceId, null);
+    }
+    const handle: ExperienceMediaPlaybackHandle = {
+      playbackIdentity,
+      play: async () => {
+        if (!presentingRef.current) {
+          heldRef.current = true;
+          return;
+        }
+        heldRef.current = false;
+        player.play();
+      },
+      pause: () => {
+        heldRef.current = true;
+        stallRef.current = null;
+        try {
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      },
+      seek: (seconds) => {
+        const next = Math.max(0, seconds);
+        player.currentTime = next;
+        onTime(next);
+      },
+    };
+    onPlaybackHandle(instanceId, handle);
+    return () => onPlaybackHandle(instanceId, null);
+  }, [active, instanceId, onPlaybackHandle, onTime, playbackIdentity, player, shouldAutoplay]);
+
   return (
-    <ExperienceVideoClip
-      key={clipKey}
-      {...props}
-      playbackState={playbackState}
-      setPlaybackState={setPlaybackState}
-    />
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        contentFit={contentFit}
+        nativeControls={false}
+        // iOS 16+ Live Text / Visual Look Up. Default is on, so a ticket close-up
+        // (or any readable frame) draws scan + gear chrome and can pause the clip.
+        // H5 <video> has none of that — keep the cinematic stage equally clean.
+        allowsVideoFrameAnalysis={false}
+        showsTimecodes={false}
+        fullscreenOptions={{ enable: false }}
+      />
+    </View>
   );
 }
 
-function ExperienceVideoClip({
+export function ExperienceVideoRenderer({
   manifest,
   renderer,
   copy,
@@ -182,41 +314,39 @@ function ExperienceVideoClip({
   onCompleted,
   onRuntimeError,
   onPlaybackHandle,
-  onPlaybackRefused,
-  onPlaybackInterrupted,
-  onPlaybackProgress,
-  playbackRate = 1,
-  playbackState,
-  setPlaybackState,
-}: ExperienceVideoRendererProps & {
-  playbackState: CoreVideoPlaybackState;
-  setPlaybackState: (state: CoreVideoPlaybackState) => void;
+}: {
+  manifest: ExperienceRuntimeManifest;
+  renderer: ExperienceRendererInstance;
+  copy: ExperiencePlayerCopy;
+  onTimelineTimeMs: (timeMs: number) => void;
+  onCompleted: () => void;
+  onRuntimeError: (message: string) => void;
+  onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
-  if (!Number.isFinite(playbackRate) || playbackRate <= 0)
-    throw new RangeError("Playback rate must be finite and positive.");
-  const rateRef = useRef(playbackRate);
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
-  const { sequenceIndex, terminalMode } = playbackState;
-  const completedRendererIdRef = useRef<string | null>(
-    playbackState.checkpoint?.completed ? renderer.instanceId : null
+  const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
+    initialCoreVideoPlaybackState(renderer.instanceId)
   );
+  // Reset sequence when the renderer instance changes (same component, new scene).
+  const [playbackRendererId, setPlaybackRendererId] = useState(renderer.instanceId);
+  if (renderer.instanceId !== playbackRendererId) {
+    setPlaybackRendererId(renderer.instanceId);
+    setPlaybackState(initialCoreVideoPlaybackState(renderer.instanceId));
+  }
+  const { sequenceIndex, terminalMode } = playbackState;
+  const completedRendererIdRef = useRef<string | null>(null);
   const missingAssetRef = useRef<string | null>(null);
-  /** Resume playback when the screen is presentable again if we paused for it. */
-  const resumeWhenPresentingRef = useRef(false);
-  const expectedPauseRef = useRef(false);
-  /** What the player was actually handed: local file or signed remote URL. */
-  const playableUriRef = useRef<string | null>(null);
-  const retriedIdentityRef = useRef<string | null>(null);
-  /** Where a re-signed reload should pick the shot back up. */
-  const resumeAtSecondsRef = useRef<number | null>(null);
-  const [reloadEpoch, setReloadEpoch] = useState(0);
-  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
+  /** Playable address per clip identity. The current shot and the next one. */
+  const [playable, setPlayable] = useState<Record<string, string>>({});
+  const playableRef = useRef(playable);
+  playableRef.current = playable;
+  const [resolveGeneration, setResolveGeneration] = useState(0);
+  const retriedClipRef = useRef<Set<string>>(new Set());
 
   const [subtitlePosition, setSubtitlePosition] = useState<{
     identity: string;
     positionMs: number;
   } | null>(null);
-  const readyIdentity = useRef<string | null>(null);
   const clip = config.sequence[sequenceIndex];
   const assetId = terminalMode?.kind === "loop" ? terminalMode.assetId : clip?.assetId;
   const media = assetId
@@ -238,70 +368,30 @@ function ExperienceVideoClip({
   const isStill = isStillVideoVariant(media?.variant.mediaType);
   const isLooping = terminalMode?.kind === "loop";
   const clipStartTime = terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined;
-  const shouldAutoplay =
-    config.autoplay && terminalMode?.kind !== "held" && !playbackState.checkpoint?.completed;
+  const shouldAutoplay = config.autoplay && terminalMode?.kind !== "held";
   const durationMs = media?.variant.durationMs;
   const sequenceLength = config.sequence.length;
-
-  const player = useVideoPlayer(null, (instance) => {
-    instance.timeUpdateEventInterval = 0.25;
-    instance.loop = false;
-    instance.staysActiveInBackground = false;
-  });
-
-  useLayoutEffect(() => {
-    rateRef.current = playbackRate;
-    applyPlaybackRate(player, playbackRate);
-  }, [player, playbackRate]);
+  const nextClip = !isStill && !isLooping ? config.sequence[sequenceIndex + 1] : undefined;
+  const nextIdentity = nextClip
+    ? `${renderer.instanceId}:${sequenceIndex + 1}:sequence:${nextClip.assetId}`
+    : null;
+  const nextSource = nextClip ? footageUri(manifest, nextClip.assetId) : null;
+  const nextDurationMs = nextClip
+    ? resolveVideoMedia(manifest.assets, nextClip.assetId, EXPERIENCE_PLAY_ORIENTATION)?.variant
+        .durationMs
+    : undefined;
+  const openingKey = [
+    sourceUri && !isStill ? `${playbackIdentity}\0${sourceUri}` : "",
+    nextIdentity && nextSource ? `${nextIdentity}\0${nextSource}` : "",
+    String(resolveGeneration),
+  ].join("\n");
 
   const presenting = useGatedScreenActive();
-  const presentingRef = useRef(presenting);
-  const [watchClock] = useState(() => new PlaybackElapsedClock());
-  const observedAtRef = useRef(0);
-  useLayoutEffect(() => {
-    presentingRef.current = presenting;
-    watchClock.update(presenting, playbackRate);
-  }, [presenting, playbackRate, watchClock]);
-  const stillSeekRef = useRef<((positionMs: number) => boolean) | null>(null);
-  const registerStillSeek = useCallback((seek: ((positionMs: number) => boolean) | null) => {
-    stillSeekRef.current = seek;
-  }, []);
-  const progressRef = useRef<ExperienceMediaCheckpoint | null>(null);
-  const observedPositionRef = useRef(0);
-  const progressListenerRef = useRef(onPlaybackProgress);
-  useLayoutEffect(() => {
-    progressListenerRef.current = onPlaybackProgress;
-  }, [onPlaybackProgress]);
-
-  /**
-   * Silence the player before it is released. `useVideoPlayer` releases on
-   * unmount, but iOS only tears the `AVPlayer` down once its last native
-   * reference drops — until then the clip keeps feeding the audio session, so
-   * leaving the page is audible for as long as that takes. The layout-effect
-   * cleanup is deliberate: it runs ahead of the passive cleanup that releases
-   * the player, which is the only window where `pause()` is still valid. Clearing
-   * the presenting ref here closes the same window from the other side: a clip
-   * load that resolves between this cleanup and the passive one would otherwise
-   * still see "presenting" and call `play()` on a player nobody is watching.
-   */
-  useLayoutEffect(() => {
-    return () => {
-      presentingRef.current = false;
-      try {
-        expectedPauseRef.current = true;
-        player.pause();
-      } catch {
-        // Player already released — nothing left to silence.
-      }
-    };
-  }, [player]);
 
   useEffect(() => {
-    completedRendererIdRef.current = playbackState.checkpoint?.completed
-      ? renderer.instanceId
-      : null;
+    completedRendererIdRef.current = null;
     missingAssetRef.current = null;
-  }, [renderer.instanceId, playbackState.checkpoint]);
+  }, [renderer.instanceId]);
 
   useEffect(() => {
     const missingAssetKey = `${renderer.instanceId}:${assetId}`;
@@ -313,12 +403,6 @@ function ExperienceVideoClip({
   const completeRenderer = useCallback(() => {
     if (completedRendererIdRef.current === renderer.instanceId) return;
     completedRendererIdRef.current = renderer.instanceId;
-    if (progressRef.current) {
-      progressRef.current.completed = true;
-      if (progressRef.current.terminalMode?.kind === "held")
-        progressRef.current.remainingHoldMs = 0;
-      progressListenerRef.current?.(structuredClone(progressRef.current));
-    }
     onCompleted();
   }, [onCompleted, renderer.instanceId]);
 
@@ -345,7 +429,7 @@ function ExperienceVideoClip({
       setPlaybackState({
         rendererInstanceId: renderer.instanceId,
         sequenceIndex,
-        terminalMode: { kind: "held", frameTimeSeconds: player.currentTime },
+        terminalMode: { kind: "held" },
       });
       return;
     }
@@ -371,55 +455,11 @@ function ExperienceVideoClip({
     advanceSequence,
     clip,
     durationMs,
-    player,
     renderer.instanceId,
     sequenceIndex,
     terminalMode?.kind,
     setPlaybackState,
   ]);
-
-  const continuePlayback = useEffectEvent(() => {
-    resumeWhenPresentingRef.current = false;
-    if (terminalMode?.kind === "held" || completedRendererIdRef.current === renderer.instanceId)
-      return;
-    const seconds =
-      Number.isFinite(player.duration) && player.duration > 0
-        ? player.duration
-        : durationMs
-          ? durationMs / 1000
-          : 0;
-    if (!isLooping && seconds > 0 && player.currentTime >= seconds - 0.08) {
-      handleEnd();
-      return;
-    }
-    applyPlaybackRate(player, playbackRate);
-    player.play();
-  });
-
-  useEffect(() => {
-    if (isStill) {
-      if (player.playing) {
-        try {
-          expectedPauseRef.current = true;
-          player.pause();
-        } catch {
-          // Player already released.
-        }
-      }
-      return;
-    }
-    if (!presenting || !shouldAutoplay) {
-      if (player.playing) {
-        resumeWhenPresentingRef.current = true;
-        expectedPauseRef.current = true;
-        player.pause();
-      }
-      return;
-    }
-    if (!resumeWhenPresentingRef.current) return;
-    resumeWhenPresentingRef.current = false;
-    continuePlayback();
-  }, [isStill, player, presenting, shouldAutoplay]);
 
   // Video hold duration lives in an effect so a remount (React Strict Mode,
   // scene identity churn) reschedules it. Stills own the same beat on their
@@ -429,379 +469,109 @@ function ExperienceVideoClip({
     !isStill && terminalMode?.kind === "held" && clip?.endBehavior.behavior === "hold-last-frame"
       ? clip.endBehavior.durationMs
       : undefined;
-  const remainingHold = usePausableTimeout({
-    identity: `${renderer.instanceId}:${sequenceIndex}`,
-    enabled: videoHoldMs !== undefined && !playbackState.checkpoint?.completed,
-    running:
-      presenting &&
-      (playbackState.checkpoint?.terminalMode?.kind !== "held" ||
-        loadedIdentity === playbackIdentity),
-    durationMs: videoHoldMs ?? 0,
-    playbackRate,
-    initialRemainingMs: playbackState.checkpoint?.remainingHoldMs ?? undefined,
-    onTimeout: advanceSequence,
-  });
-  const emitProgress = useCallback(() => {
-    const value = progressRef.current;
-    if (!value) return;
-    if (value.terminalMode?.kind === "held" && !value.isStill)
-      value.remainingHoldMs = remainingHold();
-    progressListenerRef.current?.(structuredClone(value));
-  }, [remainingHold]);
-  const initializeProgress = useEffectEvent(() => {
-    if (!assetId || !media) {
-      progressRef.current = null;
-      return;
-    }
-    const saved = playbackState.checkpoint;
-    const old = progressRef.current;
-    const previous =
-      old?.rendererInstanceId === renderer.instanceId &&
-      old.sequenceIndex === sequenceIndex &&
-      old.assetId === assetId
-        ? old
-        : saved;
-    const duration = isStill && clip ? stillClipDurationMs(clip) : (durationMs ?? 0);
-    const position = previous?.assetId === assetId ? previous.positionMs : 0;
-    progressRef.current = {
-      rendererInstanceId: renderer.instanceId,
-      sequenceIndex,
-      assetId,
-      mediaSignature: mediaPlaybackSignature(manifest, assetId),
-      positionMs: position,
-      watchedUntilMs: previous?.assetId === assetId ? previous.watchedUntilMs : 0,
-      durationMs: Math.max(duration, position),
-      isStill,
-      terminalMode: terminalMode?.kind === "held" ? { kind: "held" } : terminalMode,
-      remainingHoldMs:
-        terminalMode?.kind === "held" ? (saved?.remainingHoldMs ?? videoHoldMs ?? null) : null,
-      completed: saved?.completed ?? false,
-    };
-    observedPositionRef.current = position;
-    observedAtRef.current = watchClock.now();
-  });
+  const advanceAfterHold = useEffectEvent(() => advanceSequence());
   useEffect(() => {
-    initializeProgress();
-  }, [playbackIdentity, terminalMode?.kind]);
-  const observeProgress = useCallback(
-    (positionMs: number, natural = true) => {
-      const value = progressRef.current;
-      if (!value || !Number.isFinite(positionMs)) return;
-      const duration =
-        !isStill && Number.isFinite(player.duration) && player.duration > 0
-          ? player.duration * 1000
-          : value.durationMs;
-      value.durationMs = Math.max(0, duration);
-      const next = Math.max(0, Math.min(positionMs, value.durationMs));
-      const previous = observedPositionRef.current;
-      const now = watchClock.now();
-      if (
-        natural &&
-        presentingRef.current &&
-        previous <= value.watchedUntilMs + 1 &&
-        next >= previous &&
-        next - previous <= Math.max(0, now - observedAtRef.current) + 250
-      )
-        value.watchedUntilMs = Math.max(value.watchedUntilMs, next);
-      value.positionMs = next;
-      observedPositionRef.current = next;
-      observedAtRef.current = now;
-      emitProgress();
-    },
-    [emitProgress, isStill, player, watchClock]
-  );
+    if (videoHoldMs === undefined) return;
+    const timer = setTimeout(() => advanceAfterHold(), videoHoldMs);
+    return () => clearTimeout(timer);
+  }, [sequenceIndex, videoHoldMs]);
 
-  useEffect(() => {
-    emitProgress();
-    if (!presenting || videoHoldMs === undefined) return;
-    const timer = setInterval(() => emitProgress(), 250);
-    return () => clearInterval(timer);
-  }, [presenting, videoHoldMs, playbackIdentity, terminalMode?.kind, emitProgress]);
-
-  const stallRef = useRef<{ time: number; since: number; moved: boolean } | null>(null);
-  const watchClip = useEffectEvent(() => {
-    if (isStill || isLooping || !presentingRef.current || !shouldAutoplay || !player.playing) {
-      stallRef.current = null;
-      return;
-    }
-    const currentTime = player.currentTime;
-    const endSeconds = clipPlaybackEndSeconds(durationMs, player.duration);
-    if (clipPlaybackReachedEnd(currentTime, endSeconds)) {
-      handleEnd();
-      return;
-    }
-    const now = Date.now();
-    const stall = stallRef.current;
-    if (!stall || Math.abs(currentTime - stall.time) > 0.05) {
-      stallRef.current = { time: currentTime, since: now, moved: currentTime > 0.05 };
-      return;
-    }
-    if (
-      clipPlaybackStalled({
-        currentTimeSeconds: currentTime,
-        anchoredTimeSeconds: stall.time,
-        anchoredForMs: now - stall.since,
-        endSeconds,
-        moved: stall.moved,
-        held: false,
-      })
-    )
-      handleEnd();
-  });
-  useEffect(() => {
-    if (!presenting || !shouldAutoplay || isStill || isLooping) return;
-    const timer = setInterval(() => watchClip(), 250);
-    return () => clearInterval(timer);
-  }, [presenting, shouldAutoplay, isStill, isLooping]);
-  const reportTimeline = useEffectEvent((currentTime: number) => {
-    if (isStill || readyIdentity.current !== playbackIdentity) return;
+  const reportTime = useEffectEvent((currentTime: number) => {
     setSubtitlePosition({
       identity: playbackIdentity,
       positionMs: Math.round(currentTime * 1_000),
     });
-    observeProgress(currentTime * 1000);
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
-    if (terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
-    if (clipPlaybackReachedEnd(currentTime, clipPlaybackEndSeconds(durationMs, player.duration)))
-      handleEnd();
   });
 
-  /**
-   * A streamed clip plays through a signed URL that can die between resolve and
-   * the player's next range request, which surfaces as a generic playback error.
-   * Re-sign and reload once before blaming the film — locally cached clips have
-   * no signature to refresh, so those fail straight through.
-   */
-  const reportPlaybackError = useEffectEvent((message: string) => {
-    const streamedRemotely =
-      playableUriRef.current !== null && !playableUriRef.current.startsWith("file://");
-    if (streamedRemotely && retriedIdentityRef.current !== playbackIdentity && sourceUri) {
-      retriedIdentityRef.current = playbackIdentity;
-      resumeAtSecondsRef.current = player.currentTime;
-      invalidatePlayableMediaUrl(sourceUri);
-      setReloadEpoch((value) => value + 1);
-      return;
-    }
-    onRuntimeError(message);
-  });
-
-  usePausableTimeout({
-    identity: renderer.instanceId,
-    enabled: sequenceLength === 0,
-    running: presenting,
-    durationMs: EMPTY_SEQUENCE_HOLD_MS,
-    playbackRate,
-    onTimeout: completeRenderer,
-  });
-
-  useEffect(() => {
-    if (terminalMode?.kind === "held" && playbackState.checkpoint?.terminalMode?.kind !== "held")
-      return;
-    if (!sourceUri || isStill) {
-      if (isStill && player.playing) {
-        try {
-          expectedPauseRef.current = true;
-          player.pause();
-        } catch {
-          // Player already released.
-        }
-      }
-      return;
-    }
-    expectedPauseRef.current = true;
-    const abort = new AbortController();
-    resumeWhenPresentingRef.current = false;
-    playableUriRef.current = null;
-    readyIdentity.current = null;
-    const resumeAtSeconds = resumeAtSecondsRef.current;
-    resumeAtSecondsRef.current = null;
-    void loadAndPlayClip(player, {
-      sourceUri,
-      isLooping,
-      clipStartTime:
-        resumeAtSeconds ??
-        (playbackState.checkpoint ? playbackState.checkpoint.positionMs / 1000 : clipStartTime),
-      shouldAutoplay,
-      isPresenting: () => presentingRef.current,
-      getPlaybackRate: () => rateRef.current,
-      onDeferredAutoplay: () => {
-        resumeWhenPresentingRef.current = true;
-      },
-      onPlayableResolved: (playableUri) => {
-        playableUriRef.current = playableUri;
-      },
-      onReady: () => {
-        readyIdentity.current = playbackIdentity;
-        setSubtitlePosition({
-          identity: playbackIdentity,
-          positionMs: Math.round(player.currentTime * 1000),
+  const reportClipError = useEffectEvent(
+    (identity: string, source: string | null, message: string, visible: boolean) => {
+      if (source && !retriedClipRef.current.has(identity)) {
+        retriedClipRef.current.add(identity);
+        invalidatePlayableMediaUrl(source);
+        setPlayable((current) => {
+          if (!current[identity]) return current;
+          const next = { ...current };
+          delete next[identity];
+          return next;
         });
-      },
-      signal: abort.signal,
-    })
-      .then(() => {
-        if (!abort.signal.aborted) setLoadedIdentity(playbackIdentity);
-      })
-      .catch((error: unknown) => {
-        if (abort.signal.aborted) return;
-        reportPlaybackError(
-          error instanceof Error && error.message.trim()
-            ? error.message
-            : copy.mediaError(assetId ?? "unknown")
-        );
+        setResolveGeneration((value) => value + 1);
+        return;
+      }
+      if (visible) onRuntimeError(message.trim() || copy.mediaError(assetId ?? "unknown"));
+    }
+  );
+
+  const completeEmptySequence = useEffectEvent(() => completeRenderer());
+
+  // Empty sequence: hold, then complete — kept in an effect so completion can
+  // go through useEffectEvent (not callable during render).
+  useEffect(() => {
+    if (sequenceLength !== 0) return;
+    const timer = setTimeout(() => completeEmptySequence(), EMPTY_SEQUENCE_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [renderer.instanceId, sequenceLength]);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    const jobs = openingKey
+      .split("\n")
+      .filter((row) => row.includes("\0"))
+      .map((row) => {
+        const splitAt = row.indexOf("\0");
+        return { key: row.slice(0, splitAt), source: row.slice(splitAt + 1) };
       });
-    return () => {
-      abort.abort();
-    };
-  }, [
-    assetId,
-    clipStartTime,
-    copy,
-    isLooping,
-    isStill,
-    playbackIdentity,
-    player,
-    reloadEpoch,
-    shouldAutoplay,
-    sourceUri,
-    terminalMode?.kind,
-    playbackState.checkpoint,
-  ]);
-
-  useEffect(() => {
-    if (!onPlaybackHandle) return;
-    if (!config.autoplay || (!isStill && terminalMode?.kind === "held")) {
-      onPlaybackHandle(renderer.instanceId, null);
-      return () => onPlaybackHandle(renderer.instanceId, null);
+    for (const job of jobs) {
+      if (playableRef.current[job.key]) continue;
+      void openClip(job.source, abort.signal)
+        .then((uri) => {
+          if (!uri || abort.signal.aborted) return;
+          setPlayable((current) => (current[job.key] ? current : { ...current, [job.key]: uri }));
+        })
+        .catch((error: unknown) => {
+          if (abort.signal.aborted) return;
+          if (error instanceof Error && error.name === "AbortError") return;
+          reportClipError(
+            job.key,
+            job.source,
+            error instanceof Error ? error.message : "Playback failed",
+            job.key === playbackIdentity
+          );
+        });
     }
-    const handle: ExperienceMediaPlaybackHandle = {
-      playbackIdentity,
-      play: async (options) => {
-        if (isStill) return;
-        if (!presentingRef.current && !options?.userGesture) {
-          resumeWhenPresentingRef.current = true;
-          return;
-        }
-        continuePlayback();
-      },
-      pause: () => {
-        if (isStill) return;
-        try {
-          expectedPauseRef.current = true;
-          player.pause();
-          observeProgress(player.currentTime * 1000);
-        } catch {
-          // Player already released.
-        }
-      },
-      seek: (seconds) => {
-        const progress = progressRef.current;
-        const positionMs = progress
-          ? clampWatchedSeek(seconds * 1000, progress.durationMs, progress.watchedUntilMs)
-          : 0;
-        if (isStill) {
-          if (!stillSeekRef.current?.(positionMs)) return false;
-        } else {
-          player.currentTime = positionMs / 1000;
-        }
-        setSubtitlePosition({ identity: playbackIdentity, positionMs });
-        observeProgress(positionMs, false);
-        return true;
-      },
-    };
-    onPlaybackHandle(renderer.instanceId, handle);
-    return () => onPlaybackHandle(renderer.instanceId, null);
-  }, [
-    config.autoplay,
-    isStill,
-    onPlaybackHandle,
-    observeProgress,
-    playbackIdentity,
-    player,
-    renderer.instanceId,
-    terminalMode?.kind,
-  ]);
-
-  const handlePlaybackRefused = useEffectEvent(() => {
-    resumeWhenPresentingRef.current = true;
-    onPlaybackRefused?.();
-  });
-  const handlePlaybackInterruption = useEffectEvent(() => {
-    if (
-      !presentingRef.current ||
-      isStill ||
-      !shouldAutoplay ||
-      player.playing ||
-      player.status !== "readyToPlay"
-    )
-      return;
-    // A native pause may arrive before playToEnd. Leave normal ending/loop
-    // transitions to the existing completion path, including its iOS fallback.
-    const duration = player.duration || (durationMs ? durationMs / 1000 : 0);
-    if (duration > 0 && player.currentTime >= duration - 0.08) return;
-    resumeWhenPresentingRef.current = true;
-    onPlaybackInterrupted?.();
-  });
-  const handleNativePlay = useEffectEvent(() => {
-    expectedPauseRef.current = false;
-    // OS media controls can issue Play without React changing presentation.
-    // Re-read the current clip state so held frames/stills cannot restart.
-    if (!presentingRef.current || isStill || !shouldAutoplay) {
-      expectedPauseRef.current = true;
-      player.pause();
-      if (terminalMode?.kind === "held") restoreHeldFrame(player, terminalMode.frameTimeSeconds);
-    }
-  });
-  const handleNativeEnd = useEffectEvent(() => handleEnd());
-  useEffect(() => {
-    let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
-    const playingSubscription = player.addListener(
-      "playingChange",
-      ({ isPlaying, oldIsPlaying }) => {
-        clearTimeout(interruptionTimer);
-        if (isPlaying) {
-          handleNativePlay();
-          return;
-        }
-        if (expectedPauseRef.current) {
-          expectedPauseRef.current = false;
-          return;
-        }
-        if (oldIsPlaying !== true) return;
-        // Allow an accompanying error/end event to settle before classifying a
-        // system interruption; never turn a decoding failure into a Resume loop.
-        interruptionTimer = setTimeout(() => handlePlaybackInterruption(), 0);
-      }
-    );
-    const endSubscription = player.addListener("playToEnd", () => handleNativeEnd());
-    const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
-      reportTimeline(currentTime);
-    });
-    const statusSubscription = player.addListener("statusChange", ({ status, error }) => {
-      if (status === "error") {
-        // Browser policy rejection is recoverable through the existing Resume action.
-        // Keep decoding/network failures on the normal error and signed-URL recovery path.
-        if (error && "name" in error && error.name === "NotAllowedError" && onPlaybackRefused) {
-          handlePlaybackRefused();
-          return;
-        }
-        reportPlaybackError(error?.message?.trim() || copy.mediaError(assetId ?? "unknown"));
-      }
-    });
-    return () => {
-      clearTimeout(interruptionTimer);
-      playingSubscription.remove();
-      endSubscription.remove();
-      timeSubscription.remove();
-      statusSubscription.remove();
-    };
-  }, [assetId, copy, onPlaybackRefused, player]);
+    return () => abort.abort();
+  }, [openingKey]);
 
   if (sequenceLength === 0) {
     return <EmptyVideoSequencePlaceholder label={copy.emptySequence} />;
   }
 
   if (!clip || !assetId || !media || !sourceUri) return null;
+
+  const layers = [
+    playable[playbackIdentity]
+      ? {
+          identity: playbackIdentity,
+          uri: playable[playbackIdentity],
+          source: sourceUri,
+          active: true,
+          durationMs,
+          isLooping,
+          clipStartTime,
+        }
+      : null,
+    nextIdentity && playable[nextIdentity] && nextIdentity !== playbackIdentity
+      ? {
+          identity: nextIdentity,
+          uri: playable[nextIdentity],
+          source: nextSource,
+          active: false,
+          durationMs: nextDurationMs,
+          isLooping: false,
+          clipStartTime: undefined,
+        }
+      : null,
+  ].filter((layer): layer is NonNullable<typeof layer> => layer !== null);
 
   const visual = isStill ? (
     <ExperienceStillSegment
@@ -811,34 +581,43 @@ function ExperienceVideoClip({
       timelineOffsetMs={timelineOffsetMs}
       playbackIdentity={playbackIdentity}
       presenting={presenting}
-      playbackRate={playbackRate}
-      onSeekHandle={registerStillSeek}
-      initialPositionMs={playbackState.checkpoint?.positionMs}
-      initiallyCompleted={playbackState.checkpoint?.completed}
       onDisplayed={handleEnd}
       onHoldComplete={advanceSequence}
       onTimelineTimeMs={(timeMs) => {
         setSubtitlePosition({ identity: playbackIdentity, positionMs: timeMs - timelineOffsetMs });
-        observeProgress(timeMs - timelineOffsetMs);
         onTimelineTimeMs(timeMs);
       }}
       onLoadError={() => onRuntimeError(copy.mediaError(assetId))}
     />
+  ) : layers.length > 0 ? (
+    <>
+      {[...layers]
+        .sort((left, right) => Number(left.active) - Number(right.active))
+        .map((layer) => (
+          <View key={layer.identity} pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <ExperienceClipPlayer
+              fileUri={layer.uri}
+              active={layer.active}
+              isLooping={layer.isLooping}
+              clipStartTime={layer.clipStartTime}
+              shouldAutoplay={layer.active && shouldAutoplay}
+              durationMs={layer.durationMs}
+              presenting={presenting}
+              contentFit={contentFit}
+              playbackIdentity={layer.identity}
+              instanceId={renderer.instanceId}
+              onTime={reportTime}
+              onEnded={handleEnd}
+              onError={(message) =>
+                reportClipError(layer.identity, layer.source, message, layer.active)
+              }
+              onPlaybackHandle={layer.active ? onPlaybackHandle : undefined}
+            />
+          </View>
+        ))}
+    </>
   ) : (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <VideoView
-        style={StyleSheet.absoluteFill}
-        player={player}
-        contentFit={contentFit}
-        nativeControls={false}
-        // iOS 16+ Live Text / Visual Look Up. Default is on, so a ticket close-up
-        // (or any readable frame) draws scan + gear chrome and can pause the clip.
-        // H5 <video> has none of that — keep the cinematic stage equally clean.
-        allowsVideoFrameAnalysis={false}
-        showsTimecodes={false}
-        fullscreenOptions={{ enable: false }}
-      />
-    </View>
+    <View style={StyleSheet.absoluteFill} />
   );
 
   const subtitles = (

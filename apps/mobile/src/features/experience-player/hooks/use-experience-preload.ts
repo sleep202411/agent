@@ -1,4 +1,3 @@
-import { adaptivePlaybackEndpoint } from "../lib/experience-playback-delivery";
 import { useEffect, useMemo, useState } from "react";
 
 import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
@@ -54,9 +53,7 @@ export function useExperiencePreload(manifest: ExperienceRuntimeManifest): {
 } {
   const chapterUris = useMemo(
     () =>
-      orderVideoUrisFromScene(manifest, manifest.graph.entrySceneId, EXPERIENCE_PLAY_ORIENTATION)
-        // Native adaptive clips negotiate on entry; do not download the progressive chapter first.
-        .filter((uri) => adaptivePlaybackEndpoint(uri) === null),
+      orderVideoUrisFromScene(manifest, manifest.graph.entrySceneId, EXPERIENCE_PLAY_ORIENTATION),
     [manifest]
   );
   const [chapterKey, setChapterKey] = useState(chapterUris);

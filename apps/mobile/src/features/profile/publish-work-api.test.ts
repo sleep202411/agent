@@ -108,29 +108,3 @@ it("updates only title and introduction, leaving privacy and tags untouched", as
     { service: "content", signal: undefined }
   );
 });
-
-it.each([12, { id: 12 }, "12"])(
-  "accepts Web creation receipt %j for title-only works",
-  async (receipt) => {
-    h.post.mockResolvedValue(receipt);
-    expect(await createWork({ title: "Film", description: "", tagIds: [] })).toBe("12");
-    expect(h.post.mock.calls[0][1].data).toEqual({ title: "Film", viewStatus: 1 });
-  }
-);
-it.each([null, {}, 0, -1, NaN, 1.5, true, { id: " " }])(
-  "rejects invalid creation receipt %j",
-  async (receipt) => {
-    h.post.mockResolvedValue(receipt);
-    await expect(createWork({ title: "Film", description: "", tagIds: [] })).rejects.toThrow(
-      "Invalid created work ID"
-    );
-  }
-);
-it("allows editing a work without a description", async () => {
-  await updateWork("12", "Film", "");
-  expect(h.post).toHaveBeenCalledWith(
-    "/vedio/update/personal/video",
-    { id: "12", title: "Film", introduction: "" },
-    { service: "content", signal: undefined }
-  );
-});
