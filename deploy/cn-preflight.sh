@@ -64,7 +64,7 @@ done
 branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 if [ "$branch" = main ]; then
   ok "production branch is main"
-elif [ "$branch" = HEAD ] && git -C "$ROOT" merge-base --is-ancestor HEAD main; then
+elif [ "$branch" = HEAD ] && { git -C "$ROOT" merge-base --is-ancestor HEAD main || git -C "$ROOT" merge-base --is-ancestor HEAD origin/main; }; then
   ok "isolated production checkout belongs to main"
 elif [ "${FORCE:-0}" = 1 ]; then
   warn "branch is $branch (FORCE=1 override)"

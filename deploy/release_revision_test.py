@@ -69,6 +69,41 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(latest_source(self.repo, self.source, cn=True,
                                        require_current_tooling=True), self.source)
 
+    def test_preflight_accepts_reloaded_remote_main_and_rejects_unrelated_head(self):
+        self.commit('deploy/cn-preflight.sh', Path(__file__).with_name('cn-preflight.sh').read_text())
+        self.commit('deploy/helm/fizzdragon/values.yaml', 'fixture chart')
+        previous = self.commit('deploy/cn_build_credentials.py', 'pass\n')
+        updated = self.commit('deploy/tooling.txt', 'remote update')
+        self.git('push', 'origin', 'main')
+        self.git('reset', '--hard', previous)
+        self.git('checkout', '--detach', updated)
+        binaries = self.root / 'bin'
+        binaries.mkdir()
+        for command in ('node', 'openssl', 'helm', 'kubectl', 'aliyun', 'ssh', 'scp', 'shasum', 'curl'):
+            stub = binaries / command
+            stub.write_text('#!/bin/sh\nexit 0\n')
+            stub.chmod(0o755)
+        key = self.root / 'key'
+        key.write_text('fixture key')
+
+        def preflight():
+            return subprocess.run(
+                ['/bin/bash', str(self.repo / 'deploy/cn-preflight.sh'), '--phase', 'build', 'server'],
+                cwd=self.repo, capture_output=True, text=True, timeout=10,
+                env={**os.environ, 'PATH': str(binaries) + os.pathsep + os.environ['PATH'],
+                     'DEPLOY_KEY': str(key), 'FORCE': '0', 'ALLOW_DIRTY': '0'},
+            )
+
+        accepted = preflight()
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertIn('isolated production checkout belongs to main', accepted.stdout)
+        self.git('checkout', '--orphan', 'unrelated')
+        unrelated = self.commit('app.txt', 'unrelated history')
+        self.git('checkout', '--detach', unrelated)
+        denied = preflight()
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertIn('production releases must run from main', denied.stderr)
+
     def test_build_helper_only_fix_advances_pinned_archive(self):
         old = self.commit('deploy/cn-remote-build-services.sh',
                           'docker system prune --all --force --build\n')
