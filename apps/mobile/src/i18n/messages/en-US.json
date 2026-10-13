@@ -6098,5 +6098,6 @@
   "taskApproval.rejected": "Rejected",
   "taskWorkbench.submitted": "Awaiting YH approval",
   "taskApproval.title": "My task requests",
-  "taskApproval.empty": "No task requests yet"
+  "taskApproval.empty": "No task requests yet",
+  "levelApplication.coveredByHigher": "Your approved higher FD rank already covers this level. No separate application is needed."
 }

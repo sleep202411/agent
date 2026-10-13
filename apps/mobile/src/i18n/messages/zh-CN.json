@@ -6098,5 +6098,6 @@
   "taskApproval.rejected": "已拒绝",
   "taskWorkbench.submitted": "等待 YH 审批",
   "taskApproval.title": "我的任务申请",
-  "taskApproval.empty": "暂无任务申请"
+  "taskApproval.empty": "暂无任务申请",
+  "levelApplication.coveredByHigher": "你已获批的更高 FD 等级已涵盖此等级，无需另行申请。"
 }

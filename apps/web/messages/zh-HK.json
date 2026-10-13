@@ -2424,7 +2424,9 @@
         "submitting": "提交中…",
         "submitSuccess": "申請已提交",
         "submitFailed": "提交失敗",
-        "academy": "請前往 Academy 學院取得認證"
+        "academy": "請前往 Academy 學院取得認證",
+        "levelCoveredOption": "{name}（已由更高 FD 等級涵蓋）",
+        "levelCoveredHint": "你已獲批的更高 FD 等級已涵蓋此等級，毋須另行申請。"
       }
     },
     "certificates": {

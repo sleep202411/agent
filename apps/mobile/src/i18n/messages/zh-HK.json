@@ -6098,5 +6098,6 @@
   "taskApproval.rejected": "已拒絕",
   "taskWorkbench.submitted": "等待 YH 審批",
   "taskApproval.title": "我的任務申請",
-  "taskApproval.empty": "暫無任務申請"
+  "taskApproval.empty": "暫無任務申請",
+  "levelApplication.coveredByHigher": "你已獲批的更高 FD 等級已涵蓋此等級，毋須另行申請。"
 }

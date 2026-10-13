@@ -1,5 +1,7 @@
 "use client";
 
+import { coveredQualificationIds } from "@/src/lib/qualification-coverage";
+
 /**
  * Owner-only dialog: apply for a Java certification level.
  * Required: certification level. Crew, IP, attachment and notes may be omitted.
@@ -92,7 +94,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
   const { user } = useCurrentUser();
-  const heldLevelIds = new Set((user?.raw.levels ?? []).map((level) => Number(level.id)));
+  const actualHeldLevelIds = new Set((user?.raw.levels ?? []).map((level) => Number(level.id)));
   const levelLocked = lockedLevelId != null;
 
   const levelsQuery = useQuery({
@@ -138,6 +140,8 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
       lockedLevelId == null ? rows : rows.filter((l) => Number(l.id) === lockedLevelId);
     return groupUserLevelOptions(filtered).flatMap((row) => row.levels);
   }, [levelsQuery.data, lockedLevelId]);
+
+  const heldLevelIds = coveredQualificationIds(levelsQuery.data ?? [], actualHeldLevelIds);
 
   const groupedLevels = useMemo(() => groupUserLevelOptions(levels), [levels]);
 
@@ -356,7 +360,12 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                                 disabled={pending || held}
                               >
                                 {held
-                                  ? t("levels.apply.levelHeldOption", { name })
+                                  ? t(
+                                      actualHeldLevelIds.has(level.id)
+                                        ? "levels.apply.levelHeldOption"
+                                        : "levels.apply.levelCoveredOption",
+                                      { name }
+                                    )
                                   : pending
                                     ? t("levels.apply.levelPendingOption", { name })
                                     : name}
@@ -369,7 +378,13 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                   </SelectContent>
                 </Select>
                 {heldLevelIds.has(Number(levelId)) && (
-                  <FieldDescription>{t("levels.apply.levelHeldHint")}</FieldDescription>
+                  <FieldDescription>
+                    {t(
+                      actualHeldLevelIds.has(Number(levelId))
+                        ? "levels.apply.levelHeldHint"
+                        : "levels.apply.levelCoveredHint"
+                    )}
+                  </FieldDescription>
                 )}
                 {selectedLevelPending ? (
                   <FieldDescription className="mt-1.5 text-[11px] leading-relaxed text-amber-400">

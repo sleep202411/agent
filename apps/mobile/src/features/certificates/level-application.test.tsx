@@ -275,3 +275,24 @@ it("blocks an already held certification even if a duplicate application is pend
   expect(review.disabled).toBe(true);
   expect(h.post).not.toHaveBeenCalled();
 });
+
+it("an approved FD-III covers pending FD-II without another application", async () => {
+  h.held = [{ id: 14 }];
+  const original = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) => {
+    if (path === "/user/levels/options")
+      return [
+        { id: 13, name: "FD-II · Junior Creator", type: 1 },
+        { id: 14, name: "FD-III · Senior Creator", type: 1 },
+      ];
+    if (path === "/user/levels/apply/mine") return [{ ...input, id: 22, status: 0 }];
+    return original(path, ...args);
+  });
+  await render();
+  expect(host.textContent).toContain("levelApplication.coveredByHigher");
+  const review = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "levelApplication.review"
+  )!;
+  expect(review.disabled).toBe(true);
+  expect(h.post).not.toHaveBeenCalled();
+});

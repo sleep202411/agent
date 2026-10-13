@@ -1,3 +1,4 @@
+import { coveredQualificationIds } from "./qualification-coverage";
 import { CertificationGuide } from "./certification-guide";
 import { certificationEntry, certificationGroup } from "./certification-guide-data";
 import type { MessageKey } from "@/i18n";
@@ -48,7 +49,7 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
     locale = useLocale(),
     theme = useTheme(),
     active = useScreenActive();
-  const heldLevelIds = new Set(
+  const actualHeldLevelIds = new Set(
     (getAuthSnapshot().user?.levels ?? []).map((level) => Number(level.id))
   );
   const controller = useRef<AbortController | null>(null),
@@ -185,6 +186,7 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
       setError(message(e));
     }
   }
+  const heldLevelIds = coveredQualificationIds(levels, actualHeldLevelIds);
   const selectedHeld = heldLevelIds.has(levelId ?? -1);
   const selectedPending = applications.some((v) => v.levelId === levelId && v.status === 0);
   return (
@@ -289,7 +291,13 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
                         heldLevelIds.has(v.id)
                       )}
                       {heldLevelIds.has(v.id) && (
-                        <ThemedText>{t("levelApplication.alreadyHeld")}</ThemedText>
+                        <ThemedText>
+                          {t(
+                            actualHeldLevelIds.has(v.id)
+                              ? "levelApplication.alreadyHeld"
+                              : "levelApplication.coveredByHigher"
+                          )}
+                        </ThemedText>
                       )}
                       {levelId === v.id && v.description ? (
                         <ThemedText>{v.description}</ThemedText>
@@ -307,7 +315,15 @@ function Session({ userId, generation, onClose, lockedLevelId }: Props) {
           levels.some((level) => level.id === levelId && level.type === 4) ? (
             <AcademyCoursesForCertificate certificateId={levelId} />
           ) : null}
-          {selectedHeld ? <ThemedText>{t("levelApplication.alreadyHeld")}</ThemedText> : null}
+          {selectedHeld ? (
+            <ThemedText>
+              {t(
+                actualHeldLevelIds.has(levelId ?? -1)
+                  ? "levelApplication.alreadyHeld"
+                  : "levelApplication.coveredByHigher"
+              )}
+            </ThemedText>
+          ) : null}
           {!selectedHeld && selectedPending ? (
             <ThemedText>{t("levelApplication.alreadyPending")}</ThemedText>
           ) : null}

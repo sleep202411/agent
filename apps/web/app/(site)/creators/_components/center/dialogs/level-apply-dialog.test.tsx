@@ -30,6 +30,8 @@ vi.mock("@tanstack/react-query", () => ({
         ? [
             { id: 13, name: "AI Producer", type: 4 },
             { id: 1, name: "FD-I · 附属创作者", type: 1 },
+            { id: 2, name: "FD-II · Junior Creator", type: 1 },
+            { id: 3, name: "FD-III · Senior Creator", type: 1 },
             { id: 30, name: "City Partner", type: 5 },
             { id: 12, name: "Free viewing", type: 2 },
           ]
@@ -310,6 +312,29 @@ it("held qualifications override duplicate pending status and account changes is
     );
     expect(h.keys.some((key) => key.includes("mine") && key.includes("other"))).toBe(true);
     expect(document.body.textContent).not.toContain("levels.apply.levelHeldHint");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it("an approved FD-III covers pending FD-II without another application", async () => {
+  h.held = [{ id: 3 }];
+  h.pending = [{ levelId: 2 }];
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={2} />)
+    );
+    expect(document.body.textContent).toContain("levels.apply.levelCoveredHint");
+    expect(document.body.textContent).not.toContain("levels.apply.levelPendingHint");
+    const submit = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "levels.apply.submit"
+    )!;
+    expect(submit.disabled).toBe(true);
+    expect(h.submit).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     container.remove();

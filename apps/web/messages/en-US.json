@@ -2424,7 +2424,9 @@
         "submitting": "Submitting…",
         "submitSuccess": "Application submitted",
         "submitFailed": "Could not submit application",
-        "academy": "Please visit Academy to get your verification"
+        "academy": "Please visit Academy to get your verification",
+        "levelCoveredOption": "{name} (covered by your higher FD rank)",
+        "levelCoveredHint": "Your approved higher FD rank already covers this level. No separate application is needed."
       }
     },
     "certificates": {
