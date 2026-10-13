@@ -113,7 +113,7 @@ fi
 if [ "$PHASE" = build ]; then
   [ -s "${DEPLOY_KEY:-$HOME/.ssh/id_ed25519_github}" ] && ok "CN build SSH key exists" || fail "CN build SSH key is missing"
   if python3 "$ROOT/deploy/cn_build_credentials.py"; then
-    ok "CN ACR can issue fresh temporary credentials"
+    ok "CN ACR credentials are valid (cached until expiry)"
   else
     fail "CN ACR temporary credential acquisition failed"
   fi

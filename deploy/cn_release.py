@@ -115,6 +115,39 @@ def validate_backup(backup_id):
     return backup
 
 
+def recent_manual_backup():
+    """Reuse a fresh successful backup; never create twice within six hours."""
+    now = dt.datetime.now(dt.timezone.utc)
+    start = now - dt.timedelta(hours=6)
+    page = 1
+    recent = []
+    while True:
+        result = rds('DescribeBackups', StartTime=start.strftime('%Y-%m-%dT%H:%MZ'),
+                     EndTime=(now + dt.timedelta(minutes=1)).strftime('%Y-%m-%dT%H:%MZ'), PageSize=100, PageNumber=page)
+        rows = result.get('Items', {}).get('Backup')
+        if not isinstance(rows, list):
+            raise RuntimeError('Invalid RDS backup catalogue; no backup created')
+        for row in rows:
+            if row.get('BackupMode') != 'Manual':
+                continue
+            created = dt.datetime.fromisoformat(row['BackupStartTime'].replace('Z', '+00:00'))
+            if created >= start:
+                recent.append((created, row))
+        if page * 100 >= int(result.get('TotalRecordCount', len(rows))):
+            break
+        page += 1
+    if not recent:
+        return None
+    created, row = max(recent, key=lambda item: item[0])
+    backup_id = str(row['BackupId'])
+    if row.get('BackupStatus') == 'Success' and row.get('IsAvail') == 1:
+        validate_backup(backup_id)
+        print(f'==> reusing manual CN RDS backup {backup_id} created within six hours', flush=True)
+        return backup_id
+    retry = (created + dt.timedelta(hours=6)).isoformat()
+    raise RuntimeError(f'Recent manual CN RDS backup {backup_id} is not ready. Resume after it succeeds; no new backup before {retry}')
+
+
 def ensure_backup(state, persist, supplied=None):
     if supplied:
         validate_backup(supplied)
@@ -134,6 +167,11 @@ def ensure_backup(state, persist, supplied=None):
         # CreateBackup has no idempotency token. Do not duplicate an uncertain request.
         raise RuntimeError("Backup request outcome is unknown. Find its completed BackupId in RDS and resume with --backup-id; no second backup was requested")
     if not state.get("backupJobId"):
+        reusable = recent_manual_backup()
+        if reusable:
+            state['backupId'] = reusable
+            persist()
+            return reusable
         state["backupRequested"] = True
         persist()
         print("==> creating manual CN RDS backup", flush=True)
@@ -347,6 +385,7 @@ def run_cycles(state, args, persist):
             history = state.get("previousCycles", [])
             history.append({k: v for k, v in state.items() if k != "previousCycles"})
             keep = {k: state[k] for k in ("version", "services", "namespace", "release", "context", "clusterServer")}
+            keep.update({k: state[k] for k in ("backupId", "backupJobId", "backupRequested") if k in state})
             state.clear()
             state.update(keep, tag=candidate, previousCycles=history, useExistingImages=False)
             persist()

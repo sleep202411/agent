@@ -281,3 +281,21 @@ added, and authorization failures stop the precheck. Unset these variables to
 return to read-only access checks. Operator rules persist; administrators should
 periodically remove obsolete entries. Existing locks are never silently cleared;
 use the exact-owner recovery procedure above after verifying remote work stopped.
+
+## Credential and manual-backup reuse
+
+CN builder ACR credentials are cached outside the repository in the operator's
+`~/.cache/fizzdragon/cn-acr-default-cri-9fw21oj7s91k326l` directory (0700;
+credential file 0600). Preflight, builds and source restarts share the cache;
+a process lock serializes acquisition. Renew only after the provider's expiry.
+With fewer than five minutes remaining, stop with the expiry time and retry
+after that time instead of renewing early or pushing with an unsafe lifetime.
+Never copy this cache into source archives or commit it.
+
+Completed backup and in-progress backup job IDs survive source checkpoints.
+Before creating a manual RDS backup, query the regional catalogue and reuse a
+successful available manual backup created within six hours. A recent incomplete
+or failed backup blocks creation of another until the six-hour interval ends;
+resume after completion or inspect that backup. Migration still requires a
+successful available backup completed within six hours. No existing backup is
+deleted, and an uncertain CreateBackup response still requires explicit recovery.

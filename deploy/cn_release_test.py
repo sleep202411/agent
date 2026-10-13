@@ -20,6 +20,19 @@ def job(condition=None):
 
 
 class ReleaseTests(unittest.TestCase):
+    def setUp(self):
+        p = patch.object(r, 'recent_manual_backup', return_value=None)
+        self.recent = p.start()
+        self.addCleanup(p.stop)
+
+    def test_reuses_recent_backup_before_any_creation(self):
+        self.recent.return_value = '123'
+        state = {}
+        with patch.object(r, 'rds') as api:
+            self.assertEqual(r.ensure_backup(state, Mock()), '123')
+            api.assert_not_called()
+        self.assertEqual(state['backupId'], '123')
+
     @patch.dict(r.os.environ, {}, clear=True)
     @patch.object(r.sys, 'argv', ['cn_release.py', 'release', 'web'])
     @patch.object(r.os, 'execv')
@@ -291,6 +304,15 @@ class CycleTests(unittest.TestCase):
         self.assertTrue(state['complete'])
         self.assertEqual(state['previousCycles'][0]['tag'], TAG)
 
+    def test_source_checkpoint_preserves_completed_backup(self):
+        new = 'b' * 40
+        state, args, events, _ = self.context([new, new, new, new, new])
+        state.update(backupId='123', backupJobId='456', backupRequested=True)
+        r.run_cycles(state, args, Mock())
+        self.assertEqual(state['backupId'], '123')
+        self.assertEqual(state['backupJobId'], '456')
+        self.assertTrue(state['backupRequested'])
+
     def test_commit_during_migration_finishes_before_rebuild(self):
         new = 'b' * 40
         state, args, events, _ = self.context([TAG, TAG, new, new, new, new, new])
@@ -397,3 +419,23 @@ class ExtendServicesTests(unittest.TestCase):
         for key in ['complete', 'built', 'backupRequested', 'backupId']:
             with self.subTest(key=key), self.assertRaises(RuntimeError):
                 r.extend_services({'services': ['server'], key: True}, ['game-agent'])
+
+class RecentBackupTests(unittest.TestCase):
+    def test_success_reused_and_incomplete_blocks_creation(self):
+        created = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)).isoformat()
+        for status in ['Success', 'Running', 'Failed']:
+            row = {'BackupId': 123, 'BackupMode': 'Manual', 'BackupStartTime': created,
+                   'BackupStatus': status, 'IsAvail': 1}
+            with patch.object(r, 'rds', return_value={'Items': {'Backup': [row]}}) as api, patch.object(r, 'validate_backup'):
+                if status == 'Success':
+                    self.assertEqual(r.recent_manual_backup(), '123')
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'no new backup before'):
+                        r.recent_manual_backup()
+                self.assertEqual(api.call_args.args, ('DescribeBackups',))
+
+    def test_old_backup_allows_fresh_creation(self):
+        created = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=7)).isoformat()
+        row = {'BackupId': 123, 'BackupMode': 'Manual', 'BackupStartTime': created}
+        with patch.object(r, 'rds', return_value={'Items': {'Backup': [row]}}):
+            self.assertIsNone(r.recent_manual_backup())
