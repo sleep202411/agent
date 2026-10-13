@@ -252,17 +252,71 @@ describe('Historical skill aliases', () => {
 });
 
 describe('FD task roles', () => {
+  const fdRoles = ['FD-I', 'FD-II', 'FD-III', 'FD-IV', 'FD-V'];
+  it.each(
+    [1, 2, 3, 4, 5].flatMap((held) =>
+      [1, 2, 3, 4, 5].map((required) => ({ held, required })),
+    ),
+  )(
+    'checks approved FD-$held against required FD-$required',
+    async ({ held, required }) => {
+      delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+      fetcher.mockResolvedValue(response([100 + held]) as Response);
+      const decision = service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: [fdRoles[required - 1]],
+      });
+      if (held >= required) await expect(decision).resolves.toBeUndefined();
+      else
+        await expect(decision).rejects.toMatchObject({
+          status: 403,
+          response: {
+            code: 'CREW_QUALIFICATIONS_REQUIRED',
+            requiredFdRank: required,
+          },
+        });
+    },
+  );
+  it.each([{ held: [] as number[] }, { held: [103] }])(
+    'uses held certificates, not a pending FD-II application: %j',
+    async ({ held }) => {
+      delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
+      fetcher.mockImplementation((url: string) => {
+        if (url.includes('/user/levels/apply/mine'))
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                code: 200,
+                data: [{ levelId: 102, status: 0 }],
+              }),
+          } as Response);
+        return Promise.resolve(response(held) as Response);
+      });
+      const decision = service.assertEligible('42', 'fixture-session', {
+        experienceLevel: 'any',
+        requiredSkills: ['FD-II'],
+      });
+      if (held.length) await expect(decision).resolves.toBeUndefined();
+      else await expect(decision).rejects.toMatchObject({ status: 403 });
+      expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+        expect.stringContaining('/user/levels/options'),
+        expect.stringContaining('/user/other/user/info?UserId=42'),
+      ]);
+    },
+  );
+
   it.each([
     ['FD-I', 101],
     ['FD-II', 102],
     ['FD-II', 103],
     ['FD-V', 105],
   ])('admits %s with a sufficient verified director rank', async (role, id) => {
-    fetcher.mockResolvedValue(response([id as number]) as Response);
+    fetcher.mockResolvedValue(response([id]) as Response);
     await expect(
       service.assertEligible('42', 'fixture-session', {
         experienceLevel: 'any',
-        requiredSkills: [role as string],
+        requiredSkills: [role],
       }),
     ).resolves.toBeUndefined();
   });
@@ -311,12 +365,13 @@ it('resolves a regional FD role from its live name and ID, not a global ID guess
   delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
   fetcher.mockResolvedValue({
     ok: true,
-    json: async () => ({
-      code: 200,
-      data: [{ id: 777, name: 'FD-I · Affiliate Creator', type: 1 }],
-      info: { id: '42' },
-      level: [{ id: 777, type: 1 }],
-    }),
+    json: () =>
+      Promise.resolve({
+        code: 200,
+        data: [{ id: 777, name: 'FD-I · Affiliate Creator', type: 1 }],
+        info: { id: '42' },
+        level: [{ id: 777, type: 1 }],
+      }),
   } as Response);
   await expect(service.catalog('fixture-session')).resolves.toEqual({
     skills: ['FD-I'],
