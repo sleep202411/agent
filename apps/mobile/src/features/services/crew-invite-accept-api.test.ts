@@ -163,3 +163,14 @@ it("rejects unsafe or foreign task destinations", async () => {
     await expect(previewCrewInvite(token, 1)).rejects.toThrow();
   }
 });
+it.each([
+  [403, "CREW_QUALIFICATIONS_REQUIRED", true],
+  [403, "CREW_ACCESS_DENIED", false],
+  [503, "CREW_QUALIFICATIONS_REQUIRED", false],
+])("classifies acceptance failure %s/%s", async (status, code, expected) => {
+  h.post.mockRejectedValue(Object.assign(new Error("Request rejected"), { status, code }));
+  await expect(acceptCrewInvite(token, preview, 1)).rejects.toMatchObject({
+    qualificationRequired: expected,
+    message: "Request rejected",
+  });
+});

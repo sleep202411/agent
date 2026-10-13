@@ -38,6 +38,7 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
   const [review, setReview] = useState<{ token: string; value: CrewInvitePreview }>();
   const [result, setResult] = useState<CrewInviteTarget>();
   const [error, setError] = useState<string>();
+  const [qualificationRequired, setQualificationRequired] = useState(false);
   const [busy, setBusy] = useState(false),
     [uncertain, setUncertain] = useState(false);
   const operation = useRef(false),
@@ -74,6 +75,7 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
     operation.current = true;
     setBusy(true);
     setError(undefined);
+    setQualificationRequired(false);
     setReview(undefined);
     setResult(undefined);
     const c = new AbortController();
@@ -96,6 +98,7 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
     operation.current = true;
     setBusy(true);
     setError(undefined);
+    setQualificationRequired(false);
     const c = new AbortController();
     pending.current = c;
     try {
@@ -113,8 +116,10 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
     } catch (e) {
       if (current()) {
         setError(e instanceof Error ? e.message : String(e));
-        if (e instanceof CrewInviteAcceptError) setUncertain(true);
-        else setReview(undefined);
+        if (e instanceof CrewInviteAcceptError) {
+          setQualificationRequired(e.qualificationRequired);
+          setUncertain(!e.qualificationRequired);
+        } else setReview(undefined);
       }
     } finally {
       operation.current = false;
@@ -143,6 +148,7 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
           setReview(undefined);
           setResult(undefined);
           setError(undefined);
+          setQualificationRequired(false);
         }}
         style={{
           color: theme.text,
@@ -245,7 +251,7 @@ function Session({ generation, onClose, onOpen, initialLink }: Props) {
         </>
       )}
       {uncertain && <ThemedText>{t("crewJoin.uncertain")}</ThemedText>}
-      {review?.value.task && (
+      {review?.value.task && qualificationRequired && !result && (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push(toHref("/certification-application"))}

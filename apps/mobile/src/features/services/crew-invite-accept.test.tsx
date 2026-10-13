@@ -176,3 +176,25 @@ it("prefills a routed invite without joining and clears the previous review for 
 });
 
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+it("offers certification only for a confirmed qualification failure and clears it after success", async () => {
+  h.preview.mockResolvedValue({
+    ...preview,
+    task: {
+      title: "Storyboard",
+      description: null,
+      rewardUsdMinor: null,
+      profitShareBps: null,
+      dueAt: null,
+      requiredSkills: ["FD-II"],
+    },
+  });
+  await load();
+  expect(button("crewInvite.goVerification")).toBeUndefined();
+  h.accept.mockRejectedValueOnce(new CrewInviteAcceptError("Qualifications required", true));
+  await click("crewJoin.accept");
+  expect(button("crewInvite.goVerification")).toBeDefined();
+  expect(host.textContent).not.toContain("crewJoin.uncertain");
+  await click("crewJoin.accept");
+  expect(button("crewInvite.goVerification")).toBeUndefined();
+  expect(button("crewJoin.open")).toBeDefined();
+});

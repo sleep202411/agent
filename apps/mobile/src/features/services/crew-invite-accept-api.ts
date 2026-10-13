@@ -92,7 +92,10 @@ export function canAcceptCrewInvite(value: CrewInvitePreview) {
   );
 }
 export class CrewInviteAcceptError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public readonly qualificationRequired = false
+  ) {
     super(message);
     this.name = "CrewInviteAcceptError";
   }
@@ -141,7 +144,16 @@ export async function acceptCrewInvite(
     }
     return target;
   } catch (error) {
-    throw new CrewInviteAcceptError(error instanceof Error ? error.message : String(error));
+    const qualificationRequired =
+      error instanceof Error &&
+      "status" in error &&
+      error.status === 403 &&
+      "code" in error &&
+      error.code === "CREW_QUALIFICATIONS_REQUIRED";
+    throw new CrewInviteAcceptError(
+      error instanceof Error ? error.message : String(error),
+      qualificationRequired
+    );
   }
 }
 export function crewInviteTargetRoute(value: CrewInviteTarget) {

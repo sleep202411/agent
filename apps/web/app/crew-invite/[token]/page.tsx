@@ -104,6 +104,7 @@ export default function CrewInvitePage() {
 
 function CrewInviteSession({ token }: { token: string }) {
   const [verificationOpen, setVerificationOpen] = useState(false);
+  const [qualificationRequired, setQualificationRequired] = useState(false);
   const t = useTranslations("crewInvite");
   const paymentT = useTranslations("taskPaymentTerms");
   const tc = useTranslations("crewCommunityInvite");
@@ -184,6 +185,8 @@ function CrewInviteSession({ token }: { token: string }) {
     pending.current = true;
     setJoining(true);
     setError("");
+    setQualificationRequired(false);
+    setVerificationOpen(false);
     try {
       const body = await crewApi.post<Envelope<CrewInviteAccepted> | CrewInviteAccepted>(
         "/invites/accept",
@@ -226,6 +229,14 @@ function CrewInviteSession({ token }: { token: string }) {
         setView({ kind: "closed", reason: "expired" });
         return;
       }
+      setQualificationRequired(
+        err instanceof CrewApiError &&
+          err.status === 403 &&
+          typeof err.body === "object" &&
+          err.body !== null &&
+          "code" in err.body &&
+          err.body.code === "CREW_QUALIFICATIONS_REQUIRED"
+      );
       setError(err instanceof CrewApiError ? err.message : t("failed"));
     } finally {
       pending.current = false;
@@ -366,7 +377,7 @@ function CrewInviteSession({ token }: { token: string }) {
                 </p>
               </section>
             ) : null}
-            {view.preview.task && (
+            {view.preview.task && qualificationRequired && (
               <>
                 <Button variant="outline" onClick={() => setVerificationOpen(true)}>
                   {t("goVerification")}

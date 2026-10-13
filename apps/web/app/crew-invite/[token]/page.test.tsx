@@ -31,9 +31,9 @@ vi.mock("@/app/(site)/crews/_hooks/api", () => ({
   CrewApiError: class extends Error {
     constructor(
       public status: number,
-      message: string
+      public body: unknown
     ) {
-      super(message);
+      super(typeof body === "string" ? body : "Qualifications required");
     }
   },
 }));
@@ -277,9 +277,12 @@ it("reopens an already accepted task without claiming it again", async () => {
 vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
   LevelApplyDialog: ({ open }: { open: boolean }) => (open ? <div>verification form</div> : null),
 }));
-it("opens verification without accepting the invitation", async () => {
+it("shows verification only after a confirmed qualification rejection", async () => {
   await renderTaskOffer();
+  expect(host.textContent).not.toContain("goVerification");
+  mocks.post.mockRejectedValueOnce(new CrewApiError(403, { code: "CREW_QUALIFICATIONS_REQUIRED" }));
+  await act(async () => button("acceptTask").click());
   await act(async () => button("goVerification").click());
   expect(host.textContent).toContain("verification form");
-  expect(mocks.post).not.toHaveBeenCalled();
+  expect(mocks.post).toHaveBeenCalledTimes(1);
 });
