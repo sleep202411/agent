@@ -2099,6 +2099,38 @@ describe('App Story production recovery (Prisma + PostgreSQL)', () => {
     expect(authoring.createAuthoringRun).not.toHaveBeenCalled();
   });
 
+  it('preserves the billing pause code and completed spending without confirming another batch', async () => {
+    const run = await producing(),
+      batchId = randomUUID();
+    await prisma.appStoryRun.update({
+      where: { id: run.id },
+      data: { batchId, committedPoints: 30 },
+    });
+    batches.get.mockResolvedValue({
+      id: batchId,
+      status: 'blocked',
+      blockReason: {
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        message:
+          'Not enough compute points. Recharge and continue from this item.',
+      },
+    });
+    await service.step(
+      { ...run, batchId, committedPoints: 30 },
+      'worker',
+      new AbortController().signal,
+    );
+    expect(
+      await prisma.appStoryRun.findUniqueOrThrow({ where: { id: run.id } }),
+    ).toMatchObject({
+      status: 'blocked',
+      errorCode: 'INSUFFICIENT_COMPUTE_POINTS',
+      committedPoints: 30,
+    });
+    expect(batches.confirm).not.toHaveBeenCalled();
+    expect(batches.resume).not.toHaveBeenCalled();
+  });
+
   it('retries failed generation from its existing confirmed batch without reserving completed items again', async () => {
     const run = await producing(),
       batchId = randomUUID();

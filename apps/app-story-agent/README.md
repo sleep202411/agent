@@ -92,12 +92,19 @@ playback. App owns its WebView, login, navigation, system save and share.
 Server hosts `dist/ui` at `/aurora/app-story-agent/ui/index.html` on the
 **same regional HTTPS origin** as its API. `GET /aurora/app-story-agent/config`
 reports the enabled state and exact path. All shell assets require an existing
-regional session; the authenticated initial request establishes an HttpOnly
-cookie for subsequent assets and API calls. The worker's private port is not a
-static host; `localhost:8085` is for local validation. Allow navigation/messages only from
-that exact regional origin, block untrusted redirects and keep `.com` and `.cn`
-sessions separate. Inject the existing `satoken` cookie before loading, including
-subsequent H5 requests; do not put credentials in URLs or bridge messages.
+regional session. Obtain the App session **before loading the WebView** and attach
+`Authorization: Bearer <satoken>` to its initial `source` request, or install the
+existing regional `satoken` cookie first. Server validates that request and sets
+an HttpOnly, Secure cookie before returning HTML; subsequent same-origin assets
+and API calls use this cookie. Initial custom headers are not assumed to propagate
+to subrequests. Keep the WebView cookie store available for that page lifetime.
+Register `onMessage` on the first render, then use `ready` → `init` below; do not
+use a delay or `onLoadEnd` to guess readiness. Credentials never travel through
+URLs, JavaScript injection or bridge messages.
+
+The worker's private port is not a static host; `localhost:8085` is for local
+validation. Allow navigation/messages only from that exact regional HTTPS origin,
+block untrusted redirects and keep `.com` and `.cn` sessions separate.
 
 Use the [React Native WebView communication channel](https://github.com/react-native-webview/react-native-webview/blob/master/docs/Guide.md#communicating-between-js-and-native):
 H5 calls `window.ReactNativeWebView.postMessage(JSON.stringify(message))`; App
@@ -159,7 +166,9 @@ On `authExpired`, renew the **same account's** native login and install its cook
 the **same `init` context with a new request ID**. H5 retains its conversation and
 unsent draft, refreshing reads without resending a message or approving a quote.
 Changing account, project, chapter, locale or capabilities requires a fresh
-WebView/page lifetime. On account switch, App must also isolate or clear this
+WebView/page lifetime; recreate its native bridge controller together with the
+WebView, never reset only the controller while retaining the loaded page.
+On account switch, App must also isolate or clear this
 H5's persisted drafts; a reload alone retains Harness's local draft storage.
 Same-page project/chapter/locale/capability changes return `REOPEN_REQUIRED`; stale
 page IDs, wrong protocol versions and malformed messages are ignored.
@@ -195,7 +204,7 @@ APP_STORY_AGENT_INTERNAL_TOKEN=
 APP_STORY_AGENT_MODEL=
 APP_STORY_AGENT_AUTHOR_MODEL=
 APP_STORY_AGENT_IMAGE_MODEL=
-APP_STORY_AGENT_VIDEO_MODEL=minimax-h3-max
+APP_STORY_AGENT_VIDEO_MODEL=seedance-2-5
 APP_STORY_AGENT_AUTHORIZATION_POINTS=
 ```
 
@@ -204,7 +213,7 @@ used by the existing structured authoring service; Server also needs its existin
 regional `ALIBABA_API_KEY` and `ALIBABA_BASE_URL`. Image and video identifiers must
 refer to enabled entries in the regional AI catalog. Their schema versions are
 pinned when accepting a request. Planner and image models stay fixed. The
-video default is MiniMax H3 Max. An unconfirmed video quote can select Seedance
+video default is Seedance 2.5. An unconfirmed video quote can select Seedance
 2.5, HappyHorse 1.0, MiniMax H3 or H3 Max from the accessible regional catalog.
 Switching requotes the pending targets, invalidates the previous quote, and
 requires fresh confirmation; it never rotates models or regenerates completed
@@ -221,7 +230,7 @@ and regional configuration. H5 deployment can precede native integration; do not
 release a changed native App ahead of its Server API.
 
 The CN values pin Qwen Plus for planning and authoring, Wan 2.7 for images and
-MiniMax H3 Max as the initial video model. Provider and internal-token Secrets
+Seedance 2.5 as the initial video model. Provider and internal-token Secrets
 are provisioned separately, without rotating existing regional credentials.
 Use the coordinated CN release from clean `main`, selecting only `server` and
 `app-story-agent`. It verifies immutable images, waits for a manual RDS backup,

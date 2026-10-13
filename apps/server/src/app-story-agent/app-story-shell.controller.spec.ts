@@ -115,6 +115,21 @@ describe('App Story shell HTTP boundary', () => {
       expect(result.headers['content-security-policy']).toContain(
         "frame-ancestors 'none'",
       );
+      const nativeEntry = await request(httpServer)
+        .get(root + '/ui/index.html')
+        .set('Authorization', 'Bearer fixture')
+        .set('Cookie', 'satoken=stale-browser-session')
+        .expect(200);
+      const sessionCookie = nativeEntry.headers['set-cookie'][0];
+      expect(sessionCookie).toBe(
+        'satoken=fixture; Path=/aurora/app-story-agent; HttpOnly; Secure; SameSite=Lax',
+      );
+      expect(nativeEntry.text).not.toContain('satoken=fixture');
+      await request(httpServer)
+        .get(root + '/ui/app.js')
+        .set('Cookie', sessionCookie.split(';')[0])
+        .expect(200)
+        .expect('Content-Type', /javascript/);
       await request(httpServer)
         .get(root + '/ui/app.css')
         .set('Cookie', 'satoken=fixture')

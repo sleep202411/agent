@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryHistory, StoryRun } from "@repo/app-story-protocol";
 import { createSnapshotStore } from "@deepseek-ai/dsh-client-store";
-import { StoryTransport, copy, loadContext } from "./transport";
+import { StoryTransport, copy, loadContext, storyErrorMessage } from "./transport";
 import { storyPreferences } from "./preferences";
 import { projectHistory, forkBoundary, storyMediaDefinition, videoProgress } from "./events";
 
@@ -43,6 +43,28 @@ const create = () => {
   return transport;
 };
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+
+it("localizes billing pauses, including saved runs, while preserving provider detail", () => {
+  for (const locale of ["en-US", "zh-CN", "zh-HK"] as const) {
+    for (const code of ["INSUFFICIENT_COMPUTE_POINTS", "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS"])
+      expect(storyErrorMessage({ code, message: "Billing detail" }, locale)).toBe(
+        copy(locale).h5.insufficientComputePoints
+      );
+    expect(
+      storyErrorMessage(
+        {
+          code: "APP_STORY_GENERATION_BLOCKED",
+          message: "Not enough compute points. Recharge and continue from this item.",
+        },
+        locale
+      )
+    ).toBe(copy(locale).h5.insufficientComputePoints);
+    for (const code of ["APP_STORY_GENERATION_BLOCKED", "APP_STORY_PRODUCTION_FAILED"])
+      expect(
+        storyErrorMessage({ code, message: "Provider cannot download the reference." }, locale)
+      ).toBe("Provider cannot download the reference.");
+  }
+});
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();

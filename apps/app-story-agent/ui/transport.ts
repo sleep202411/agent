@@ -45,6 +45,21 @@ export const playerCopy = (locale: StoryContext["locale"]) =>
 export const presentationLocale = (locale: string): StoryContext["locale"] =>
   ContextSchema.shape.locale.parse(locale === "en" ? "en-US" : locale === "zh" ? "zh-CN" : locale);
 
+/** Localize our known billing state; keep provider failures verbatim. */
+export function storyErrorMessage(
+  error: { code?: string; message: string },
+  locale: StoryContext["locale"]
+) {
+  const insufficient =
+    ["INSUFFICIENT_COMPUTE_POINTS", "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS"].includes(
+      error.code ?? ""
+    ) ||
+    // Existing paused runs saved the batch message without its billing code.
+    (error.code === "APP_STORY_GENERATION_BLOCKED" &&
+      error.message === "Not enough compute points. Recharge and continue from this item.");
+  return insufficient ? copy(locale).h5.insufficientComputePoints : error.message;
+}
+
 interface DisplayLanguage {
   getSnapshot(): { active: string };
   subscribe(listener: () => void): () => void;
@@ -346,7 +361,10 @@ export class StoryTransport {
       const error = new Error(
         payload.msg || payload.message || copy(this.displayLocale).app.requestFailed
       );
-      Object.assign(error, { status: response.ok ? payload.code : response.status });
+      Object.assign(error, {
+        status: response.ok ? payload.code : response.status,
+        code: typeof payload.code === "string" ? payload.code : undefined,
+      });
       throw error;
     }
     try {

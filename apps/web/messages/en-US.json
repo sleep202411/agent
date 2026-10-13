@@ -12299,6 +12299,7 @@
       "quoteDurationSeconds": "{seconds} seconds",
       "quoteEstimatedCost": "Estimated cost",
       "quotePointsUnit": "compute points",
+      "insufficientComputePoints": "Not enough compute points. Top up, then continue from the unfinished item. Completed media is kept.",
       "authorizationLimitExceeded": "This production exceeds the current limit of {points} compute points. Choose a lower-cost video model, cancel this production, or contact support.",
       "quoteConsentHint": "Generation and compute-point usage start only after you confirm.",
       "quoteWaitingHint": "Review the generation estimate above to continue, or choose Not now.",

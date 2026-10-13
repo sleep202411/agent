@@ -55,7 +55,13 @@ import type {
   StoryRun,
   StoryVideoModels,
 } from "@repo/app-story-protocol";
-import { StoryTransport, copy, isActive, resumeAuthorization } from "./transport";
+import {
+  StoryTransport,
+  copy,
+  isActive,
+  resumeAuthorization,
+  storyErrorMessage,
+} from "./transport";
 import { createStorySession } from "./session";
 
 const StoryPlayer = lazy(() => import("./player"));
@@ -795,7 +801,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 (event) => event.type === "fizz/story-run" && event.data.turn === turn.turn
               );
             const run = event?.type === "fizz/story-run" ? event.data.run : undefined;
-            const [error, setError] = useState<string>();
+            const [error, setError] = useState<{ code?: string; message: string }>();
             const [pending, setPending] = useState(false);
             const [clock, setClock] = useState(Date.now);
             const refreshedQuote = useRef<string | undefined>(undefined);
@@ -819,7 +825,7 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
                 try {
                   await operation();
                 } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : String(reason));
+                  setError(reason instanceof Error ? reason : { message: String(reason) });
                 } finally {
                   setPending(false);
                 }
@@ -881,13 +887,21 @@ export async function mountStoryAgent(container: HTMLElement, transport: StoryTr
               <section className="story-production" aria-live="polite">
                 {run.status === "cancelled" && <p>{t.app.stopped}</p>}
                 {run.error && (
-                  <p role="alert" className="story-error">
-                    {run.error.message}
-                  </p>
+                  <>
+                    <p role="alert" className="story-error">
+                      {storyErrorMessage(run.error, locale)}
+                    </p>
+                    {storyErrorMessage(run.error, locale) !== run.error.message && (
+                      <details className="story-media-error">
+                        <summary>{t.h5.mediaErrorDetails}</summary>
+                        <p>{run.error.message}</p>
+                      </details>
+                    )}
+                  </>
                 )}
                 {error && (
                   <p role="alert" className="story-error">
-                    {error}
+                    {storyErrorMessage(error, locale)}
                   </p>
                 )}
                 {exceedsLimit && (

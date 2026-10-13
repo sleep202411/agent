@@ -2070,7 +2070,13 @@ export class AppStoryAgentService {
       if (batch.status === 'blocked')
         return this.save(run, owner, {
           status: 'blocked',
-          errorCode: 'APP_STORY_GENERATION_BLOCKED',
+          errorCode:
+            batch.blockReason &&
+            typeof batch.blockReason === 'object' &&
+            'code' in batch.blockReason &&
+            typeof batch.blockReason.code === 'string'
+              ? batch.blockReason.code
+              : 'APP_STORY_GENERATION_BLOCKED',
           errorDetail: errorMessage(
             batch.blockReason,
             'Generation is blocked. Check your balance and resume.',
