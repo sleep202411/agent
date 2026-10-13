@@ -1,6 +1,3 @@
-vi.mock("../lib/experience-playback-delivery", () => ({
-  resolveExperienceVideoSource: async () => ({ uri: "https://example.invalid/video.mp4" }),
-}));
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
@@ -13,6 +10,10 @@ import {
   ExperienceVideoRenderer,
   type ExperienceMediaPlaybackHandle,
 } from "./experience-video-renderer";
+vi.mock("../lib/experience-playback-delivery", () => ({
+  resolveExperienceVideoSource: async () => ({ uri: "https://example.invalid/video.mp4" }),
+}));
+vi.mock("@/config", () => ({ resolveExperienceAssetUrl: (uri: string) => uri }));
 const h = vi.hoisted(() => ({
   listeners: new Map<string, (data: any) => void>(),
   presenting: true,
@@ -56,7 +57,8 @@ vi.mock("@/hooks/use-app-active", () => ({ useGatedScreenActive: () => h.present
 vi.mock("../lib/experience-media-cache", () => ({
   resolvePlaybackUri: async (uri: string) => uri,
 }));
-vi.mock("../lib/experience-media", () => ({
+vi.mock("../lib/experience-media", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/experience-media")>()),
   resolveVideoMedia: () => ({
     variant: {
       uri: "https://example.invalid/video.mp4",
