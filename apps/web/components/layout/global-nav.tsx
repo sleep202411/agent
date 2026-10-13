@@ -295,7 +295,8 @@ export function GlobalNav() {
             target={ctaOpensNewTab ? "_blank" : undefined}
             rel={ctaOpensNewTab ? "noopener noreferrer" : undefined}
             onClick={(e) => onNavClick(e, ctaItem)}
-            className={navCx("fd-secret-glass-content fd-secret-cta")}
+            translate="no"
+            className={navCx("fd-secret-glass-content fd-secret-cta", "notranslate")}
           >
             <ShinyText text={ctaItem.label} color="#ffffff" shineColor="#ff3d42" speed={2.5} yoyo />
           </Link>
@@ -383,13 +384,14 @@ export function GlobalNav() {
             >
               <Link
                 href={ctaHref}
+                translate="no"
                 target={ctaOpensNewTab ? "_blank" : undefined}
                 rel={ctaOpensNewTab ? "noopener noreferrer" : undefined}
                 onClick={(e) => {
                   onNavClick(e, ctaItem);
                   closeMobile();
                 }}
-                className={navCx("fd-secret-mobile-cta")}
+                className={navCx("fd-secret-mobile-cta", "notranslate")}
               >
                 <span>{ctaItem.label}</span>
                 <span className={navCx("fd-secret-mobile-arrow")} aria-hidden>
