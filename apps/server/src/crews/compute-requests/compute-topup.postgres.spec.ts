@@ -1,4 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { Test } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
+import type { Server } from 'node:http';
+import type { NextFunction, Request, Response } from 'express';
+import request from 'supertest';
+import { CrewComputeRequestsController } from './compute-requests.controller';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
@@ -28,6 +34,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       requireMfa: false,
     } as AdminActor;
     let taskId: string;
+    let app: INestApplication;
     beforeAll(async () => {
       const target = postgresFixtureUrl(url!);
       if (
@@ -128,6 +135,24 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           currency: 'USD',
         },
       });
+      const module = await Test.createTestingModule({
+        controllers: [CrewComputeRequestsController],
+        providers: [{ provide: CrewComputeRequestsService, useValue: service }],
+      }).compile();
+      app = module.createNestApplication();
+      // Only authentication is supplied by the fixture; controller, service,
+      // authorization, transaction and PostgreSQL constraints are real.
+      app.use(
+        (
+          req: Request & { user?: { userId: string } },
+          _res: Response,
+          next: NextFunction,
+        ) => {
+          req.user = { userId: creator };
+          next();
+        },
+      );
+      await app.listen(0, '127.0.0.1');
       walletId = (
         await ledger.ensureDefaultAccounts('workspace', workspaceId)
       )[0].id;
@@ -140,7 +165,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         stages: [
           {
             key: randomUUID(),
-            points: 1000,
+            points: 3000,
             note: 'Test',
             adminId: admin.id,
             at: new Date().toISOString(),
@@ -151,6 +176,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       await db.$executeRaw`INSERT INTO crew_project_compute_budgets(crew_id,workspace_id,version,data) VALUES(${crewId},${workspaceId}::uuid,1,${JSON.stringify(budget)}::jsonb)`;
     });
     afterAll(async () => {
+      if (app) await app.close();
       if (!db) return;
       try {
         await db.adminAuditLog.deleteMany({ where: { actorUserId: admin.id } });
@@ -181,22 +207,43 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       const input = {
         taskId,
         beneficiaryUserId: creator,
-        points: 500,
-        remainingWorkload: 10.5,
-        workloadUnit: 'minutes' as const,
-        reason: 'Finish shots',
+        points: 3000,
+        remainingWorkload: 1,
+        workloadUnit: 'days' as const,
+        reason: '补镜头',
         requestKey: randomUUID(),
       };
+      // Reproduce the reported UI payload through the real HTTP route.
+      await request(app.getHttpServer() as Server)
+        .post(`/crews/${crewId}/compute-requests`)
+        .send({ ...input, points: 3001 })
+        .expect(400);
+      const submitted = await request(app.getHttpServer() as Server)
+        .post(`/crews/${crewId}/compute-requests`)
+        .send(input)
+        .expect(201);
+      expect(submitted.body).toMatchObject({ status: 'pending', points: 3000 });
+      const saved = await db.crewComputeRequest.findUniqueOrThrow({
+        where: { id: (submitted.body as { id: string }).id },
+      });
+      expect(saved.requestedByUserId).toBe(creator);
+      expect(saved.points).toBe(3000);
+      expect(
+        (await db.walletAccount.findUniqueOrThrow({ where: { id: walletId } }))
+          .availableBalance,
+      ).toBe(0n);
+      // Replaying the same request is idempotent; a distinct request cannot
+      // consume the one-top-up allowance a second time.
       const results = await Promise.allSettled([
-        service.create(crewId, owner, input),
-        service.create(crewId, owner, { ...input, requestKey: randomUUID() }),
+        service.create(crewId, creator, input),
+        service.create(crewId, creator, { ...input, requestKey: randomUUID() }),
       ]);
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
       const row = await db.crewComputeRequest.findFirstOrThrow({
         where: { crewId },
       });
-      const replay = await service.create(crewId, owner, {
+      const replay = await service.create(crewId, creator, {
         ...input,
         requestKey: row.requestKey,
       });
@@ -238,7 +285,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect(
         (await db.walletAccount.findUniqueOrThrow({ where: { id: walletId } }))
           .availableBalance,
-      ).toBe(500n);
+      ).toBe(3000n);
       expect(
         await db.walletTransaction.count({
           where: { sourceType: 'crew_compute_topup', sourceId: row.id },
@@ -248,7 +295,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         await db.walletCreditGrant.count({
           where: {
             accountId: walletId,
-            availableAmount: 500n,
+            availableAmount: 3000n,
             grantType: 'admin_adjustment',
           },
         }),
@@ -260,9 +307,9 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect(summary.items).toHaveLength(1);
       expect(summary.items[0]).toMatchObject({
         calculatedPoints: '4460',
-        appliedPoints: '500',
-        creditedPoints: '500',
-        differencePoints: '-3960',
+        appliedPoints: '3000',
+        creditedPoints: '3000',
+        differencePoints: '-1460',
         warning: true,
       });
     });
